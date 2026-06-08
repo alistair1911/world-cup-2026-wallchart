@@ -5,6 +5,7 @@ import { Check, MessageCircle, Send, Sparkles, Lock, Save, X } from "lucide-reac
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buildCommentSuggestions } from "@/lib/comment-suggestions";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
 import { isPredictionLocked } from "@/lib/standings";
@@ -72,6 +73,11 @@ export function MatchDrawer({
   const resolvedHome = teams.home as Team | null;
   const resolvedAway = teams.away as Team | null;
   const venueInfo = getVenueInfo(match?.venue ?? "");
+  const hasSpain = resolvedHome?.id === "spain" || resolvedAway?.id === "spain";
+  const quickComments = useMemo(
+    () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
+    [match, resolvedHome, resolvedAway]
+  );
 
   useEffect(() => {
     if (!match) {
@@ -217,6 +223,20 @@ export function MatchDrawer({
             </section>
           ) : null}
 
+          {hasSpain ? (
+            <section className="saved-pop overflow-hidden rounded-lg border border-cup-gold/60 bg-gradient-to-br from-red-50 via-white to-amber-50 shadow-sm">
+              <img src="/players/lamine-yamal.jpg" alt="Lamine Yamal, Spain spotlight" className="h-48 w-full object-cover object-top" />
+              <div className="p-4">
+                <div className="text-xs font-black uppercase tracking-wide text-cup-red">Tata & Lucas favorite watch</div>
+                <h3 className="mt-1 text-xl font-black text-cup-ink">Spain spark: Lamine Yamal</h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                  When Spain is on the card, this is the family spotlight. Perfect place to call a Yamal assist, wonder goal, or
+                  a Spain masterclass before kickoff.
+                </p>
+              </div>
+            </section>
+          ) : null}
+
           <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
             <h3 className="mb-3 text-sm font-black uppercase text-slate-600">Final Score</h3>
             <div className="grid grid-cols-[1fr_72px_72px] items-center gap-2">
@@ -353,13 +373,13 @@ export function MatchDrawer({
               <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-cup-ink">{comments.length}</span>
             </div>
 
-            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {["Big prediction", "What a game", "Lucas likes this", "Tata called it"].map((quick) => (
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {quickComments.map((quick) => (
                 <button
                   key={quick}
                   type="button"
                   onClick={() => setCommentBody(quick)}
-                  className="tab-button rounded-md bg-white px-2 py-2 text-xs font-black text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
+                  className="tab-button min-h-11 rounded-md bg-white px-3 py-2 text-left text-xs font-black leading-snug text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
                 >
                   {quick}
                 </button>

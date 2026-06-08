@@ -29,5 +29,6 @@ The app stores the official tournament wallchart seed in code and writes score/p
 ## Media Notes
 
 - The 2026 emblem is stored at `public/brand/world-cup-2026-emblem.png`, downloaded from Wikimedia Commons via an image proxy.
+- The Spain spotlight image is stored at `public/players/lamine-yamal.jpg`, downloaded from Wikimedia Commons via an image proxy.
 - Stadium photos are stored in `public/stadiums/`, sourced from Wikipedia/Wikimedia lead images through the same proxy.
 - Team flags are rendered from FlagCDN at runtime so Windows browsers show real flag images instead of regional-letter emoji.
