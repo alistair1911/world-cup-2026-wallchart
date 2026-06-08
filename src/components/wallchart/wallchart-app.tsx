@@ -9,8 +9,8 @@ import { getCurrentSession, signOutFamily } from "@/lib/auth";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
-import { loadTournamentState, saveMatchResult, savePrediction } from "@/lib/store";
-import type { FamilySession, GroupLetter, Match, Prediction } from "@/lib/types";
+import { loadTournamentState, saveComment, saveMatchResult, savePrediction } from "@/lib/store";
+import type { FamilySession, GroupLetter, Match, MatchComment, Prediction } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
 import { GroupPanel } from "./group-panel";
@@ -36,6 +36,7 @@ export function WallchartApp() {
   const [session, setSession] = useState<FamilySession | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [comments, setComments] = useState<MatchComment[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function WallchartApp() {
 
       setMatches(state.matches);
       setPredictions(state.predictions);
+      setComments(state.comments);
       setError(state.error ?? null);
       setLoading(false);
     }
@@ -77,6 +79,14 @@ export function WallchartApp() {
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
+  const commentCounts = useMemo(
+    () =>
+      comments.reduce<Record<string, number>>((counts, comment) => {
+        counts[comment.matchId] = (counts[comment.matchId] ?? 0) + 1;
+        return counts;
+      }, {}),
+    [comments]
+  );
 
   async function handleLogout() {
     await signOutFamily();
@@ -103,6 +113,15 @@ export function WallchartApp() {
       ...current.filter((prediction) => !(prediction.userKey === updated.userKey && prediction.matchId === updated.matchId)),
       updated
     ]);
+  }
+
+  async function handleSaveComment(matchId: string, body: string) {
+    if (!session) {
+      return;
+    }
+
+    const comment = await saveComment(session, matchId, body);
+    setComments((current) => [...current, comment]);
   }
 
   if (loading || !session) {
@@ -132,7 +151,9 @@ export function WallchartApp() {
                 <CalendarDays className="h-3 w-3" />
                 Next
               </div>
-              <div className="truncate text-sm font-black">{upcoming ? `M${upcoming.matchNumber} · ${formatKickoff(upcoming.kickoff)}` : "Complete"}</div>
+              <div className="truncate text-sm font-black">
+                {upcoming ? `M${upcoming.matchNumber} - ${formatKickoff(upcoming.kickoff)}` : "Complete"}
+              </div>
             </div>
             <div className="interactive-pop rounded-md bg-gradient-to-br from-amber-100 to-white px-3 py-2 ring-1 ring-white">
               <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">
@@ -140,7 +161,7 @@ export function WallchartApp() {
                 Leader
               </div>
               <div className="truncate text-sm font-black">
-                {leaderboard[0]?.displayName} · {leaderboard[0]?.points} pts
+                {leaderboard[0]?.displayName} - {leaderboard[0]?.points} pts
               </div>
             </div>
             <div className="interactive-pop flex items-center justify-between gap-2 rounded-md bg-gradient-to-br from-emerald-100 to-white px-3 py-2 ring-1 ring-white">
@@ -170,11 +191,17 @@ export function WallchartApp() {
               matches={groupMatches(matches, group)}
               standings={standings}
               onSelectMatch={setSelectedMatch}
+              commentCounts={commentCounts}
             />
           ))}
         </div>
         <div className="wall-scroll overflow-x-auto pb-3">
-          <BracketView matches={matches} standings={standings} onSelectMatch={setSelectedMatch} />
+          <BracketView
+            matches={matches}
+            standings={standings}
+            onSelectMatch={setSelectedMatch}
+            commentCounts={commentCounts}
+          />
         </div>
         <div className="space-y-4">
           <LeaderboardPanel matches={matches} predictions={predictions} />
@@ -186,6 +213,7 @@ export function WallchartApp() {
               matches={groupMatches(matches, group)}
               standings={standings}
               onSelectMatch={setSelectedMatch}
+              commentCounts={commentCounts}
             />
           ))}
         </div>
@@ -208,7 +236,12 @@ export function WallchartApp() {
         </div>
 
         {mobileTab === "today" ? (
-          <TodayPanel matches={matches} standings={standings} onSelectMatch={setSelectedMatch} />
+          <TodayPanel
+            matches={matches}
+            standings={standings}
+            onSelectMatch={setSelectedMatch}
+            commentCounts={commentCounts}
+          />
         ) : null}
         {mobileTab === "groups" ? (
           <div className="space-y-4">
@@ -220,13 +253,19 @@ export function WallchartApp() {
                 matches={groupMatches(matches, group)}
                 standings={standings}
                 onSelectMatch={setSelectedMatch}
+                commentCounts={commentCounts}
               />
             ))}
           </div>
         ) : null}
         {mobileTab === "bracket" ? (
           <div className="wall-scroll overflow-x-auto pb-3">
-            <BracketView matches={matches} standings={standings} onSelectMatch={setSelectedMatch} />
+            <BracketView
+              matches={matches}
+              standings={standings}
+              onSelectMatch={setSelectedMatch}
+              commentCounts={commentCounts}
+            />
           </div>
         ) : null}
         {mobileTab === "leaderboard" ? <LeaderboardPanel matches={matches} predictions={predictions} /> : null}
@@ -236,10 +275,12 @@ export function WallchartApp() {
         match={selectedMatch}
         standings={standings}
         predictions={predictions}
+        comments={selectedMatch ? comments.filter((comment) => comment.matchId === selectedMatch.id) : []}
         session={session}
         onClose={() => setSelectedMatch(null)}
         onSaveResult={handleSaveResult}
         onSavePrediction={handleSavePrediction}
+        onSaveComment={handleSaveComment}
       />
     </main>
   );

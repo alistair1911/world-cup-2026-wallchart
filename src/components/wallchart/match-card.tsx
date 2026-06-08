@@ -1,3 +1,4 @@
+import { MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { resolveSeed } from "@/lib/standings";
 import { getTeam } from "@/lib/tournament-data";
@@ -11,6 +12,7 @@ type MatchCardProps = {
   standings: Record<GroupLetter, StandingRow[]>;
   onSelect: (match: Match) => void;
   compact?: boolean;
+  commentCount?: number;
 };
 
 export function getMatchTeams(match: Match, standings: Record<GroupLetter, StandingRow[]>) {
@@ -19,7 +21,7 @@ export function getMatchTeams(match: Match, standings: Record<GroupLetter, Stand
   return { home, away };
 }
 
-export function MatchCard({ match, standings, onSelect, compact = false }: MatchCardProps) {
+export function MatchCard({ match, standings, onSelect, compact = false, commentCount = 0 }: MatchCardProps) {
   const { home, away } = getMatchTeams(match, standings);
   const scoreReady = match.homeScore !== null && match.awayScore !== null;
   const final = match.status === "final";
@@ -56,8 +58,19 @@ export function MatchCard({ match, standings, onSelect, compact = false }: Match
         </div>
       </div>
       {!compact ? (
-        <div className="mt-2 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
-          {formatKickoff(match.kickoff)}
+        <div className="mt-2 flex items-center justify-between gap-2 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+          <span className="truncate">{formatKickoff(match.kickoff)}</span>
+          {commentCount > 0 ? (
+            <span className="saved-pop inline-flex shrink-0 items-center gap-1 rounded-full bg-cup-gold px-2 py-0.5 text-cup-ink">
+              <MessageCircle className="h-3 w-3" />
+              {commentCount}
+            </span>
+          ) : null}
+        </div>
+      ) : commentCount > 0 ? (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-cup-gold px-2 py-0.5 text-[10px] font-black text-cup-ink">
+          <MessageCircle className="h-3 w-3" />
+          {commentCount}
         </div>
       ) : null}
     </button>

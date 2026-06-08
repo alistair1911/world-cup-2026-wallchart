@@ -2,10 +2,11 @@
 
 import { INITIAL_MATCHES } from "./tournament-data";
 import { getSupabaseClient } from "./supabase";
-import type { FamilySession, Match, MatchPhase, MatchStatus, Prediction, UserKey } from "./types";
+import type { FamilySession, Match, MatchComment, MatchPhase, MatchStatus, Prediction, UserKey } from "./types";
 
 const LOCAL_MATCHES_KEY = "wc26-family-match-overrides";
 const LOCAL_PREDICTIONS_KEY = "wc26-family-predictions";
+const LOCAL_COMMENTS_KEY = "wc26-family-comments";
 
 type StoredMatchRow = {
   id: string;
@@ -32,6 +33,14 @@ type StoredPredictionRow = {
   updated_at?: string | null;
 };
 
+type StoredCommentRow = {
+  id: string;
+  user_id: string;
+  match_id: string;
+  body: string;
+  created_at: string;
+};
+
 type StoredProfileRow = {
   id: string;
   user_key: UserKey;
@@ -40,7 +49,9 @@ type StoredProfileRow = {
 export type TournamentState = {
   matches: Match[];
   predictions: Prediction[];
+  comments: MatchComment[];
   error?: string;
+  commentsError?: string;
 };
 
 function readLocalMatches() {
@@ -54,6 +65,14 @@ function readLocalMatches() {
 function readLocalPredictions() {
   try {
     return JSON.parse(window.localStorage.getItem(LOCAL_PREDICTIONS_KEY) || "[]") as Prediction[];
+  } catch {
+    return [];
+  }
+}
+
+function readLocalComments() {
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_COMMENTS_KEY) || "[]") as MatchComment[];
   } catch {
     return [];
   }
@@ -114,35 +133,39 @@ export async function loadTournamentState(): Promise<TournamentState> {
   if (!supabase) {
     return {
       matches: mergeMatches(readLocalMatches()),
-      predictions: readLocalPredictions()
+      predictions: readLocalPredictions(),
+      comments: readLocalComments()
     };
   }
 
   try {
-    const [{ data: matchRows, error: matchError }, { data: predictionRows, error: predictionError }, { data: profiles }] =
-      await Promise.all([
-        supabase.from("matches").select("*"),
-        supabase.from("predictions").select("*"),
-        supabase.from("profiles").select("id, user_key")
-      ]);
+    const [
+      { data: matchRows, error: matchError },
+      { data: predictionRows, error: predictionError },
+      { data: profiles },
+      { data: commentRows, error: commentError }
+    ] = await Promise.all([
+      supabase.from("matches").select("*"),
+      supabase.from("predictions").select("*"),
+      supabase.from("profiles").select("id, user_key, display_name"),
+      supabase.from("comments").select("*").order("created_at", { ascending: true })
+    ]);
 
     if (matchError || predictionError) {
       throw new Error(matchError?.message || predictionError?.message || "Could not load tournament data.");
     }
 
-    const profileMap = new Map(
-      ((profiles || []) as StoredProfileRow[]).map((profile) => [profile.id, profile.user_key])
-    );
+    const profileMap = new Map(((profiles || []) as StoredProfileRow[]).map((profile) => [profile.id, profile]));
 
     const predictions: Prediction[] = [];
     for (const row of (predictionRows || []) as StoredPredictionRow[]) {
-      const userKey = profileMap.get(row.user_id);
-      if (!userKey) {
+      const profile = profileMap.get(row.user_id);
+      if (!profile) {
         continue;
       }
 
       predictions.push({
-        userKey,
+        userKey: profile.user_key,
         matchId: row.match_id,
         homeScore: row.home_score,
         awayScore: row.away_score,
@@ -151,14 +174,36 @@ export async function loadTournamentState(): Promise<TournamentState> {
       });
     }
 
+    const comments: MatchComment[] = [];
+    if (!commentError) {
+      for (const row of (commentRows || []) as StoredCommentRow[]) {
+        const profile = profileMap.get(row.user_id);
+        if (!profile) {
+          continue;
+        }
+
+        comments.push({
+          id: row.id,
+          userKey: profile.user_key,
+          displayName: profile.user_key === "tata" ? "Tata" : "Lucas",
+          matchId: row.match_id,
+          body: row.body,
+          createdAt: row.created_at
+        });
+      }
+    }
+
     return {
       matches: mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)),
-      predictions
+      predictions,
+      comments,
+      commentsError: commentError?.message
     };
   } catch (error) {
     return {
       matches: INITIAL_MATCHES,
       predictions: [],
+      comments: [],
       error: error instanceof Error ? error.message : "Could not load tournament data."
     };
   }
@@ -217,6 +262,60 @@ export async function savePrediction(session: FamilySession, prediction: Predict
   );
 
   if (error) {
+    if (error.message.toLowerCase().includes("comments")) {
+      throw new Error("Comments need the updated Supabase schema. Run supabase/schema.sql once in Supabase SQL Editor.");
+    }
     throw new Error(error.message);
   }
+}
+
+export async function saveComment(session: FamilySession, matchId: string, body: string): Promise<MatchComment> {
+  const trimmed = body.trim().slice(0, 280);
+  if (!trimmed) {
+    throw new Error("Write a comment first.");
+  }
+
+  const supabase = getSupabaseClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    const comment: MatchComment = {
+      id: window.crypto?.randomUUID?.() ?? `${Date.now()}`,
+      userKey: session.userKey,
+      displayName: session.displayName,
+      matchId,
+      body: trimmed,
+      createdAt: now
+    };
+    const comments = [...readLocalComments(), comment];
+    window.localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(comments));
+    return comment;
+  }
+
+  if (!session.authUserId) {
+    throw new Error("Missing Supabase user.");
+  }
+
+  const { data, error } = await supabase
+    .from("comments")
+    .insert({
+      user_id: session.authUserId,
+      match_id: matchId,
+      body: trimmed
+    })
+    .select("id, match_id, body, created_at")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    id: data.id,
+    userKey: session.userKey,
+    displayName: session.displayName,
+    matchId: data.match_id,
+    body: data.body,
+    createdAt: data.created_at
+  };
 }

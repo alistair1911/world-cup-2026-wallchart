@@ -9,6 +9,7 @@ type GroupPanelProps = {
   matches: Match[];
   standings: Record<GroupLetter, StandingRow[]>;
   onSelectMatch: (match: Match) => void;
+  commentCounts?: Record<string, number>;
 };
 
 const groupThemes: Record<GroupLetter, string> = {
@@ -26,7 +27,7 @@ const groupThemes: Record<GroupLetter, string> = {
   L: "from-lime-700 to-emerald-500"
 };
 
-export function GroupPanel({ group, rows, matches, standings, onSelectMatch }: GroupPanelProps) {
+export function GroupPanel({ group, rows, matches, standings, onSelectMatch, commentCounts = {} }: GroupPanelProps) {
   return (
     <Panel className="interactive-pop overflow-hidden">
       <div className={`flex items-center justify-between bg-gradient-to-r ${groupThemes[group]} px-3 py-2 text-white`}>
@@ -59,7 +60,14 @@ export function GroupPanel({ group, rows, matches, standings, onSelectMatch }: G
         </table>
         <div className="space-y-2">
           {matches.map((match) => (
-            <MatchCard key={match.id} match={match} standings={standings} onSelect={onSelectMatch} compact />
+            <MatchCard
+              key={match.id}
+              match={match}
+              standings={standings}
+              onSelect={onSelectMatch}
+              compact
+              commentCount={commentCounts[match.id] ?? 0}
+            />
           ))}
         </div>
       </div>

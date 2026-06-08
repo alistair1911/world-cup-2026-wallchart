@@ -14,9 +14,10 @@ type BracketViewProps = {
   matches: Match[];
   standings: Record<GroupLetter, StandingRow[]>;
   onSelectMatch: (match: Match) => void;
+  commentCounts?: Record<string, number>;
 };
 
-export function BracketView({ matches, standings, onSelectMatch }: BracketViewProps) {
+export function BracketView({ matches, standings, onSelectMatch, commentCounts = {} }: BracketViewProps) {
   return (
     <div className="grid min-w-[980px] grid-cols-5 gap-3">
       {phaseColumns.map((column) => {
@@ -29,7 +30,14 @@ export function BracketView({ matches, standings, onSelectMatch }: BracketViewPr
             </h2>
             <div className="space-y-3 p-3 pt-0">
               {columnMatches.map((match) => (
-                <MatchCard key={match.id} match={match} standings={standings} onSelect={onSelectMatch} compact />
+                <MatchCard
+                  key={match.id}
+                  match={match}
+                  standings={standings}
+                  onSelect={onSelectMatch}
+                  compact
+                  commentCount={commentCounts[match.id] ?? 0}
+                />
               ))}
             </div>
           </Panel>

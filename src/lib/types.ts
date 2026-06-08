@@ -70,6 +70,15 @@ export type Prediction = {
   updatedAt?: string | null;
 };
 
+export type MatchComment = {
+  id: string;
+  userKey: UserKey;
+  displayName: string;
+  matchId: string;
+  body: string;
+  createdAt: string;
+};
+
 export type FamilySession = {
   userKey: UserKey;
   displayName: string;

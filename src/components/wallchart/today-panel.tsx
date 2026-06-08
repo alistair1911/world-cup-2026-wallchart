@@ -7,9 +7,10 @@ type TodayPanelProps = {
   matches: Match[];
   standings: Record<GroupLetter, StandingRow[]>;
   onSelectMatch: (match: Match) => void;
+  commentCounts?: Record<string, number>;
 };
 
-export function TodayPanel({ matches, standings, onSelectMatch }: TodayPanelProps) {
+export function TodayPanel({ matches, standings, onSelectMatch, commentCounts = {} }: TodayPanelProps) {
   const upcoming = matches
     .filter((match) => match.status !== "final")
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime())
@@ -23,7 +24,13 @@ export function TodayPanel({ matches, standings, onSelectMatch }: TodayPanelProp
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         {upcoming.map((match) => (
-          <MatchCard key={match.id} match={match} standings={standings} onSelect={onSelectMatch} />
+          <MatchCard
+            key={match.id}
+            match={match}
+            standings={standings}
+            onSelect={onSelectMatch}
+            commentCount={commentCounts[match.id] ?? 0}
+          />
         ))}
       </div>
     </Panel>

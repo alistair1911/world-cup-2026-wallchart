@@ -45,10 +45,22 @@ create table if not exists public.predictions (
   unique (user_id, match_id)
 );
 
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  match_id text not null,
+  body text not null check (char_length(body) between 1 and 280),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists comments_match_id_created_at_idx
+  on public.comments (match_id, created_at);
+
 alter table public.profiles enable row level security;
 alter table public.teams enable row level security;
 alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
+alter table public.comments enable row level security;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 create policy "Authenticated users can read profiles"
@@ -105,6 +117,18 @@ create policy "Users can update their own predictions"
   on public.predictions for update
   to authenticated
   using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+drop policy if exists "Authenticated users can read comments" on public.comments;
+create policy "Authenticated users can read comments"
+  on public.comments for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Users can create their own comments" on public.comments;
+create policy "Users can create their own comments"
+  on public.comments for insert
+  to authenticated
   with check (user_id = auth.uid());
 
 create or replace function public.set_updated_at()

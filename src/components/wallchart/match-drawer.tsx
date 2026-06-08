@@ -1,26 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Lock, Save, X } from "lucide-react";
+import { Check, MessageCircle, Send, Sparkles, Lock, Save, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
 import { isPredictionLocked } from "@/lib/standings";
-import type { FamilySession, GroupLetter, Match, Prediction, StandingRow, Team, UserKey } from "@/lib/types";
+import type { FamilySession, GroupLetter, Match, MatchComment, Prediction, StandingRow, Team, UserKey } from "@/lib/types";
 import { clampScore, formatKickoff } from "@/lib/utils";
 import { getVenueInfo } from "@/lib/venues";
+import { Flag } from "./flag";
 import { getMatchTeams } from "./match-card";
 
 type MatchDrawerProps = {
   match: Match | null;
   standings: Record<GroupLetter, StandingRow[]>;
   predictions: Prediction[];
+  comments: MatchComment[];
   session: FamilySession;
   onClose: () => void;
   onSaveResult: (match: Match) => Promise<void>;
   onSavePrediction: (prediction: Prediction) => Promise<void>;
+  onSaveComment: (matchId: string, body: string) => Promise<void>;
 };
 
 function scoreToText(value: number | null) {
@@ -44,10 +47,12 @@ export function MatchDrawer({
   match,
   standings,
   predictions,
+  comments,
   session,
   onClose,
   onSaveResult,
-  onSavePrediction
+  onSavePrediction,
+  onSaveComment
 }: MatchDrawerProps) {
   const teams = useMemo(() => (match ? getMatchTeams(match, standings) : { home: null, away: null }), [match, standings]);
   const [homeScore, setHomeScore] = useState("");
@@ -57,6 +62,7 @@ export function MatchDrawer({
   const [predictionHome, setPredictionHome] = useState("");
   const [predictionAway, setPredictionAway] = useState("");
   const [predictionWinnerId, setPredictionWinnerId] = useState("");
+  const [commentBody, setCommentBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -79,6 +85,7 @@ export function MatchDrawer({
     setPredictionHome(scoreToText(ownPrediction?.homeScore ?? null));
     setPredictionAway(scoreToText(ownPrediction?.awayScore ?? null));
     setPredictionWinnerId(ownPrediction?.predictedWinnerTeamId ?? "");
+    setCommentBody("");
     setMessage(null);
   }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId]);
 
@@ -142,6 +149,29 @@ export function MatchDrawer({
     }
   }
 
+  async function handleCommentSave(body = commentBody) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await onSaveComment(activeMatch.id, body);
+      setCommentBody("");
+      setMessage("Comment added.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save comment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function formatCommentTime(value: string) {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(new Date(value));
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-cup-ink/35">
       <button type="button" aria-label="Close drawer backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
@@ -191,7 +221,9 @@ export function MatchDrawer({
             <h3 className="mb-3 text-sm font-black uppercase text-slate-600">Final Score</h3>
             <div className="grid grid-cols-[1fr_72px_72px] items-center gap-2">
               <span className="truncate font-bold">
-                <span className="mr-2">{resolvedHome?.flag}</span>
+                <span className="mr-2 inline-flex align-middle">
+                  <Flag team={resolvedHome} />
+                </span>
                 {resolvedHome?.name ?? activeMatch.homeSeed?.label}
               </span>
               <Input
@@ -202,7 +234,9 @@ export function MatchDrawer({
               />
               <span className="text-center text-xs font-black text-slate-400">HOME</span>
               <span className="truncate font-bold">
-                <span className="mr-2">{resolvedAway?.flag}</span>
+                <span className="mr-2 inline-flex align-middle">
+                  <Flag team={resolvedAway} />
+                </span>
                 {resolvedAway?.name ?? activeMatch.awaySeed?.label}
               </span>
               <Input
@@ -307,6 +341,69 @@ export function MatchDrawer({
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-cup-sky to-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-black uppercase text-slate-600">
+                <MessageCircle className="h-4 w-4 text-cup-red" />
+                Match Comments
+              </h3>
+              <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-cup-ink">{comments.length}</span>
+            </div>
+
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {["Big prediction", "What a game", "Lucas likes this", "Tata called it"].map((quick) => (
+                <button
+                  key={quick}
+                  type="button"
+                  onClick={() => setCommentBody(quick)}
+                  className="tab-button rounded-md bg-white px-2 py-2 text-xs font-black text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
+                >
+                  {quick}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200">
+              <textarea
+                value={commentBody}
+                onChange={(event) => setCommentBody(event.target.value.slice(0, 280))}
+                placeholder="Add a family comment about this match..."
+                className="min-h-20 w-full resize-none rounded-md border border-slate-200 p-3 text-sm font-semibold text-cup-ink outline-none focus:border-cup-gold focus:ring-2 focus:ring-cup-gold/25"
+              />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-500">{commentBody.length}/280</span>
+                <Button size="sm" onClick={() => handleCommentSave()} disabled={saving || !commentBody.trim()}>
+                  <Send className="h-4 w-4" />
+                  Post
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {comments.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-4 text-center text-sm font-bold text-slate-500">
+                  <Sparkles className="mx-auto mb-2 h-5 w-5 text-cup-gold" />
+                  First comment wins the vibe.
+                </div>
+              ) : (
+                comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className={`saved-pop rounded-lg p-3 shadow-sm ${
+                      comment.userKey === "tata" ? "bg-white" : "bg-emerald-50"
+                    }`}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="font-black text-cup-ink">{comment.displayName}</span>
+                      <span className="text-[11px] font-bold text-slate-500">{formatCommentTime(comment.createdAt)}</span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-700">{comment.body}</p>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
