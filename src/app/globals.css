@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #eef7f1;
+  --foreground: #10212b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.28) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.28) 1px, transparent 1px),
+    radial-gradient(circle at 16% 12%, rgba(216, 53, 53, 0.2), transparent 24%),
+    radial-gradient(circle at 82% 10%, rgba(53, 105, 216, 0.16), transparent 27%),
+    radial-gradient(circle at 50% 42%, rgba(214, 166, 71, 0.16), transparent 36%),
+    linear-gradient(135deg, rgba(7, 86, 57, 0.98), rgba(239, 250, 243, 0.92) 36%, rgba(239, 250, 243, 0.98) 68%, rgba(13, 79, 55, 0.9)),
+    var(--background);
+  background-size: 56px 56px, 56px 56px, auto, auto, auto, auto;
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.score-input {
+  appearance: textfield;
+}
+
+.score-input::-webkit-inner-spin-button,
+.score-input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.wall-scroll {
+  scrollbar-color: rgba(16, 33, 43, 0.28) transparent;
+  scrollbar-width: thin;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background:
+    linear-gradient(90deg, transparent 49.7%, rgba(255, 255, 255, 0.5) 50%, transparent 50.3%),
+    radial-gradient(circle at center, transparent 0 16%, rgba(255, 255, 255, 0.45) 16.3% 16.8%, transparent 17.2%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.brand-mark {
+  position: relative;
+  overflow: hidden;
+}
+
+.brand-mark::after {
+  position: absolute;
+  inset: -40% auto auto -20%;
+  width: 80%;
+  height: 180%;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  transform: rotate(18deg);
+  animation: shimmer 4.8s ease-in-out infinite;
+}
+
+.interactive-pop {
+  transform: translateZ(0);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, filter 180ms ease;
+}
+
+.interactive-pop:hover {
+  filter: saturate(1.08);
+  transform: translateY(-2px) scale(1.01);
+}
+
+.interactive-pop:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.score-chip {
+  box-shadow: inset 0 -2px 0 rgba(16, 33, 43, 0.12);
+}
+
+.score-chip-final {
+  animation: scorePulse 900ms ease both;
+}
+
+.saved-pop {
+  animation: popIn 260ms ease both;
+}
+
+.tab-button {
+  transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.tab-button:active {
+  transform: scale(0.96);
+}
+
+@keyframes shimmer {
+  0%,
+  70% {
+    transform: translateX(-120%) rotate(18deg);
+  }
+  100% {
+    transform: translateX(220%) rotate(18deg);
+  }
+}
+
+@keyframes scorePulse {
+  0% {
+    transform: scale(0.88);
+    box-shadow: 0 0 0 0 rgba(214, 166, 71, 0.65);
+  }
+  65% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 8px rgba(214, 166, 71, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: inset 0 -2px 0 rgba(16, 33, 43, 0.12);
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

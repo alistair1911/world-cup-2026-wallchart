@@ -1,0 +1,57 @@
+import type { Team } from "./types";
+
+const flagCodes: Record<string, string> = {
+  mexico: "mx",
+  "south-africa": "za",
+  "korea-republic": "kr",
+  czechia: "cz",
+  canada: "ca",
+  switzerland: "ch",
+  qatar: "qa",
+  "bosnia-herzegovina": "ba",
+  brazil: "br",
+  morocco: "ma",
+  haiti: "ht",
+  scotland: "gb-sct",
+  usa: "us",
+  paraguay: "py",
+  australia: "au",
+  turkiye: "tr",
+  germany: "de",
+  curacao: "cw",
+  "cote-divoire": "ci",
+  ecuador: "ec",
+  netherlands: "nl",
+  japan: "jp",
+  tunisia: "tn",
+  sweden: "se",
+  belgium: "be",
+  egypt: "eg",
+  "ir-iran": "ir",
+  "new-zealand": "nz",
+  spain: "es",
+  "cabo-verde": "cv",
+  "saudi-arabia": "sa",
+  uruguay: "uy",
+  france: "fr",
+  senegal: "sn",
+  norway: "no",
+  iraq: "iq",
+  argentina: "ar",
+  algeria: "dz",
+  austria: "at",
+  jordan: "jo",
+  portugal: "pt",
+  uzbekistan: "uz",
+  colombia: "co",
+  "congo-dr": "cd",
+  england: "gb-eng",
+  croatia: "hr",
+  ghana: "gh",
+  panama: "pa"
+};
+
+export function flagUrlForTeam(team?: Team | null) {
+  const code = team ? flagCodes[team.id] : null;
+  return code ? `https://flagcdn.com/w40/${code}.png` : null;
+}
