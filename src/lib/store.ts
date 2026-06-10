@@ -2,6 +2,7 @@
 
 import { INITIAL_MATCHES } from "./tournament-data";
 import { getSupabaseClient } from "./supabase";
+import { getCurrentAccessToken } from "./auth";
 import type { FamilySession, Match, MatchComment, MatchPhase, MatchStatus, Prediction, UserKey } from "./types";
 
 const LOCAL_MATCHES_KEY = "wc26-family-match-overrides";
@@ -52,6 +53,14 @@ export type TournamentState = {
   comments: MatchComment[];
   error?: string;
   commentsError?: string;
+};
+
+export type ScoreSyncSummary = {
+  ok: boolean;
+  provider?: string;
+  received?: number;
+  updated?: Array<{ id: string; matchNumber: number; score: string; status: string }>;
+  error?: string;
 };
 
 function readLocalMatches() {
@@ -318,4 +327,19 @@ export async function saveComment(session: FamilySession, matchId: string, body:
     body: data.body,
     createdAt: data.created_at
   };
+}
+
+export async function syncLiveScores(): Promise<ScoreSyncSummary> {
+  const token = await getCurrentAccessToken();
+  const response = await fetch("/api/scores/sync", {
+    method: "POST",
+    headers: token ? { authorization: `Bearer ${token}` } : undefined
+  });
+  const payload = (await response.json().catch(() => ({}))) as ScoreSyncSummary;
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not sync live scores.");
+  }
+
+  return payload;
 }

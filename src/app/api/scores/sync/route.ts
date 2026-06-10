@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { buildScoreUpdates, normalizeScorePayload } from "@/lib/score-sync";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
@@ -22,20 +22,45 @@ function isAuthorized(request: NextRequest) {
   return header === `Bearer ${secret}` || querySecret === secret;
 }
 
+async function isFamilyUserRequest(request: NextRequest, supabase: SupabaseClient) {
+  const header = request.headers.get("authorization");
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
+  const secret = process.env.SCORE_SYNC_SECRET || process.env.CRON_SECRET;
+
+  if (!token || token === secret) {
+    return false;
+  }
+
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    return false;
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("user_key")
+    .eq("id", data.user.id)
+    .maybeSingle<{ user_key: string }>();
+  return profile?.user_key === "tata" || profile?.user_key === "lucas";
+}
+
 async function fetchScorePayload() {
-  const provider = process.env.SCORE_PROVIDER;
+  const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
 
   if (provider === "openrouter-llm") {
     return fetchOpenRouterScorePayload();
   }
 
-  if (provider === "api-football") {
+  if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
     const key = process.env.API_FOOTBALL_KEY;
     if (!key) {
       throw new Error("Missing API_FOOTBALL_KEY.");
     }
 
-    const response = await fetch("https://v3.football.api-sports.io/fixtures?league=1&season=2026", {
+    const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
+    const league = process.env.API_FOOTBALL_LEAGUE_ID || "1";
+    const season = process.env.API_FOOTBALL_SEASON || "2026";
+    const response = await fetch(`https://${host}/fixtures?league=${league}&season=${season}`, {
       headers: {
         "x-apisports-key": key
       },
@@ -51,7 +76,7 @@ async function fetchScorePayload() {
 
   const feedUrl = process.env.SCORE_FEED_URL;
   if (!feedUrl) {
-    throw new Error("Missing SCORE_FEED_URL or SCORE_PROVIDER=api-football.");
+    throw new Error("Missing SCORE_FEED_URL, API_FOOTBALL_KEY, or SCORE_PROVIDER=openrouter-llm.");
   }
 
   const headers: Record<string, string> = {};
@@ -164,13 +189,6 @@ function matchToRow(match: Match) {
 }
 
 async function syncScores(request: NextRequest) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized. Set SCORE_SYNC_SECRET or CRON_SECRET and call with Authorization: Bearer <secret>." },
-      { status: 401 }
-    );
-  }
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
@@ -186,6 +204,13 @@ async function syncScores(request: NextRequest) {
         persistSession: false
       }
     });
+
+    if (!isAuthorized(request) && !(await isFamilyUserRequest(request, supabase))) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized. Sign in as Tata/Lucas or call from Vercel Cron." },
+        { status: 401 }
+      );
+    }
 
     const { data: matchRows, error: matchError } = await supabase.from("matches").select("*");
     if (matchError) {

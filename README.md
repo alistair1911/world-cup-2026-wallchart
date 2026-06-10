@@ -25,6 +25,7 @@ If Supabase env vars are empty, the app runs in local demo mode with the passcod
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `CRON_SECRET`
    - `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`, or `SCORE_FEED_URL` for a normalized score feed
+   - Optional API-Sports tuning: `API_FOOTBALL_HOST=v3.football.api-sports.io`, `API_FOOTBALL_LEAGUE_ID=1`, `API_FOOTBALL_SEASON=2026`
    - Optional LLM sync: `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=inclusionai/ring-2.6-1t`
 6. Deploy to Vercel.
 
@@ -36,8 +37,9 @@ After adding or changing Vercel environment variables, redeploy the latest produ
 
 - Predictions lock automatically 5 minutes before each kickoff, or immediately when a match is marked live/final.
 - The app refreshes saved scores from Supabase every 60 seconds while Tata or Lucas has the wallchart open.
+- Tata and Lucas can press the top-bar `Sync` button to fetch provider scores immediately.
 - Vercel Cron calls `/api/scores/sync` every 10 minutes. The route accepts Vercel's cron user agent, and `CRON_SECRET` can still be used for manual protected test calls.
-- For API-Football, set `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`. The sync route reads World Cup 2026 fixtures and maps scores back to wallchart matches by team names and kickoff.
+- For API-Sports/API-Football v3, set `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`. The default host is `v3.football.api-sports.io`; league `1` and season `2026` are used unless overridden.
 - For OpenRouter, set `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=inclusionai/ring-2.6-1t`. The route asks OpenRouter for confirmed live/final scores for matches near the current time and only accepts valid JSON.
 - For another provider, set `SCORE_FEED_URL` and optionally `SCORE_FEED_TOKEN`. The URL should return `matches`, `fixtures`, or `results` with fields like `matchId` or `matchNumber`, `homeScore`, `awayScore`, and `status`.
 

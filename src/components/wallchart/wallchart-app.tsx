@@ -9,7 +9,7 @@ import { getCurrentSession, signOutFamily } from "@/lib/auth";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
-import { loadTournamentState, saveComment, saveMatchResult, savePrediction } from "@/lib/store";
+import { loadTournamentState, saveComment, saveMatchResult, savePrediction, syncLiveScores } from "@/lib/store";
 import type { FamilySession, GroupLetter, Match, MatchComment, Prediction } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
@@ -40,6 +40,8 @@ export function WallchartApp() {
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
@@ -159,6 +161,21 @@ export function WallchartApp() {
     setComments((current) => [...current, comment]);
   }
 
+  async function handleSyncScores() {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const result = await syncLiveScores();
+      await refreshTournamentState();
+      const updated = result.updated?.length ?? 0;
+      setSyncMessage(updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}.` : "Sync checked. No live/final scores yet.");
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "Could not sync live scores.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   if (loading || !session) {
     return (
       <main className="grid min-h-screen place-items-center p-6">
@@ -215,22 +232,23 @@ export function WallchartApp() {
               <div className="min-w-0">
                 <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">
                   <RefreshCw className="h-3 w-3" />
-                  Scores
+                  Auto scores
                 </div>
                 <div className="truncate text-sm font-black">
-                  {lastRefreshed
-                    ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-                    : "Auto refresh"}
+                  {syncMessage || (lastRefreshed
+                    ? `Checked ${lastRefreshed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                    : "Ready")}
                 </div>
               </div>
               <Button
                 variant="ghost"
-                size="icon"
-                onClick={() => refreshTournamentState().catch(() => setError("Could not refresh live scores."))}
-                disabled={refreshing}
-                aria-label="Refresh scores"
+                size="sm"
+                onClick={handleSyncScores}
+                disabled={refreshing || syncing}
+                aria-label="Sync live scores"
               >
-                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-4 w-4 ${refreshing || syncing ? "animate-spin" : ""}`} />
+                Sync
               </Button>
             </div>
           </div>

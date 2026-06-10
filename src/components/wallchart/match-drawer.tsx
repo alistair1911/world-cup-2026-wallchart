@@ -263,7 +263,7 @@ export function MatchDrawer({
               <div>
                 <h3 className="text-sm font-black uppercase text-slate-600">Score Sync</h3>
                 <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                  Live/final scores update automatically when the sync feed confirms them. Manual entry stays here as a backup.
+                  Live/final scores update automatically from the provider. Use the top-bar Sync button to check now.
                 </p>
               </div>
               <Badge tone={activeMatch.status === "live" ? "gold" : activeMatch.status === "final" ? "green" : "slate"}>
@@ -296,8 +296,8 @@ export function MatchDrawer({
               ) : null}
             </div>
 
-            <details className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-3">
-              <summary className="cursor-pointer text-sm font-black text-cup-ink">Manual score override</summary>
+            <details className="rounded-md bg-white/50 p-2">
+              <summary className="cursor-pointer text-xs font-black uppercase text-slate-400">Manual override backup</summary>
               <div className="mt-3 grid grid-cols-[1fr_72px_72px] items-center gap-2">
                 <span className="truncate font-bold">
                   <span className="mr-2 inline-flex align-middle">

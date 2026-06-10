@@ -98,6 +98,16 @@ export async function getCurrentSession(): Promise<FamilySession | null> {
   }
 }
 
+export async function getCurrentAccessToken() {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export async function signOutFamily() {
   const supabase = getSupabaseClient();
   if (supabase) {
