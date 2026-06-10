@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, MessageCircle, Send, Sparkles, Lock, Save, X } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
+import { getTeamProfile } from "@/lib/profile-data";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
 import { isPredictionLocked, predictionLockTime } from "@/lib/standings";
@@ -75,6 +77,8 @@ export function MatchDrawer({
   const resolvedAway = teams.away as Team | null;
   const venueInfo = getVenueInfo(match?.venue ?? "");
   const hasSpain = resolvedHome?.id === "spain" || resolvedAway?.id === "spain";
+  const spainProfile = hasSpain ? getTeamProfile("spain") : null;
+  const yamal = spainProfile?.players.find((player) => player.name === "Lamine Yamal");
   const quickComments = useMemo(
     () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
     [match, resolvedHome, resolvedAway]
@@ -228,18 +232,46 @@ export function MatchDrawer({
             <section className="saved-pop overflow-hidden rounded-lg border border-cup-gold/60 bg-gradient-to-br from-red-50 via-white to-amber-50 shadow-sm">
               <img src="/players/lamine-yamal.jpg" alt="Lamine Yamal, Spain spotlight" className="h-48 w-full object-cover object-top" />
               <div className="p-4">
-                <div className="text-xs font-black uppercase tracking-wide text-cup-red">Tata & Lucas favorite watch</div>
+              <div className="text-xs font-black uppercase tracking-wide text-cup-red">Tata & Lucas favorite watch</div>
                 <h3 className="mt-1 text-xl font-black text-cup-ink">Spain spark: Lamine Yamal</h3>
                 <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
                   When Spain is on the card, this is the family spotlight. Perfect place to call a Yamal assist, wonder goal, or
                   a Spain masterclass before kickoff.
                 </p>
+                {yamal ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href="/teams/spain"
+                      className="rounded-md bg-cup-ink px-3 py-2 text-xs font-black text-white shadow-sm"
+                    >
+                      Spain profile
+                    </Link>
+                    <Link
+                      href={`/players/${yamal.id}`}
+                      className="rounded-md bg-cup-gold px-3 py-2 text-xs font-black text-cup-ink shadow-sm"
+                    >
+                      Yamal profile
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             </section>
           ) : null}
 
           <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
             <h3 className="mb-3 text-sm font-black uppercase text-slate-600">Final Score</h3>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {resolvedHome ? (
+                <Link href={`/teams/${resolvedHome.id}`} className="rounded-md bg-white px-2 py-1 text-xs font-black text-cup-ink ring-1 ring-slate-200">
+                  {resolvedHome.name} profile
+                </Link>
+              ) : null}
+              {resolvedAway ? (
+                <Link href={`/teams/${resolvedAway.id}`} className="rounded-md bg-white px-2 py-1 text-xs font-black text-cup-ink ring-1 ring-slate-200">
+                  {resolvedAway.name} profile
+                </Link>
+              ) : null}
+            </div>
             <div className="grid grid-cols-[1fr_72px_72px] items-center gap-2">
               <span className="truncate font-bold">
                 <span className="mr-2 inline-flex align-middle">

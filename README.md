@@ -25,6 +25,7 @@ If Supabase env vars are empty, the app runs in local demo mode with the passcod
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `CRON_SECRET`
    - `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`, or `SCORE_FEED_URL` for a normalized score feed
+   - Optional LLM sync: `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=inclusionai/ring-2.6-1t`
 6. Deploy to Vercel.
 
 The app stores the official tournament wallchart seed in code and writes score/prediction changes to Supabase. This keeps first setup small while still making Tata and Lucas share the same live scoreboard.
@@ -35,7 +36,17 @@ The app stores the official tournament wallchart seed in code and writes score/p
 - The app refreshes saved scores from Supabase every 60 seconds while Tata or Lucas has the wallchart open.
 - Vercel Cron calls `/api/scores/sync` every 10 minutes. Set `CRON_SECRET` in Vercel; Vercel sends it as the bearer token for the cron request.
 - For API-Football, set `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`. The sync route reads World Cup 2026 fixtures and maps scores back to wallchart matches by team names and kickoff.
+- For OpenRouter, set `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=inclusionai/ring-2.6-1t`. The route asks OpenRouter for confirmed live/final scores for matches near the current time and only accepts valid JSON.
 - For another provider, set `SCORE_FEED_URL` and optionally `SCORE_FEED_TOKEN`. The URL should return `matches`, `fixtures`, or `results` with fields like `matchId` or `matchNumber`, `homeScore`, `awayScore`, and `status`.
+
+Do not commit real API keys. Add them only in Vercel project environment variables.
+
+## Team And Player Profiles
+
+- Team profile pages live at `/teams/[teamId]`.
+- Player profile pages live at `/players/[playerId]`.
+- Profile data is a starter squad watchlist with formation/style notes. Official 2026 squads and lineups should be reviewed closer to the tournament.
+- Spain and Lamine Yamal have a richer family-favorite profile treatment.
 
 ## Media Notes
 

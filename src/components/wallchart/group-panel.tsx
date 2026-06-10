@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Panel } from "@/components/ui/panel";
 import type { GroupLetter, Match, StandingRow } from "@/lib/types";
 import { Flag } from "./flag";
@@ -46,10 +47,10 @@ export function GroupPanel({ group, rows, matches, standings, onSelectMatch, com
               >
                 <td className="w-6 rounded-l py-1 pl-1 font-black text-slate-400">{index + 1}</td>
                 <td className="truncate py-1 font-bold">
-                  <span className="flex min-w-0 items-center gap-1.5">
+                  <Link href={`/teams/${row.team.id}`} className="flex min-w-0 items-center gap-1.5 rounded hover:text-cup-red">
                     <Flag team={row.team} />
                     <span className="truncate">{row.team.code}</span>
-                  </span>
+                  </Link>
                 </td>
                 <td className="w-7 py-1 text-center">{row.played}</td>
                 <td className="w-9 py-1 text-center">{row.goalDifference}</td>

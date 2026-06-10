@@ -20,6 +20,10 @@ function isAuthorized(request: NextRequest) {
 async function fetchScorePayload() {
   const provider = process.env.SCORE_PROVIDER;
 
+  if (provider === "openrouter-llm") {
+    return fetchOpenRouterScorePayload();
+  }
+
   if (provider === "api-football") {
     const key = process.env.API_FOOTBALL_KEY;
     if (!key) {
@@ -56,6 +60,81 @@ async function fetchScorePayload() {
   }
 
   return response.json();
+}
+
+async function fetchOpenRouterScorePayload() {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing OPENROUTER_API_KEY.");
+  }
+
+  const model = process.env.OPENROUTER_MODEL || "inclusionai/ring-2.6-1t";
+  const now = new Date();
+  const windowStart = now.getTime() - 8 * 60 * 60 * 1000;
+  const windowEnd = now.getTime() + 18 * 60 * 60 * 1000;
+  const targetMatches = INITIAL_MATCHES.filter((match) => {
+    const kickoff = new Date(match.kickoff).getTime();
+    return kickoff >= windowStart && kickoff <= windowEnd;
+  }).slice(0, 12);
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      "http-referer": process.env.NEXT_PUBLIC_SITE_URL || "https://world-cup-2026-wallchart.vercel.app",
+      "x-title": "World Cup 2026 Family Wallchart"
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      max_tokens: 1200,
+      response_format: { type: "json_object" },
+      plugins: [
+        {
+          id: "web",
+          engine: "exa",
+          max_results: 5,
+          include_domains: ["fifa.com", "espn.com", "bbc.com", "foxsports.com", "cbssports.com"]
+        }
+      ],
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a strict sports score extraction service. Use web search if needed. Return only valid JSON. Do not guess. If a score cannot be confirmed, omit that match."
+        },
+        {
+          role: "user",
+          content: `Current time: ${now.toISOString()}.
+Find live or final scores for these FIFA World Cup 2026 wallchart matches only:
+${targetMatches
+  .map((match) => `M${match.matchNumber}: ${match.homeTeamId ?? match.homeSeed?.label} vs ${match.awayTeamId ?? match.awaySeed?.label}, kickoff ${match.kickoff}`)
+  .join("\n")}
+
+Return JSON exactly shaped like:
+{"matches":[{"matchNumber":3,"homeScore":1,"awayScore":0,"status":"live"}]}
+Allowed status values: scheduled, live, final. Only include confirmed live or final scores.`
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter returned ${response.status}.`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") {
+    throw new Error("OpenRouter response did not include text content.");
+  }
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    throw new Error("OpenRouter did not return valid JSON.");
+  }
 }
 
 function matchToRow(match: Match) {
