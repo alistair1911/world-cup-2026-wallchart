@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, LogOut, Trophy, UserRound } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, LogOut, RefreshCw, Trophy, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
@@ -39,8 +39,24 @@ export function WallchartApp() {
   const [comments, setComments] = useState<MatchComment[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
+
+  const refreshTournamentState = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const state = await loadTournamentState();
+      setMatches(state.matches);
+      setPredictions(state.predictions);
+      setComments(state.comments);
+      setError(state.error ?? null);
+      setLastRefreshed(new Date());
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -66,6 +82,7 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setError(state.error ?? null);
+      setLastRefreshed(new Date());
       setLoading(false);
     }
 
@@ -75,6 +92,24 @@ export function WallchartApp() {
       alive = false;
     };
   }, [router]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      refreshTournamentState().catch(() => {
+        setError("Could not refresh live scores.");
+      });
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [refreshTournamentState, session]);
+
+  useEffect(() => {
+    setSelectedMatch((current) => (current ? matches.find((match) => match.id === current.id) ?? current : current));
+  }, [matches]);
 
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
@@ -145,7 +180,7 @@ export function WallchartApp() {
           <div className="min-w-0 lg:min-w-[290px]">
             <WorldCupMark />
           </div>
-          <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[620px]">
+          <div className="grid gap-2 sm:grid-cols-4 lg:min-w-[800px]">
             <div className="interactive-pop rounded-md bg-gradient-to-br from-cup-sky to-white px-3 py-2 ring-1 ring-white">
               <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">
                 <CalendarDays className="h-3 w-3" />
@@ -174,6 +209,28 @@ export function WallchartApp() {
               </div>
               <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Log out">
                 <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="interactive-pop flex items-center justify-between gap-2 rounded-md bg-gradient-to-br from-white to-cup-sky px-3 py-2 ring-1 ring-white">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">
+                  <RefreshCw className="h-3 w-3" />
+                  Scores
+                </div>
+                <div className="truncate text-sm font-black">
+                  {lastRefreshed
+                    ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                    : "Auto refresh"}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => refreshTournamentState().catch(() => setError("Could not refresh live scores."))}
+                disabled={refreshing}
+                aria-label="Refresh scores"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>

@@ -116,6 +116,12 @@ export function getWinnerTeamId(match: Match) {
   return match.penaltyWinnerId ?? null;
 }
 
+const PREDICTION_LOCK_MINUTES = 5;
+
+export function predictionLockTime(match: Match) {
+  return new Date(new Date(match.kickoff).getTime() - PREDICTION_LOCK_MINUTES * 60 * 1000);
+}
+
 export function isPredictionLocked(match: Match, now = new Date()) {
-  return match.status !== "scheduled" || new Date(match.kickoff).getTime() <= now.getTime();
+  return match.status !== "scheduled" || predictionLockTime(match).getTime() <= now.getTime();
 }

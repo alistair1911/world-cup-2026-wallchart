@@ -16,12 +16,12 @@ const match: Match = {
 };
 
 describe("isPredictionLocked", () => {
-  it("allows predictions before kickoff while scheduled", () => {
-    expect(isPredictionLocked(match, new Date("2026-06-11T18:59:00.000Z"))).toBe(false);
+  it("allows predictions more than five minutes before kickoff while scheduled", () => {
+    expect(isPredictionLocked(match, new Date("2026-06-11T18:54:59.000Z"))).toBe(false);
   });
 
-  it("locks predictions at kickoff", () => {
-    expect(isPredictionLocked(match, new Date("2026-06-11T19:00:00.000Z"))).toBe(true);
+  it("locks predictions five minutes before kickoff", () => {
+    expect(isPredictionLocked(match, new Date("2026-06-11T18:55:00.000Z"))).toBe(true);
   });
 
   it("locks predictions when a result has started", () => {

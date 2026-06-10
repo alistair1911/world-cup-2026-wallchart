@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
-import { isPredictionLocked } from "@/lib/standings";
+import { isPredictionLocked, predictionLockTime } from "@/lib/standings";
 import type { FamilySession, GroupLetter, Match, MatchComment, Prediction, StandingRow, Team, UserKey } from "@/lib/types";
 import { clampScore, formatKickoff } from "@/lib/utils";
 import { getVenueInfo } from "@/lib/venues";
@@ -69,6 +69,7 @@ export function MatchDrawer({
 
   const ownPrediction = match ? findPrediction(predictions, session.userKey, match.id) : undefined;
   const locked = match ? isPredictionLocked(match) : true;
+  const lockTime = match ? predictionLockTime(match) : null;
   const isKnockout = match ? match.phase !== "group" : false;
   const resolvedHome = teams.home as Team | null;
   const resolvedAway = teams.away as Team | null;
@@ -297,7 +298,12 @@ export function MatchDrawer({
           </section>
 
           <section className="rounded-lg border border-cup-gold/40 bg-gradient-to-br from-amber-50 to-white p-4">
-            <h3 className="mb-3 text-sm font-black uppercase text-slate-600">{session.displayName} Prediction</h3>
+            <div className="mb-3">
+              <h3 className="text-sm font-black uppercase text-slate-600">{session.displayName} Prediction</h3>
+              {lockTime ? (
+                <p className="mt-1 text-xs font-bold text-slate-500">Locks {formatKickoff(lockTime.toISOString())}</p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-[1fr_72px_72px] items-center gap-2">
               <span className="truncate font-bold">{resolvedHome?.code ?? activeMatch.homeSeed?.label}</span>
               <Input
