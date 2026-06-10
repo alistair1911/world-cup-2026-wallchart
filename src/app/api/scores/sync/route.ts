@@ -8,6 +8,11 @@ export const runtime = "nodejs";
 
 function isAuthorized(request: NextRequest) {
   const secret = process.env.SCORE_SYNC_SECRET || process.env.CRON_SECRET;
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent === "vercel-cron/1.0") {
+    return true;
+  }
+
   if (!secret) {
     return false;
   }

@@ -259,7 +259,30 @@ export function MatchDrawer({
           ) : null}
 
           <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
-            <h3 className="mb-3 text-sm font-black uppercase text-slate-600">Final Score</h3>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black uppercase text-slate-600">Score Sync</h3>
+                <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
+                  Live/final scores update automatically when the sync feed confirms them. Manual entry stays here as a backup.
+                </p>
+              </div>
+              <Badge tone={activeMatch.status === "live" ? "gold" : activeMatch.status === "final" ? "green" : "slate"}>
+                {activeMatch.status}
+              </Badge>
+            </div>
+
+            <div className="mb-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <div className="min-w-0 text-center">
+                <div className="truncate text-sm font-black text-cup-ink">{resolvedHome?.code ?? activeMatch.homeSeed?.label}</div>
+                <div className="mt-1 text-3xl font-black text-cup-ink">{homeValue ?? "-"}</div>
+              </div>
+              <div className="text-xs font-black uppercase text-slate-400">vs</div>
+              <div className="min-w-0 text-center">
+                <div className="truncate text-sm font-black text-cup-ink">{resolvedAway?.code ?? activeMatch.awaySeed?.label}</div>
+                <div className="mt-1 text-3xl font-black text-cup-ink">{awayValue ?? "-"}</div>
+              </div>
+            </div>
+
             <div className="mb-3 flex flex-wrap gap-2">
               {resolvedHome ? (
                 <Link href={`/teams/${resolvedHome.id}`} className="rounded-md bg-white px-2 py-1 text-xs font-black text-cup-ink ring-1 ring-slate-200">
@@ -272,61 +295,65 @@ export function MatchDrawer({
                 </Link>
               ) : null}
             </div>
-            <div className="grid grid-cols-[1fr_72px_72px] items-center gap-2">
-              <span className="truncate font-bold">
-                <span className="mr-2 inline-flex align-middle">
-                  <Flag team={resolvedHome} />
-                </span>
-                {resolvedHome?.name ?? activeMatch.homeSeed?.label}
-              </span>
-              <Input
-                className="score-input text-center text-lg font-black"
-                inputMode="numeric"
-                value={homeScore}
-                onChange={(event) => setHomeScore(event.target.value)}
-              />
-              <span className="text-center text-xs font-black text-slate-400">HOME</span>
-              <span className="truncate font-bold">
-                <span className="mr-2 inline-flex align-middle">
-                  <Flag team={resolvedAway} />
-                </span>
-                {resolvedAway?.name ?? activeMatch.awaySeed?.label}
-              </span>
-              <Input
-                className="score-input text-center text-lg font-black"
-                inputMode="numeric"
-                value={awayScore}
-                onChange={(event) => setAwayScore(event.target.value)}
-              />
-              <span className="text-center text-xs font-black text-slate-400">AWAY</span>
-            </div>
 
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value as Match["status"])}
-                className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-cup-gold"
-              >
-                <option value="scheduled">Scheduled</option>
-                <option value="live">Live</option>
-                <option value="final">Final</option>
-              </select>
-              {canPickWinner && tiedFinal ? (
+            <details className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-3">
+              <summary className="cursor-pointer text-sm font-black text-cup-ink">Manual score override</summary>
+              <div className="mt-3 grid grid-cols-[1fr_72px_72px] items-center gap-2">
+                <span className="truncate font-bold">
+                  <span className="mr-2 inline-flex align-middle">
+                    <Flag team={resolvedHome} />
+                  </span>
+                  {resolvedHome?.name ?? activeMatch.homeSeed?.label}
+                </span>
+                <Input
+                  className="score-input text-center text-lg font-black"
+                  inputMode="numeric"
+                  value={homeScore}
+                  onChange={(event) => setHomeScore(event.target.value)}
+                />
+                <span className="text-center text-xs font-black text-slate-400">HOME</span>
+                <span className="truncate font-bold">
+                  <span className="mr-2 inline-flex align-middle">
+                    <Flag team={resolvedAway} />
+                  </span>
+                  {resolvedAway?.name ?? activeMatch.awaySeed?.label}
+                </span>
+                <Input
+                  className="score-input text-center text-lg font-black"
+                  inputMode="numeric"
+                  value={awayScore}
+                  onChange={(event) => setAwayScore(event.target.value)}
+                />
+                <span className="text-center text-xs font-black text-slate-400">AWAY</span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <select
-                  value={penaltyWinnerId}
-                  onChange={(event) => setPenaltyWinnerId(event.target.value)}
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value as Match["status"])}
                   className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-cup-gold"
                 >
-                  <option value="">Penalty winner</option>
-                  <option value={resolvedHome.id}>{resolvedHome.name}</option>
-                  <option value={resolvedAway.id}>{resolvedAway.name}</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="live">Live</option>
+                  <option value="final">Final</option>
                 </select>
-              ) : null}
-            </div>
-            <Button className="mt-3 w-full" onClick={handleResultSave} disabled={saving}>
-              <Save className="h-4 w-4" />
-              Save Result
-            </Button>
+                {canPickWinner && tiedFinal ? (
+                  <select
+                    value={penaltyWinnerId}
+                    onChange={(event) => setPenaltyWinnerId(event.target.value)}
+                    className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-cup-gold"
+                  >
+                    <option value="">Penalty winner</option>
+                    <option value={resolvedHome.id}>{resolvedHome.name}</option>
+                    <option value={resolvedAway.id}>{resolvedAway.name}</option>
+                  </select>
+                ) : null}
+              </div>
+              <Button className="mt-3 w-full" onClick={handleResultSave} disabled={saving}>
+                <Save className="h-4 w-4" />
+                Save Manual Result
+              </Button>
+            </details>
           </section>
 
           <section className="rounded-lg border border-cup-gold/40 bg-gradient-to-br from-amber-50 to-white p-4">
