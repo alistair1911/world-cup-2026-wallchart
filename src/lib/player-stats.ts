@@ -86,8 +86,8 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
   );
 
   return {
-    topScorers: byGoals.slice(0, 10),
-    topAssists: byAssists.slice(0, 10),
-    topInvolvements: byInvolvements.slice(0, 10)
+    topScorers: byGoals.filter((row) => row.goals > 0).slice(0, 10),
+    topAssists: byAssists.filter((row) => row.assists > 0).slice(0, 10),
+    topInvolvements: byInvolvements.filter((row) => row.involvements > 0).slice(0, 10)
   };
 }
