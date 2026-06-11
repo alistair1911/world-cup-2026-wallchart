@@ -61,5 +61,6 @@ Do not commit real API keys. Add them only in Vercel project environment variabl
 - The 2026 emblem is stored at `public/brand/world-cup-2026-emblem.png`, downloaded from Wikimedia Commons via an image proxy.
 - The Spain spotlight image is stored at `public/players/lamine-yamal.jpg`, downloaded from Wikimedia Commons via an image proxy.
 - Player portraits are stored in `public/players/` when a usable Wikipedia/Wikimedia thumbnail is available. Run `npm run download:player-images` to refresh the generated `src/lib/player-photo-map.ts` map.
+- Federation logos are stored in `public/federations/` when a usable Wikipedia/Wikimedia thumbnail is available. Run `npm run download:federation-logos` to refresh the generated `src/lib/team-logo-map.ts` map.
 - Stadium photos are stored in `public/stadiums/`, sourced from Wikipedia/Wikimedia lead images through the same proxy.
 - Team flags are rendered from FlagCDN at runtime so Windows browsers show real flag images instead of regional-letter emoji.

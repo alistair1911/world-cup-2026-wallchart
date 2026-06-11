@@ -48,7 +48,7 @@ export default async function PlayerProfilePage({ params }: PlayerPageProps) {
 
         <section className="grid overflow-hidden rounded-lg border border-white/80 bg-white/94 shadow-lift lg:grid-cols-[380px_1fr]">
           <div className="bg-gradient-to-br from-cup-ink via-pitch-800 to-cup-red p-5 text-white">
-            <img src={portrait} alt={`${profile.player.name} portrait`} className="h-80 w-full rounded-lg object-cover shadow-lift" />
+            <img src={portrait} alt={`${profile.player.name} portrait`} className="h-80 w-full rounded-lg object-cover object-top shadow-lift" />
             <div className="mt-4 flex items-center gap-2">
               <Flag team={profile.team} />
               <Badge tone="gold">{profile.team.code}</Badge>

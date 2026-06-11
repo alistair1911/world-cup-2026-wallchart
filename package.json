@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "download:player-images": "node scripts/download-player-images.mjs",
+    "download:federation-logos": "node scripts/download-federation-logos.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

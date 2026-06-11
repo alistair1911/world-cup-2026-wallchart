@@ -9,6 +9,45 @@ const photoMapPath = path.join(root, "src", "lib", "player-photo-map.ts");
 const userAgent = "WorldCup2026FamilyWallchart/1.0 (private family project)";
 const requestDelayMs = Number(process.env.PLAYER_IMAGE_DELAY_MS ?? 1300);
 
+const knownPhotoUrls = {
+  "spain-lamine-yamal": "/players/lamine-yamal.jpg"
+};
+
+const wikipediaTitles = {
+  "south-africa-teboho-mokoena": "Teboho Mokoena",
+  "bosnia-herzegovina-edin-dzeko": "Edin Džeko",
+  "bosnia-herzegovina-miralem-pjanic": "Miralem Pjanić",
+  "bosnia-herzegovina-ermedin-demirovic": "Ermedin Demirović",
+  "haiti-frantzdy-pierrot": "Frantzdy Pierrot",
+  "usa-christian-pulisic": "Christian Pulisic",
+  "usa-weston-mckennie": "Weston McKennie",
+  "turkiye-kenan-yildiz": "Kenan Yıldız",
+  "germany-florian-wirtz": "Florian Wirtz",
+  "germany-joshua-kimmich": "Joshua Kimmich",
+  "cote-divoire-simon-adingra": "Simon Adingra",
+  "netherlands-xavi-simons": "Xavi Simons",
+  "japan-takefusa-kubo": "Takefusa Kubo",
+  "sweden-alexander-isak": "Alexander Isak",
+  "sweden-dejan-kulusevski": "Dejan Kulusevski",
+  "new-zealand-marko-stamenic": "Marko Stamenic",
+  "spain-lamine-yamal": "Lamine Yamal",
+  "spain-rodri": "Rodri (footballer, born 1996)",
+  "saudi-arabia-saleh-al-shehri": "Saleh Al-Shehri",
+  "saudi-arabia-mohammed-kanno": "Mohammed Kanno",
+  "uruguay-ronald-araujo": "Ronald Araújo",
+  "france-kylian-mbappe": "Kylian Mbappé",
+  "france-antoine-griezmann": "Antoine Griezmann",
+  "iraq-ali-jasim": "Ali Jasim",
+  "argentina-julian-alvarez": "Julián Álvarez",
+  "argentina-emiliano-martinez": "Emiliano Martínez",
+  "portugal-bernardo-silva": "Bernardo Silva",
+  "uzbekistan-eldor-shomurodov": "Eldor Shomurodov",
+  "uzbekistan-abbosbek-fayzullaev": "Abbosbek Fayzullaev",
+  "ghana-mohammed-kudus": "Mohammed Kudus",
+  "ghana-thomas-partey": "Thomas Partey",
+  "panama-jose-fajardo": "José Fajardo"
+};
+
 function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -76,6 +115,10 @@ async function searchWikipedia(name) {
   }) ?? pages[0];
 }
 
+async function wikipediaSummary(title) {
+  return fetchJson(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+}
+
 function extensionFor(contentType, url) {
   if (contentType?.includes("png")) {
     return "png";
@@ -120,17 +163,21 @@ async function downloadImage(url, id, attempt = 0) {
 }
 
 async function findAndDownload(player) {
+  if (knownPhotoUrls[player.id]) {
+    return knownPhotoUrls[player.id];
+  }
+
   const existing = existingPhotoUrl(player.id);
   if (existing) {
     return existing;
   }
 
-  const page = await searchWikipedia(player.name);
-  if (!page?.title) {
+  const title = wikipediaTitles[player.id] ?? (await searchWikipedia(player.name))?.title;
+  if (!title) {
     return null;
   }
 
-  const summary = await fetchJson(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`);
+  const summary = await wikipediaSummary(title);
   const imageUrl = summary?.thumbnail?.source || summary?.originalimage?.source;
   if (!imageUrl) {
     return null;

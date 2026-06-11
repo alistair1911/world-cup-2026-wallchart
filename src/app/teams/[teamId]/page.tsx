@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
 import { Flag } from "@/components/wallchart/flag";
 import { avatarUrl, getAllTeamProfiles, getTeamProfile } from "@/lib/profile-data";
+import { getTeamLogo } from "@/lib/team-logo-map";
+import type { Team } from "@/lib/types";
 
 type TeamPageProps = {
   params: Promise<{ teamId: string }>;
@@ -29,6 +31,8 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
     notFound();
   }
 
+  const federationLogo = getTeamLogo(profile.team.id);
+
   return (
     <main className="app-shell min-h-screen p-4 lg:p-8">
       <div className="mx-auto max-w-6xl space-y-5">
@@ -39,13 +43,16 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
         <section className="overflow-hidden rounded-lg border border-white/80 bg-white/94 shadow-lift">
           <div className="bg-gradient-to-r from-cup-ink via-pitch-700 to-cup-red p-5 text-white">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="mb-2 flex items-center gap-3">
-                  <Flag team={profile.team} />
-                  <Badge tone="gold">Group {profile.team.group}</Badge>
+              <div className="flex min-w-0 gap-4">
+                <FederationMark team={profile.team} logoUrl={federationLogo} />
+                <div className="min-w-0">
+                  <div className="mb-2 flex items-center gap-3">
+                    <Flag team={profile.team} />
+                    <Badge tone="gold">Group {profile.team.group}</Badge>
+                  </div>
+                  <h1 className="text-4xl font-black">{profile.team.name}</h1>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold text-white/78">{profile.style}</p>
                 </div>
-                <h1 className="text-4xl font-black">{profile.team.name}</h1>
-                <p className="mt-2 max-w-2xl text-sm font-semibold text-white/78">{profile.style}</p>
               </div>
               <div className="rounded-lg bg-white/12 p-4 text-right backdrop-blur">
                 <div className="text-xs font-black uppercase text-white/65">Preferred shape</div>
@@ -57,7 +64,7 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
           <div className="grid gap-5 p-5 lg:grid-cols-[1fr_360px]">
             <div className="space-y-4">
               <Panel className="overflow-hidden">
-                <TeamPhotoBoard profile={profile} />
+                <TeamPhotoBoard profile={profile} federationLogo={federationLogo} />
               </Panel>
 
               <Panel className="p-4">
@@ -72,7 +79,7 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
                       <img
                         src={player.photoUrl ?? avatarUrl(player.name)}
                         alt={`${player.name} portrait`}
-                        className="h-14 w-14 rounded-lg object-cover ring-1 ring-black/10"
+                        className="h-14 w-14 rounded-lg object-cover object-top ring-1 ring-black/10"
                       />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-black text-cup-ink">{player.name}</div>
@@ -98,17 +105,32 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
               </Panel>
             </div>
 
-            <Panel className="overflow-hidden p-4">
-              <h2 className="mb-3 text-sm font-black uppercase text-slate-500">Formation Board</h2>
-              <div className="relative min-h-[560px] overflow-hidden rounded-lg bg-gradient-to-b from-pitch-600 to-pitch-800 p-4 text-white">
-                <div className="absolute inset-x-8 top-1/2 h-px bg-white/35" />
-                <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/35" />
-                <div className="absolute inset-x-0 top-4 text-center text-xs font-black uppercase text-white/60">{profile.formation}</div>
-                {profile.players.map((player, index) => (
-                  <PitchPlayer key={player.id} player={player} index={index} />
-                ))}
-              </div>
-            </Panel>
+            <div className="space-y-4">
+              <Panel className="p-4">
+                <h2 className="mb-3 text-sm font-black uppercase text-slate-500">Federation</h2>
+                <div className="flex items-center gap-4">
+                  <FederationMark team={profile.team} logoUrl={federationLogo} light />
+                  <div className="min-w-0">
+                    <div className="truncate text-lg font-black text-cup-ink">{profile.team.name}</div>
+                    <div className="mt-1 text-xs font-bold uppercase text-slate-500">
+                      {federationLogo ? "National federation crest" : "Federation crest fallback"}
+                    </div>
+                  </div>
+                </div>
+              </Panel>
+
+              <Panel className="overflow-hidden p-4">
+                <h2 className="mb-3 text-sm font-black uppercase text-slate-500">Formation Board</h2>
+                <div className="relative min-h-[560px] overflow-hidden rounded-lg bg-gradient-to-b from-pitch-600 to-pitch-800 p-4 text-white">
+                  <div className="absolute inset-x-8 top-1/2 h-px bg-white/35" />
+                  <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/35" />
+                  <div className="absolute inset-x-0 top-4 text-center text-xs font-black uppercase text-white/60">{profile.formation}</div>
+                  {profile.players.map((player, index) => (
+                    <PitchPlayer key={player.id} player={player} index={index} />
+                  ))}
+                </div>
+              </Panel>
+            </div>
           </div>
         </section>
       </div>
@@ -116,7 +138,7 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
   );
 }
 
-function TeamPhotoBoard({ profile }: { profile: NonNullable<ReturnType<typeof getTeamProfile>> }) {
+function TeamPhotoBoard({ profile, federationLogo }: { profile: NonNullable<ReturnType<typeof getTeamProfile>>; federationLogo?: string }) {
   const featured = profile.players.slice(0, 5);
 
   return (
@@ -130,7 +152,7 @@ function TeamPhotoBoard({ profile }: { profile: NonNullable<ReturnType<typeof ge
             <div className="text-xs font-black uppercase text-white/60">Team picture board</div>
             <div className="text-2xl font-black">{profile.team.name} watchlist</div>
           </div>
-          <Flag team={profile.team} />
+          <FederationMark team={profile.team} logoUrl={federationLogo} compact />
         </div>
         <div className="grid grid-cols-5 items-end gap-2">
           {featured.map((player, index) => (
@@ -138,7 +160,7 @@ function TeamPhotoBoard({ profile }: { profile: NonNullable<ReturnType<typeof ge
               <img
                 src={player.photoUrl ?? avatarUrl(player.name)}
                 alt={`${player.name} portrait`}
-                className="mx-auto h-24 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
+                className="mx-auto h-28 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
               />
               <div className="rounded-b-lg bg-white/92 px-1 py-2 text-cup-ink">
                 <div className="truncate text-[10px] font-black">{player.name}</div>
@@ -152,6 +174,34 @@ function TeamPhotoBoard({ profile }: { profile: NonNullable<ReturnType<typeof ge
           without borrowing unlicensed team photography.
         </p>
       </div>
+    </div>
+  );
+}
+
+function FederationMark({
+  team,
+  logoUrl,
+  compact = false,
+  light = false
+}: {
+  team: Team;
+  logoUrl?: string;
+  compact?: boolean;
+  light?: boolean;
+}) {
+  const size = compact ? "h-12 w-12" : "h-20 w-20";
+  const shell = light ? "bg-slate-50 ring-slate-200" : "bg-white/92 ring-white/35";
+
+  return (
+    <div className={`grid ${size} shrink-0 place-items-center rounded-lg ${shell} p-2 shadow-sm ring-1`}>
+      {logoUrl ? (
+        <img src={logoUrl} alt={`${team.name} federation crest`} className="max-h-full max-w-full object-contain" />
+      ) : (
+        <div className="text-center">
+          <Flag team={team} />
+          <div className={`mt-1 text-[10px] font-black ${light ? "text-cup-ink" : "text-cup-red"}`}>{team.code}</div>
+        </div>
+      )}
     </div>
   );
 }
