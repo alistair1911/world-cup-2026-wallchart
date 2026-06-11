@@ -29,7 +29,6 @@ create table if not exists public.matches (
   away_score integer,
   status text not null default 'scheduled' check (status in ('scheduled', 'live', 'final')),
   penalty_winner_id text,
-  provider_fixture_id text,
   updated_by uuid references auth.users(id),
   updated_at timestamptz not null default now()
 );

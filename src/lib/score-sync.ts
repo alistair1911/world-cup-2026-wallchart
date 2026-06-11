@@ -243,7 +243,6 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       awayScore,
       status: incomingStatus,
       penaltyWinnerId: item.penaltyWinnerTeamId ?? match.penaltyWinnerId ?? null,
-      providerFixtureId: item.providerFixtureId ?? match.providerFixtureId ?? null,
       updatedBy: null,
       updatedAt: now
     };
@@ -252,8 +251,7 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       next.homeScore !== match.homeScore ||
       next.awayScore !== match.awayScore ||
       next.status !== match.status ||
-      next.penaltyWinnerId !== match.penaltyWinnerId ||
-      next.providerFixtureId !== match.providerFixtureId;
+      next.penaltyWinnerId !== match.penaltyWinnerId;
 
     if (!changed) {
       skipped.push({ reason: "No score/status change", item });

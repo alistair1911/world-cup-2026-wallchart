@@ -329,7 +329,6 @@ function matchToRow(match: Match) {
     away_score: match.awayScore,
     status: match.status,
     penalty_winner_id: match.penaltyWinnerId ?? null,
-    provider_fixture_id: match.providerFixtureId ?? null,
     updated_by: null,
     updated_at: match.updatedAt ?? new Date().toISOString()
   };
@@ -390,7 +389,6 @@ async function syncScores(request: NextRequest) {
         awayScore: row.away_score ?? null,
         status: row.status ?? "scheduled",
         penaltyWinnerId: row.penalty_winner_id ?? null,
-        providerFixtureId: row.provider_fixture_id ?? null,
         updatedAt: row.updated_at ?? null
       });
     }
@@ -428,16 +426,22 @@ async function syncScores(request: NextRequest) {
     const playerStats: PlayerMatchStat[] = [];
     const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
     if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
-      const eventTargets = [...updatedMatchesById.values()]
-        .filter((match) => match.providerFixtureId && (force || isActiveSyncWindow(match)) && match.status !== "scheduled")
+      const eventTargets = feedItems
+        .map((item) => ({
+          fixtureId: item.providerFixtureId,
+          match: item.matchId ? updatedMatchesById.get(item.matchId) : null
+        }))
+        .filter((target): target is { fixtureId: string; match: Match } =>
+          Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
+        )
         .slice(0, 6);
 
-      for (const match of eventTargets) {
-        const eventsPayload = await fetchApiFootballFixtureEvents(match.providerFixtureId as string);
+      for (const target of eventTargets) {
+        const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
         if (!eventsPayload) {
           continue;
         }
-        playerStats.push(...parseApiFootballEvents(match, eventsPayload));
+        playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
       }
     }
 

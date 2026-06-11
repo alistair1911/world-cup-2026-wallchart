@@ -57,7 +57,6 @@ export type Match = {
   awayScore: number | null;
   status: MatchStatus;
   penaltyWinnerId?: string | null;
-  providerFixtureId?: string | null;
   updatedBy?: UserKey | null;
   updatedAt?: string | null;
 };

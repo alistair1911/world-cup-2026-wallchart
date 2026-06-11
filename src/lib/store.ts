@@ -33,7 +33,6 @@ type StoredMatchRow = {
   away_score?: number | null;
   status?: MatchStatus;
   penalty_winner_id?: string | null;
-  provider_fixture_id?: string | null;
   updated_at?: string | null;
 };
 
@@ -150,7 +149,6 @@ function rowToMatchOverride(row: StoredMatchRow): Partial<Match> {
     awayScore: row.away_score ?? null,
     status: row.status ?? "scheduled",
     penaltyWinnerId: row.penalty_winner_id ?? null,
-    providerFixtureId: row.provider_fixture_id ?? null,
     updatedAt: row.updated_at ?? null
   };
 }
@@ -171,7 +169,6 @@ function matchToRow(match: Match, session: FamilySession) {
     away_score: match.awayScore,
     status: match.status,
     penalty_winner_id: match.penaltyWinnerId ?? null,
-    provider_fixture_id: match.providerFixtureId ?? null,
     updated_by: session.authUserId ?? null,
     updated_at: new Date().toISOString()
   };
