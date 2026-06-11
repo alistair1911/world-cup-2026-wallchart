@@ -38,7 +38,7 @@ After adding or changing Vercel environment variables, redeploy the latest produ
 - Predictions lock automatically 5 minutes before each kickoff, or immediately when a match is marked live/final.
 - The app refreshes saved scores from Supabase every 60 seconds while Tata or Lucas has the wallchart open.
 - Tata and Lucas can press the top-bar `Sync` button to fetch provider scores immediately.
-- Vercel Cron calls `/api/scores/sync` every 10 minutes. The route accepts Vercel's cron user agent, and `CRON_SECRET` can still be used for manual protected test calls.
+- Vercel Hobby allows daily cron jobs, so Vercel Cron calls `/api/scores/sync` once per day. Tata and Lucas can use the top-bar `Sync` button for live checks during match days.
 - For API-Sports/API-Football v3, set `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`. The default host is `v3.football.api-sports.io`; league `1` and season `2026` are used unless overridden.
 - For OpenRouter, set `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=inclusionai/ring-2.6-1t`. The route asks OpenRouter for confirmed live/final scores for matches near the current time and only accepts valid JSON.
 - For another provider, set `SCORE_FEED_URL` and optionally `SCORE_FEED_TOKEN`. The URL should return `matches`, `fixtures`, or `results` with fields like `matchId` or `matchNumber`, `homeScore`, `awayScore`, and `status`.
