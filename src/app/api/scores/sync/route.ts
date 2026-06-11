@@ -94,7 +94,7 @@ async function fetchScorePayload() {
 }
 
 function isForcedSync(request: NextRequest) {
-  return request.method === "POST" || request.nextUrl.searchParams.get("force") === "1";
+  return request.nextUrl.searchParams.get("force") === "1";
 }
 
 function isActiveSyncWindow(match: Match, now = new Date()) {

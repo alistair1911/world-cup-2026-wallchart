@@ -65,4 +65,4 @@ Do not commit real API keys. Add them only in Vercel project environment variabl
 - Stadium photos are stored in `public/stadiums/`, sourced from Wikipedia/Wikimedia lead images through the same proxy.
 - Team flags are rendered from FlagCDN at runtime so Windows browsers show real flag images instead of regional-letter emoji.
 - Player goals and assists are stored in `public.player_match_stats` and sync from provider fixture events when available. Run the current `supabase/schema.sql` after pulling changes so `matches.provider_fixture_id` and shared player stats exist in Supabase.
-- Vercel Cron calls `/api/scores/sync` every five minutes. The route only calls the football provider when a match is near kickoff, live, or within the post-match confirmation window.
+- Vercel Hobby only supports daily cron jobs, so the server cron calls `/api/scores/sync` once per day. When Tata or Lucas has the app open, the browser also checks every five minutes during the near-kickoff/live/post-match confirmation window.

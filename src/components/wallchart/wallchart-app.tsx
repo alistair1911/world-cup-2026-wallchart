@@ -39,6 +39,15 @@ function groupMatches(matches: Match[], group: GroupLetter) {
   return matches.filter((match) => match.phase === "group" && match.group === group);
 }
 
+function isScoreSyncWindow(match: Match, now = new Date()) {
+  if (match.status === "live") {
+    return true;
+  }
+
+  const elapsed = now.getTime() - new Date(match.kickoff).getTime();
+  return elapsed >= -10 * 60 * 1000 && elapsed <= 220 * 60 * 1000;
+}
+
 export function WallchartApp() {
   const router = useRouter();
   const [session, setSession] = useState<FamilySession | null>(null);
@@ -186,20 +195,51 @@ export function WallchartApp() {
     setComments((current) => [...current, comment]);
   }
 
+  const runScoreSync = useCallback(
+    async (force = true, announce = true) => {
+      const result = await syncLiveScores(force);
+      await refreshTournamentState();
+      const updated = result.updated?.length ?? 0;
+      const statsUpdated = result.playerStatsUpdated ?? 0;
+      if (announce) {
+        const scoreText =
+          updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}` : "Sync checked. No score changes";
+        const statText = statsUpdated > 0 ? ` and ${statsUpdated} player stat row${statsUpdated === 1 ? "" : "s"}` : "";
+        setSyncMessage(`${scoreText}${statText}.`);
+      }
+    },
+    [refreshTournamentState]
+  );
+
   async function handleSyncScores() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const result = await syncLiveScores();
-      await refreshTournamentState();
-      const updated = result.updated?.length ?? 0;
-      setSyncMessage(updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}.` : "Sync checked. No live/final scores yet.");
+      await runScoreSync(true, true);
     } catch (error) {
       setSyncMessage(error instanceof Error ? error.message : "Could not sync live scores.");
     } finally {
       setSyncing(false);
     }
   }
+
+  useEffect(() => {
+    if (!session || matches.length === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      if (syncing || !matches.some((match) => isScoreSyncWindow(match))) {
+        return;
+      }
+
+      runScoreSync(false, false).catch(() => {
+        setError("Automatic score sync could not finish.");
+      });
+    }, 5 * 60 * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [matches, runScoreSync, session, syncing]);
 
   if (loading || !session) {
     return (

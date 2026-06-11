@@ -85,6 +85,7 @@ export type ScoreSyncSummary = {
   provider?: string;
   received?: number;
   updated?: Array<{ id: string; matchNumber: number; score: string; status: string }>;
+  playerStatsUpdated?: number;
   error?: string;
 };
 
@@ -541,9 +542,9 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
   }
 }
 
-export async function syncLiveScores(): Promise<ScoreSyncSummary> {
+export async function syncLiveScores(force = true): Promise<ScoreSyncSummary> {
   const token = await getCurrentAccessToken();
-  const response = await fetch("/api/scores/sync", {
+  const response = await fetch(`/api/scores/sync${force ? "?force=1" : ""}`, {
     method: "POST",
     headers: token ? { authorization: `Bearer ${token}` } : undefined
   });
