@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/scores/sync",
-      "schedule": "0 12 * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }

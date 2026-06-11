@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, MessageCircle, Minus, Plus, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
+import { Check, MessageCircle, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
-import { avatarUrl, getTeamProfile, type PlayerProfile } from "@/lib/profile-data";
+import { getTeamProfile } from "@/lib/profile-data";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
 import { isPredictionLocked, predictionLockTime } from "@/lib/standings";
@@ -16,7 +16,6 @@ import type {
   GroupLetter,
   Match,
   MatchComment,
-  PlayerMatchStat,
   Prediction,
   StandingRow,
   Team,
@@ -32,23 +31,11 @@ type MatchDrawerProps = {
   standings: Record<GroupLetter, StandingRow[]>;
   predictions: Prediction[];
   comments: MatchComment[];
-  playerStats: PlayerMatchStat[];
   session: FamilySession;
   onClose: () => void;
   onSaveResult: (match: Match) => Promise<void>;
   onSavePrediction: (prediction: Prediction) => Promise<void>;
   onSaveComment: (matchId: string, body: string) => Promise<void>;
-  onSavePlayerStats: (matchId: string, stats: PlayerMatchStat[]) => Promise<void>;
-};
-
-type PlayerStatDraft = {
-  goals: string;
-  assists: string;
-};
-
-type StatPlayer = {
-  player: PlayerProfile;
-  team: Team;
 };
 
 function scoreToText(value: number | null) {
@@ -68,23 +55,16 @@ function predictionTone(status: string) {
   return "red";
 }
 
-function statValue(value?: string) {
-  const parsed = clampScore(value ?? "");
-  return parsed ?? 0;
-}
-
 export function MatchDrawer({
   match,
   standings,
   predictions,
   comments,
-  playerStats,
   session,
   onClose,
   onSaveResult,
   onSavePrediction,
-  onSaveComment,
-  onSavePlayerStats
+  onSaveComment
 }: MatchDrawerProps) {
   const teams = useMemo(() => (match ? getMatchTeams(match, standings) : { home: null, away: null }), [match, standings]);
   const [homeScore, setHomeScore] = useState("");
@@ -95,7 +75,6 @@ export function MatchDrawer({
   const [predictionAway, setPredictionAway] = useState("");
   const [predictionWinnerId, setPredictionWinnerId] = useState("");
   const [commentBody, setCommentBody] = useState("");
-  const [statDrafts, setStatDrafts] = useState<Record<string, PlayerStatDraft>>({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -109,14 +88,6 @@ export function MatchDrawer({
   const hasSpain = resolvedHome?.id === "spain" || resolvedAway?.id === "spain";
   const spainProfile = hasSpain ? getTeamProfile("spain") : null;
   const yamal = spainProfile?.players.find((player) => player.name === "Lamine Yamal");
-  const statPlayers = useMemo<StatPlayer[]>(() => {
-    const profiles = [resolvedHome?.id, resolvedAway?.id]
-      .filter((teamId): teamId is string => Boolean(teamId))
-      .map((teamId) => getTeamProfile(teamId))
-      .filter((profile): profile is NonNullable<ReturnType<typeof getTeamProfile>> => Boolean(profile));
-
-    return profiles.flatMap((profile) => profile.players.map((player) => ({ player, team: profile.team })));
-  }, [resolvedHome?.id, resolvedAway?.id]);
   const quickComments = useMemo(
     () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
     [match, resolvedHome, resolvedAway]
@@ -134,23 +105,9 @@ export function MatchDrawer({
     setPredictionHome(scoreToText(ownPrediction?.homeScore ?? null));
     setPredictionAway(scoreToText(ownPrediction?.awayScore ?? null));
     setPredictionWinnerId(ownPrediction?.predictedWinnerTeamId ?? "");
-    setStatDrafts(
-      Object.fromEntries(
-        statPlayers.map(({ player }) => {
-          const row = playerStats.find((stat) => stat.playerId === player.id);
-          return [
-            player.id,
-            {
-              goals: row?.goals ? String(row.goals) : "",
-              assists: row?.assists ? String(row.assists) : ""
-            }
-          ];
-        })
-      )
-    );
     setCommentBody("");
     setMessage(null);
-  }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId, playerStats, statPlayers]);
+  }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId]);
 
   if (!match) {
     return null;
@@ -163,52 +120,6 @@ export function MatchDrawer({
   const predictionAwayValue = clampScore(predictionAway);
   const tiedFinal = status === "final" && homeValue !== null && awayValue !== null && homeValue === awayValue;
   const canPickWinner = isKnockout && resolvedHome && resolvedAway;
-  const homeStatGoals = statPlayers
-    .filter(({ team }) => team.id === resolvedHome?.id)
-    .reduce((total, { player }) => total + statValue(statDrafts[player.id]?.goals), 0);
-  const awayStatGoals = statPlayers
-    .filter(({ team }) => team.id === resolvedAway?.id)
-    .reduce((total, { player }) => total + statValue(statDrafts[player.id]?.goals), 0);
-
-  function setPlayerStat(playerId: string, field: keyof PlayerStatDraft, nextValue: string) {
-    const parsed = clampScore(nextValue);
-    setStatDrafts((current) => ({
-      ...current,
-      [playerId]: {
-        goals: current[playerId]?.goals ?? "",
-        assists: current[playerId]?.assists ?? "",
-        [field]: parsed === null ? "" : String(Math.min(20, parsed))
-      }
-    }));
-  }
-
-  function stepPlayerStat(playerId: string, field: keyof PlayerStatDraft, delta: number) {
-    setStatDrafts((current) => {
-      const value = statValue(current[playerId]?.[field]);
-      const nextValue = Math.max(0, Math.min(20, value + delta));
-      return {
-        ...current,
-        [playerId]: {
-          goals: current[playerId]?.goals ?? "",
-          assists: current[playerId]?.assists ?? "",
-          [field]: nextValue === 0 ? "" : String(nextValue)
-        }
-      };
-    });
-  }
-
-  function collectPlayerStats() {
-    return statPlayers.map(({ player, team }) => ({
-      matchId: activeMatch.id,
-      playerId: player.id,
-      playerName: player.name,
-      teamId: team.id,
-      goals: statValue(statDrafts[player.id]?.goals),
-      assists: statValue(statDrafts[player.id]?.assists),
-      updatedBy: session.userKey,
-      updatedAt: new Date().toISOString()
-    }));
-  }
 
   async function handleResultSave() {
     setSaving(true);
@@ -227,10 +138,7 @@ export function MatchDrawer({
       };
 
       await onSaveResult(updatedMatch);
-      if (status === "final" && statPlayers.length > 0) {
-        await onSavePlayerStats(activeMatch.id, collectPlayerStats());
-      }
-      setMessage(status === "final" ? "Final result and player stats saved." : "Result saved.");
+      setMessage("Result saved. Player stats sync automatically from the score provider.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save result.");
     } finally {
@@ -272,24 +180,6 @@ export function MatchDrawer({
       setMessage("Comment added.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save comment.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handlePlayerStatsSave() {
-    if (status !== "final" && activeMatch.status !== "final") {
-      setMessage("Mark the match final before saving player stats.");
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-    try {
-      await onSavePlayerStats(activeMatch.id, collectPlayerStats());
-      setMessage("Player stats saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save player stats.");
     } finally {
       setSaving(false);
     }
@@ -461,88 +351,15 @@ export function MatchDrawer({
           </section>
 
           <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-cup-sky p-4">
-            <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
                 <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                  Goals and assists count on the leaderboard once this match is final.
+                  Goals and assists sync automatically from fixture events after the score provider confirms the match.
                 </p>
               </div>
-              <Badge tone={status === "final" || activeMatch.status === "final" ? "green" : "slate"}>
-                {status === "final" || activeMatch.status === "final" ? "Counts" : "Draft"}
-              </Badge>
+              <Badge tone="slate">Auto</Badge>
             </div>
-
-            {statPlayers.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 bg-white/75 p-3 text-sm font-bold text-slate-500">
-                Player stats appear once both teams are known.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid gap-2 rounded-lg bg-white/80 p-3 text-xs font-black text-slate-500 ring-1 ring-slate-200 sm:grid-cols-2">
-                  <div>
-                    {resolvedHome?.code ?? "HOME"} goals entered: {homeStatGoals}
-                    {homeValue !== null ? ` / ${homeValue}` : ""}
-                  </div>
-                  <div>
-                    {resolvedAway?.code ?? "AWAY"} goals entered: {awayStatGoals}
-                    {awayValue !== null ? ` / ${awayValue}` : ""}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {statPlayers.map(({ player, team }) => (
-                    <div key={player.id} className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
-                      <div className="mb-3 flex items-center gap-3">
-                        <img
-                          src={player.photoUrl ?? avatarUrl(player.name)}
-                          alt={`${player.name} portrait`}
-                          className="h-10 w-10 rounded-full object-cover object-top ring-1 ring-black/10"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-black text-cup-ink">{player.name}</div>
-                          <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500">
-                            <Flag team={team} />
-                            <span>{team.code}</span>
-                            <span>- {player.position}</span>
-                          </div>
-                        </div>
-                        <Link
-                          href={`/players/${player.id}`}
-                          className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-cup-ink hover:bg-cup-gold"
-                        >
-                          Profile
-                        </Link>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <StatStepper
-                          label="Goals"
-                          value={statDrafts[player.id]?.goals ?? ""}
-                          onChange={(value) => setPlayerStat(player.id, "goals", value)}
-                          onStep={(delta) => stepPlayerStat(player.id, "goals", delta)}
-                        />
-                        <StatStepper
-                          label="Assists"
-                          value={statDrafts[player.id]?.assists ?? ""}
-                          onChange={(value) => setPlayerStat(player.id, "assists", value)}
-                          onStep={(delta) => stepPlayerStat(player.id, "assists", delta)}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <Button
-                  className="w-full"
-                  variant="secondary"
-                  onClick={handlePlayerStatsSave}
-                  disabled={saving || (status !== "final" && activeMatch.status !== "final")}
-                >
-                  <Save className="h-4 w-4" />
-                  Save Player Stats
-                </Button>
-              </div>
-            )}
           </section>
 
           <section className="rounded-lg border border-cup-gold/40 bg-gradient-to-br from-amber-50 to-white p-4">
@@ -729,48 +546,6 @@ function ScoreRow({ team, fallback, score }: { team: Team | null; fallback?: str
       )}
       <div className="grid h-12 w-14 place-items-center rounded-md bg-cup-ink text-3xl font-black text-cup-gold shadow-sm">
         {score ?? "-"}
-      </div>
-    </div>
-  );
-}
-
-function StatStepper({
-  label,
-  value,
-  onChange,
-  onStep
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onStep: (delta: number) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-1 text-[10px] font-black uppercase text-slate-500">{label}</div>
-      <div className="grid grid-cols-[32px_1fr_32px] overflow-hidden rounded-md ring-1 ring-slate-200">
-        <button
-          type="button"
-          onClick={() => onStep(-1)}
-          className="grid h-9 place-items-center bg-slate-50 text-cup-ink hover:bg-slate-100"
-          aria-label={`Decrease ${label.toLowerCase()}`}
-        >
-          <Minus className="h-4 w-4" />
-        </button>
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          inputMode="numeric"
-          className="score-input h-9 min-w-0 border-x border-slate-200 bg-white text-center text-sm font-black text-cup-ink outline-none focus:bg-amber-50"
-        />
-        <button
-          type="button"
-          onClick={() => onStep(1)}
-          className="grid h-9 place-items-center bg-slate-50 text-cup-ink hover:bg-cup-gold"
-          aria-label={`Increase ${label.toLowerCase()}`}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
       </div>
     </div>
   );

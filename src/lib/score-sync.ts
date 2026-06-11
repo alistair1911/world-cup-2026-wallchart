@@ -4,6 +4,7 @@ import type { Match, MatchStatus, Team } from "./types";
 export type ScoreFeedItem = {
   matchId?: string;
   matchNumber?: number;
+  providerFixtureId?: string;
   homeTeamName?: string;
   awayTeamName?: string;
   kickoff?: string;
@@ -39,7 +40,7 @@ function normalizeName(value: string) {
     .trim();
 }
 
-function teamMatchesName(team: Team, feedName: string) {
+export function teamMatchesName(team: Team, feedName: string) {
   const normalized = normalizeName(feedName);
   const names = [team.name, team.code, ...(TEAM_ALIASES[team.id] ?? [])].map(normalizeName);
   return names.includes(normalized);
@@ -96,6 +97,7 @@ function readGenericItem(item: Record<string, unknown>): ScoreFeedItem {
 
   return {
     matchId: typeof item.matchId === "string" ? item.matchId : typeof item.id === "string" ? item.id : undefined,
+    providerFixtureId: typeof item.providerFixtureId === "string" ? item.providerFixtureId : undefined,
     matchNumber:
       toNumber(item.matchNumber) ?? toNumber(item.match_number) ?? toNumber(item.number) ?? toNumber(item.matchNo) ?? undefined,
     homeTeamName: typeof item.homeTeamName === "string" ? item.homeTeamName : undefined,
@@ -152,6 +154,7 @@ function readApiFootballItem(item: Record<string, unknown>, matches: Match[]): S
 
   return {
     matchId: matched?.id,
+    providerFixtureId: typeof fixture?.id === "number" || typeof fixture?.id === "string" ? String(fixture.id) : undefined,
     homeTeamName: homeName,
     awayTeamName: awayName,
     kickoff,
@@ -240,6 +243,7 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       awayScore,
       status: incomingStatus,
       penaltyWinnerId: item.penaltyWinnerTeamId ?? match.penaltyWinnerId ?? null,
+      providerFixtureId: item.providerFixtureId ?? match.providerFixtureId ?? null,
       updatedBy: null,
       updatedAt: now
     };
@@ -248,7 +252,8 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       next.homeScore !== match.homeScore ||
       next.awayScore !== match.awayScore ||
       next.status !== match.status ||
-      next.penaltyWinnerId !== match.penaltyWinnerId;
+      next.penaltyWinnerId !== match.penaltyWinnerId ||
+      next.providerFixtureId !== match.providerFixtureId;
 
     if (!changed) {
       skipped.push({ reason: "No score/status change", item });

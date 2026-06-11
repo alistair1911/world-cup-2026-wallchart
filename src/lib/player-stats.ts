@@ -1,4 +1,5 @@
 import { getAllPlayerProfiles } from "./profile-data";
+import { getTeam } from "./tournament-data";
 import type { Match, PlayerMatchStat, Team } from "./types";
 
 export type PlayerStatLeader = {
@@ -33,7 +34,8 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
     }
 
     const profile = profileMap.get(stat.playerId);
-    if (!profile) {
+    const team = profile?.team ?? getTeam(stat.teamId);
+    if (!team) {
       continue;
     }
 
@@ -41,10 +43,10 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
       totals.get(stat.playerId) ??
       {
         playerId: stat.playerId,
-        playerName: profile.player.name,
-        team: profile.team,
-        photoUrl: profile.player.photoUrl,
-        position: profile.player.position,
+        playerName: profile?.player.name ?? stat.playerName,
+        team,
+        photoUrl: profile?.player.photoUrl,
+        position: profile?.player.position ?? "Player",
         goals: 0,
         assists: 0,
         involvements: 0,

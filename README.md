@@ -64,4 +64,5 @@ Do not commit real API keys. Add them only in Vercel project environment variabl
 - Federation logos are stored in `public/federations/` when a usable Wikipedia/Wikimedia thumbnail is available. Run `npm run download:federation-logos` to refresh the generated `src/lib/team-logo-map.ts` map.
 - Stadium photos are stored in `public/stadiums/`, sourced from Wikipedia/Wikimedia lead images through the same proxy.
 - Team flags are rendered from FlagCDN at runtime so Windows browsers show real flag images instead of regional-letter emoji.
-- Player goals and assists are stored in `public.player_match_stats`; run the current `supabase/schema.sql` after pulling changes before saving shared player-stat rows.
+- Player goals and assists are stored in `public.player_match_stats` and sync from provider fixture events when available. Run the current `supabase/schema.sql` after pulling changes so `matches.provider_fixture_id` and shared player stats exist in Supabase.
+- Vercel Cron calls `/api/scores/sync` every five minutes. The route only calls the football provider when a match is near kickoff, live, or within the post-match confirmation window.

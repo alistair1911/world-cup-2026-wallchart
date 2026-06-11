@@ -15,7 +15,6 @@ import {
   migrateLocalFamilyData,
   saveComment,
   saveMatchResult,
-  savePlayerStats,
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
@@ -185,18 +184,6 @@ export function WallchartApp() {
 
     const comment = await saveComment(session, matchId, body);
     setComments((current) => [...current, comment]);
-  }
-
-  async function handleSavePlayerStats(matchId: string, stats: PlayerMatchStat[]) {
-    if (!session) {
-      return;
-    }
-
-    await savePlayerStats(session, matchId, stats);
-    setPlayerStats((current) => [
-      ...current.filter((item) => item.matchId !== matchId || !stats.some((stat) => stat.playerId === item.playerId)),
-      ...stats
-    ]);
   }
 
   async function handleSyncScores() {
@@ -397,13 +384,11 @@ export function WallchartApp() {
         standings={standings}
         predictions={predictions}
         comments={selectedMatch ? comments.filter((comment) => comment.matchId === selectedMatch.id) : []}
-        playerStats={selectedMatch ? playerStats.filter((stat) => stat.matchId === selectedMatch.id) : []}
         session={session}
         onClose={() => setSelectedMatch(null)}
         onSaveResult={handleSaveResult}
         onSavePrediction={handleSavePrediction}
         onSaveComment={handleSaveComment}
-        onSavePlayerStats={handleSavePlayerStats}
       />
     </main>
   );

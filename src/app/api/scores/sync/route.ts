@@ -1,8 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { buildScoreUpdates, normalizeScorePayload } from "@/lib/score-sync";
-import { INITIAL_MATCHES } from "@/lib/tournament-data";
-import type { Match } from "@/lib/types";
+import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
+import { playerId } from "@/lib/profile-data";
+import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
+import type { Match, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -87,6 +88,151 @@ async function fetchScorePayload() {
   const response = await fetch(feedUrl, { headers, next: { revalidate: 0 } });
   if (!response.ok) {
     throw new Error(`Score feed returned ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+function isForcedSync(request: NextRequest) {
+  return request.method === "POST" || request.nextUrl.searchParams.get("force") === "1";
+}
+
+function isActiveSyncWindow(match: Match, now = new Date()) {
+  if (match.status === "live") {
+    return true;
+  }
+
+  const kickoff = new Date(match.kickoff).getTime();
+  const elapsed = now.getTime() - kickoff;
+  return elapsed >= -10 * 60 * 1000 && elapsed <= 220 * 60 * 1000;
+}
+
+function clampStat(value: number) {
+  return Math.max(0, Math.min(20, Math.trunc(value)));
+}
+
+function eventTeamForMatch(match: Match, feedTeamName: string) {
+  const home = getTeam(match.homeTeamId);
+  const away = getTeam(match.awayTeamId);
+  if (home && teamMatchesName(home, feedTeamName)) {
+    return home;
+  }
+  if (away && teamMatchesName(away, feedTeamName)) {
+    return away;
+  }
+  return null;
+}
+
+function readEventObject(value: unknown) {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function readName(value: unknown) {
+  const record = readEventObject(value);
+  return typeof record?.name === "string" ? record.name : null;
+}
+
+function normalizeEventPlayerName(value: string) {
+  return value
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function statKey(matchId: string, playerIdValue: string) {
+  return `${matchId}:${playerIdValue}`;
+}
+
+function addStat(
+  totals: Map<string, PlayerMatchStat>,
+  match: Match,
+  team: Team,
+  rawName: string,
+  field: "goals" | "assists"
+) {
+  const playerName = normalizeEventPlayerName(rawName);
+  if (!playerName) {
+    return;
+  }
+
+  const id = playerId(team.id, playerName);
+  const key = statKey(match.id, id);
+  const existing =
+    totals.get(key) ??
+    ({
+      matchId: match.id,
+      playerId: id,
+      playerName,
+      teamId: team.id,
+      goals: 0,
+      assists: 0,
+      updatedBy: null,
+      updatedAt: new Date().toISOString()
+    } satisfies PlayerMatchStat);
+
+  existing[field] += 1;
+  totals.set(key, existing);
+}
+
+function parseApiFootballEvents(match: Match, payload: unknown) {
+  const items = payload && typeof payload === "object" && Array.isArray((payload as Record<string, unknown>).response)
+    ? ((payload as Record<string, unknown>).response as unknown[])
+    : [];
+  const totals = new Map<string, PlayerMatchStat>();
+
+  for (const item of items) {
+    const event = readEventObject(item);
+    if (!event) {
+      continue;
+    }
+
+    const type = typeof event.type === "string" ? event.type.toLowerCase() : "";
+    const detail = typeof event.detail === "string" ? event.detail.toLowerCase() : "";
+    if (type !== "goal" || detail.includes("own goal")) {
+      continue;
+    }
+
+    const teamName = readName(event.team);
+    const scorerName = readName(event.player);
+    const assistName = readName(event.assist);
+    if (!teamName || !scorerName) {
+      continue;
+    }
+
+    const team = eventTeamForMatch(match, teamName);
+    if (!team) {
+      continue;
+    }
+
+    addStat(totals, match, team, scorerName, "goals");
+    if (assistName && assistName.toLowerCase() !== "null") {
+      addStat(totals, match, team, assistName, "assists");
+    }
+  }
+
+  return [...totals.values()].map((stat) => ({
+    ...stat,
+    goals: clampStat(stat.goals),
+    assists: clampStat(stat.assists)
+  }));
+}
+
+async function fetchApiFootballFixtureEvents(fixtureId: string) {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) {
+    return null;
+  }
+
+  const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
+  const response = await fetch(`https://${host}/fixtures/events?fixture=${encodeURIComponent(fixtureId)}`, {
+    headers: {
+      "x-apisports-key": key
+    },
+    next: { revalidate: 0 }
+  });
+
+  if (!response.ok) {
+    throw new Error(`API-Football fixture events returned ${response.status}.`);
   }
 
   return response.json();
@@ -183,8 +329,22 @@ function matchToRow(match: Match) {
     away_score: match.awayScore,
     status: match.status,
     penalty_winner_id: match.penaltyWinnerId ?? null,
+    provider_fixture_id: match.providerFixtureId ?? null,
     updated_by: null,
     updated_at: match.updatedAt ?? new Date().toISOString()
+  };
+}
+
+function playerStatToRow(stat: PlayerMatchStat) {
+  return {
+    match_id: stat.matchId,
+    player_id: stat.playerId,
+    player_name: stat.playerName,
+    team_id: stat.teamId,
+    goals: stat.goals,
+    assists: stat.assists,
+    updated_by: null,
+    updated_at: stat.updatedAt ?? new Date().toISOString()
   };
 }
 
@@ -230,16 +390,61 @@ async function syncScores(request: NextRequest) {
         awayScore: row.away_score ?? null,
         status: row.status ?? "scheduled",
         penaltyWinnerId: row.penalty_winner_id ?? null,
+        providerFixtureId: row.provider_fixture_id ?? null,
         updatedAt: row.updated_at ?? null
       });
     }
 
+    const matchesSnapshot = [...currentMatches.values()];
+    const force = isForcedSync(request);
+    const activeMatches = matchesSnapshot.filter((match) => isActiveSyncWindow(match));
+    if (!force && activeMatches.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        provider: process.env.SCORE_PROVIDER || "generic",
+        received: 0,
+        updated: [],
+        playerStatsUpdated: 0,
+        skipped: [{ reason: "No matches are in the automatic sync window." }]
+      });
+    }
+
     const payload = await fetchScorePayload();
-    const feedItems = normalizeScorePayload(payload, [...currentMatches.values()]);
-    const result = buildScoreUpdates([...currentMatches.values()], feedItems);
+    const feedItems = normalizeScorePayload(payload, matchesSnapshot);
+    const result = buildScoreUpdates(matchesSnapshot, feedItems);
 
     if (result.updates.length > 0) {
       const { error } = await supabase.from("matches").upsert(result.updates.map(matchToRow), { onConflict: "id" });
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
+    const updatedMatchesById = new Map(matchesSnapshot.map((match) => [match.id, match]));
+    for (const update of result.updates) {
+      updatedMatchesById.set(update.id, update);
+    }
+
+    const playerStats: PlayerMatchStat[] = [];
+    const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
+    if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
+      const eventTargets = [...updatedMatchesById.values()]
+        .filter((match) => match.providerFixtureId && (force || isActiveSyncWindow(match)) && match.status !== "scheduled")
+        .slice(0, 6);
+
+      for (const match of eventTargets) {
+        const eventsPayload = await fetchApiFootballFixtureEvents(match.providerFixtureId as string);
+        if (!eventsPayload) {
+          continue;
+        }
+        playerStats.push(...parseApiFootballEvents(match, eventsPayload));
+      }
+    }
+
+    if (playerStats.length > 0) {
+      const { error } = await supabase
+        .from("player_match_stats")
+        .upsert(playerStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
       if (error) {
         throw new Error(error.message);
       }
@@ -249,6 +454,7 @@ async function syncScores(request: NextRequest) {
       ok: true,
       provider: process.env.SCORE_PROVIDER || "generic",
       received: feedItems.length,
+      playerStatsUpdated: playerStats.length,
       updated: result.updates.map((match) => ({
         id: match.id,
         matchNumber: match.matchNumber,
