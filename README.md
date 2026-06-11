@@ -35,6 +35,8 @@ After adding or changing Vercel environment variables, redeploy the latest produ
 
 If Tata cannot see Lucas predictions or comments, confirm production has `SUPABASE_SERVICE_ROLE_KEY` set and ask Lucas to log out/in once. The app uses that key server-side to attach Lucas's saved rows to the shared `profiles` identity.
 
+If saving says `permission denied for table profiles`, run `supabase/schema.sql` again in the Supabase SQL editor. The current schema includes the table grants and profile insert policy needed by shared mode.
+
 ## Automatic Scores
 
 - Predictions lock automatically 5 minutes before each kickoff, or immediately when a match is marked live/final.

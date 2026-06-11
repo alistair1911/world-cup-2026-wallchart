@@ -171,6 +171,15 @@ export async function ensureProfile(session: FamilySession) {
   }
 }
 
+export async function ensureProfileBestEffort(session: FamilySession) {
+  try {
+    await ensureProfile(session);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Could not prepare shared profile.";
+  }
+}
+
 export async function migrateLocalFamilyData(session: FamilySession): Promise<LocalMigrationSummary> {
   const supabase = getSupabaseClient();
   if (!supabase || !session.authUserId) {
@@ -186,7 +195,7 @@ export async function migrateLocalFamilyData(session: FamilySession): Promise<Lo
     return { predictions: 0, comments: 0 };
   }
 
-  await ensureProfile(session);
+  await ensureProfileBestEffort(session);
 
   if (localPredictions.length > 0) {
     const { error } = await supabase.from("predictions").upsert(
@@ -328,7 +337,7 @@ export async function saveMatchResult(session: FamilySession, match: Match) {
     return;
   }
 
-  await ensureProfile(session);
+  await ensureProfileBestEffort(session);
 
   const { error } = await supabase.from("matches").upsert(matchToRow(match, session), { onConflict: "id" });
   if (error) {
@@ -352,7 +361,7 @@ export async function savePrediction(session: FamilySession, prediction: Predict
     throw new Error("Missing Supabase user.");
   }
 
-  await ensureProfile(session);
+  await ensureProfileBestEffort(session);
 
   const { error } = await supabase.from("predictions").upsert(
     {
@@ -401,7 +410,7 @@ export async function saveComment(session: FamilySession, matchId: string, body:
     throw new Error("Missing Supabase user.");
   }
 
-  await ensureProfile(session);
+  await ensureProfileBestEffort(session);
 
   const { data, error } = await supabase
     .from("comments")

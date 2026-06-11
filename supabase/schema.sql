@@ -62,6 +62,12 @@ alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
 alter table public.comments enable row level security;
 
+grant usage on schema public to anon, authenticated, service_role;
+grant all privileges on all tables in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments to authenticated;
+grant insert, update on public.profiles, public.matches, public.predictions, public.comments to authenticated;
+
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 create policy "Authenticated users can read profiles"
   on public.profiles for select
