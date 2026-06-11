@@ -75,7 +75,9 @@ export function LoginForm() {
         </form>
 
         {!isSupabaseMode() ? (
-          <div className="mt-4 rounded-md bg-cup-sky p-3 text-center text-xs font-bold text-cup-ink">Local demo mode</div>
+          <div className="mt-4 rounded-md bg-amber-100 p-3 text-center text-xs font-black text-amber-900 ring-1 ring-amber-300">
+            Local demo mode: predictions and comments stay on this device until Supabase env vars are added.
+          </div>
         ) : null}
         {error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
       </Panel>

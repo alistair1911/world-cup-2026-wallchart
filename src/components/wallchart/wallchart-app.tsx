@@ -5,7 +5,7 @@ import { CalendarDays, LogOut, RefreshCw, Trophy, UserRound } from "lucide-react
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
-import { getCurrentSession, signOutFamily } from "@/lib/auth";
+import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
@@ -260,6 +260,12 @@ export function WallchartApp() {
             </div>
           </div>
         </div>
+        {!isSupabaseMode() ? (
+          <div className="mt-3 rounded-md bg-amber-100 p-2 text-sm font-black text-amber-900 ring-1 ring-amber-300">
+            Local demo mode: comments and predictions are only saved in this browser. Add Supabase env vars in Vercel for Tata
+            and Lucas to share the same data.
+          </div>
+        ) : null}
         {error ? <div className="mt-3 rounded-md bg-red-50 p-2 text-sm font-bold text-red-700">{error}</div> : null}
       </header>
 
