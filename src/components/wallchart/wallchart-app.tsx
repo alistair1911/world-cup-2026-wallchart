@@ -9,7 +9,7 @@ import { getCurrentSession, signOutFamily } from "@/lib/auth";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
-import { loadTournamentState, saveComment, saveMatchResult, savePrediction, syncLiveScores } from "@/lib/store";
+import { ensureProfile, loadTournamentState, saveComment, saveMatchResult, savePrediction, syncLiveScores } from "@/lib/store";
 import type { FamilySession, GroupLetter, Match, MatchComment, Prediction } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
@@ -75,6 +75,13 @@ export function WallchartApp() {
       }
 
       setSession(current);
+      let profileError: string | null = null;
+      try {
+        await ensureProfile(current);
+      } catch (error) {
+        profileError = error instanceof Error ? error.message : "Could not prepare shared profile.";
+      }
+
       const state = await loadTournamentState();
       if (!alive) {
         return;
@@ -83,7 +90,7 @@ export function WallchartApp() {
       setMatches(state.matches);
       setPredictions(state.predictions);
       setComments(state.comments);
-      setError(state.error ?? null);
+      setError(profileError || state.error || null);
       setLastRefreshed(new Date());
       setLoading(false);
     }

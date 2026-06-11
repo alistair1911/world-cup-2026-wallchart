@@ -68,6 +68,12 @@ create policy "Authenticated users can read profiles"
   to authenticated
   using (true);
 
+drop policy if exists "Users can create their own profile" on public.profiles;
+create policy "Users can create their own profile"
+  on public.profiles for insert
+  to authenticated
+  with check (id = auth.uid());
+
 drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
   on public.profiles for update

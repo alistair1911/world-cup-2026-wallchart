@@ -16,7 +16,7 @@ If Supabase env vars are empty, the app runs in local demo mode with the passcod
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
 3. Create two Supabase Auth users using the emails in `.env.example`.
-4. Insert their profile rows in `profiles` with user keys `tata` and `lucas`.
+4. Insert their profile rows in `profiles` with user keys `tata` and `lucas`, or let the app create/repair them on first login.
 5. Add these Vercel environment variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -32,6 +32,8 @@ If Supabase env vars are empty, the app runs in local demo mode with the passcod
 The app stores the official tournament wallchart seed in code and writes score/prediction changes to Supabase. This keeps first setup small while still making Tata and Lucas share the same live scoreboard.
 
 After adding or changing Vercel environment variables, redeploy the latest production deployment so the server route sees the new values.
+
+If Tata cannot see Lucas predictions or comments, confirm production has `SUPABASE_SERVICE_ROLE_KEY` set and ask Lucas to log out/in once. The app uses that key server-side to attach Lucas's saved rows to the shared `profiles` identity.
 
 ## Automatic Scores
 

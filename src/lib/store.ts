@@ -136,6 +136,35 @@ function matchToRow(match: Match, session: FamilySession) {
   };
 }
 
+export async function ensureProfile(session: FamilySession) {
+  const supabase = getSupabaseClient();
+  if (!supabase || !session.authUserId) {
+    return;
+  }
+
+  const token = await getCurrentAccessToken();
+  if (!token) {
+    throw new Error("Missing Supabase session.");
+  }
+
+  const response = await fetch("/api/profiles/ensure", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      userKey: session.userKey,
+      displayName: session.displayName
+    })
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error || `Could not prepare ${session.displayName}'s shared profile.`);
+  }
+}
+
 export async function loadTournamentState(): Promise<TournamentState> {
   const supabase = getSupabaseClient();
 
@@ -236,6 +265,8 @@ export async function saveMatchResult(session: FamilySession, match: Match) {
     return;
   }
 
+  await ensureProfile(session);
+
   const { error } = await supabase.from("matches").upsert(matchToRow(match, session), { onConflict: "id" });
   if (error) {
     throw new Error(error.message);
@@ -257,6 +288,8 @@ export async function savePrediction(session: FamilySession, prediction: Predict
   if (!session.authUserId) {
     throw new Error("Missing Supabase user.");
   }
+
+  await ensureProfile(session);
 
   const { error } = await supabase.from("predictions").upsert(
     {
@@ -304,6 +337,8 @@ export async function saveComment(session: FamilySession, matchId: string, body:
   if (!session.authUserId) {
     throw new Error("Missing Supabase user.");
   }
+
+  await ensureProfile(session);
 
   const { data, error } = await supabase
     .from("comments")
