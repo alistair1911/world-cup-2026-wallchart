@@ -8,6 +8,7 @@ import type { FamilySession, Match, MatchComment, MatchPhase, MatchStatus, Predi
 const LOCAL_MATCHES_KEY = "wc26-family-match-overrides";
 const LOCAL_PREDICTIONS_KEY = "wc26-family-predictions";
 const LOCAL_COMMENTS_KEY = "wc26-family-comments";
+const LOCAL_MIGRATION_KEY = "wc26-family-local-migrated";
 
 type StoredMatchRow = {
   id: string;
@@ -61,6 +62,11 @@ export type ScoreSyncSummary = {
   received?: number;
   updated?: Array<{ id: string; matchNumber: number; score: string; status: string }>;
   error?: string;
+};
+
+export type LocalMigrationSummary = {
+  predictions: number;
+  comments: number;
 };
 
 function readLocalMatches() {
@@ -163,6 +169,63 @@ export async function ensureProfile(session: FamilySession) {
   if (!response.ok) {
     throw new Error(payload.error || `Could not prepare ${session.displayName}'s shared profile.`);
   }
+}
+
+export async function migrateLocalFamilyData(session: FamilySession): Promise<LocalMigrationSummary> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !session.authUserId) {
+    return { predictions: 0, comments: 0 };
+  }
+
+  const localPredictions = readLocalPredictions().filter((prediction) => prediction.userKey === session.userKey);
+  const localComments = readLocalComments().filter((comment) => comment.userKey === session.userKey);
+  const migrationKey = `${LOCAL_MIGRATION_KEY}-${session.authUserId}`;
+  const commentsAlreadyMigrated = window.localStorage.getItem(migrationKey) === "true";
+
+  if (localPredictions.length === 0 && (localComments.length === 0 || commentsAlreadyMigrated)) {
+    return { predictions: 0, comments: 0 };
+  }
+
+  await ensureProfile(session);
+
+  if (localPredictions.length > 0) {
+    const { error } = await supabase.from("predictions").upsert(
+      localPredictions.map((prediction) => ({
+        user_id: session.authUserId,
+        match_id: prediction.matchId,
+        home_score: prediction.homeScore,
+        away_score: prediction.awayScore,
+        predicted_winner_team_id: prediction.predictedWinnerTeamId ?? null,
+        updated_at: prediction.updatedAt ?? new Date().toISOString()
+      })),
+      { onConflict: "user_id,match_id" }
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  if (localComments.length > 0 && !commentsAlreadyMigrated) {
+    const { error } = await supabase.from("comments").insert(
+      localComments.map((comment) => ({
+        user_id: session.authUserId,
+        match_id: comment.matchId,
+        body: comment.body,
+        created_at: comment.createdAt
+      }))
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  window.localStorage.setItem(migrationKey, "true");
+  return {
+    predictions: localPredictions.length,
+    comments: commentsAlreadyMigrated ? 0 : localComments.length
+  };
 }
 
 export async function loadTournamentState(): Promise<TournamentState> {

@@ -9,7 +9,15 @@ import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
-import { ensureProfile, loadTournamentState, saveComment, saveMatchResult, savePrediction, syncLiveScores } from "@/lib/store";
+import {
+  ensureProfile,
+  loadTournamentState,
+  migrateLocalFamilyData,
+  saveComment,
+  saveMatchResult,
+  savePrediction,
+  syncLiveScores
+} from "@/lib/store";
 import type { FamilySession, GroupLetter, Match, MatchComment, Prediction } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
@@ -76,8 +84,14 @@ export function WallchartApp() {
 
       setSession(current);
       let profileError: string | null = null;
+      let migrationMessage: string | null = null;
       try {
         await ensureProfile(current);
+        const migrated = await migrateLocalFamilyData(current);
+        const migratedItems = migrated.predictions + migrated.comments;
+        if (migratedItems > 0) {
+          migrationMessage = `Moved ${migratedItems} saved local item${migratedItems === 1 ? "" : "s"} into shared mode.`;
+        }
       } catch (error) {
         profileError = error instanceof Error ? error.message : "Could not prepare shared profile.";
       }
@@ -91,6 +105,7 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setError(profileError || state.error || null);
+      setSyncMessage(migrationMessage);
       setLastRefreshed(new Date());
       setLoading(false);
     }
