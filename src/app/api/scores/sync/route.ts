@@ -148,7 +148,8 @@ function addStat(
   match: Match,
   team: Team,
   rawName: string,
-  field: "goals" | "assists"
+  field: "goals" | "assists",
+  count = 1
 ) {
   const playerName = normalizeEventPlayerName(rawName);
   if (!playerName) {
@@ -170,7 +171,7 @@ function addStat(
       updatedAt: new Date().toISOString()
     } satisfies PlayerMatchStat);
 
-  existing[field] += 1;
+  existing[field] += clampStat(count);
   totals.set(key, existing);
 }
 
@@ -215,6 +216,130 @@ function parseApiFootballEvents(match: Match, payload: unknown) {
     goals: clampStat(stat.goals),
     assists: clampStat(stat.assists)
   }));
+}
+
+type LlmPlayerStatTarget = {
+  match: Match;
+  homeName: string;
+  awayName: string;
+};
+
+function statCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? clampStat(value) : 0;
+}
+
+function parseLlmPlayerStats(payload: unknown, targets: LlmPlayerStatTarget[]) {
+  const items = payload && typeof payload === "object" && Array.isArray((payload as Record<string, unknown>).matches)
+    ? ((payload as Record<string, unknown>).matches as unknown[])
+    : [];
+  const targetByNumber = new Map(targets.map((target) => [target.match.matchNumber, target]));
+  const totals = new Map<string, PlayerMatchStat>();
+
+  for (const item of items) {
+    const record = readEventObject(item);
+    const matchNumber = typeof record?.matchNumber === "number" ? record.matchNumber : null;
+    const target = matchNumber ? targetByNumber.get(matchNumber) : null;
+    if (!record || !target) {
+      continue;
+    }
+
+    const stats = Array.isArray(record.stats) ? record.stats : [];
+    for (const row of stats) {
+      const stat = readEventObject(row);
+      if (!stat || typeof stat.playerName !== "string" || typeof stat.teamName !== "string") {
+        continue;
+      }
+
+      const team = eventTeamForMatch(target.match, stat.teamName);
+      if (!team) {
+        continue;
+      }
+
+      const goals = statCount(stat.goals);
+      const assists = statCount(stat.assists);
+      if (goals > 0) {
+        addStat(totals, target.match, team, stat.playerName, "goals", goals);
+      }
+      if (assists > 0) {
+        addStat(totals, target.match, team, stat.playerName, "assists", assists);
+      }
+    }
+  }
+
+  return [...totals.values()].map((stat) => ({
+    ...stat,
+    goals: clampStat(stat.goals),
+    assists: clampStat(stat.assists)
+  }));
+}
+
+async function fetchOpenRouterPlayerStats(targets: LlmPlayerStatTarget[]) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey || targets.length === 0) {
+    return [];
+  }
+
+  const model = process.env.OPENROUTER_MODEL || "inclusionai/ring-2.6-1t";
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      "http-referer": process.env.NEXT_PUBLIC_SITE_URL || "https://world-cup-2026-wallchart.vercel.app",
+      "x-title": "World Cup 2026 Family Wallchart"
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      max_tokens: 1800,
+      response_format: { type: "json_object" },
+      plugins: [
+        {
+          id: "web",
+          engine: "exa",
+          max_results: 8,
+          include_domains: ["fifa.com", "espn.com", "bbc.com", "foxsports.com", "cbssports.com", "apnews.com"]
+        }
+      ],
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a strict football match event extraction service. Use web search when needed. Return only valid JSON. Do not guess. If a scorer or assist is not confirmed, omit it. If assists are not reported by reliable sources, leave assists as 0."
+        },
+        {
+          role: "user",
+          content: `Find confirmed goalscorers and assists for these FIFA World Cup 2026 matches only:
+${targets
+  .map(
+    ({ match, homeName, awayName }) =>
+      `M${match.matchNumber}: ${homeName} vs ${awayName}, kickoff ${match.kickoff}, current score ${match.homeScore ?? "-"}-${match.awayScore ?? "-"}, status ${match.status}`
+  )
+  .join("\n")}
+
+Return JSON exactly shaped like:
+{"matches":[{"matchNumber":1,"stats":[{"teamName":"Mexico","playerName":"Player Name","goals":1,"assists":0}]}]}
+Aggregate duplicate player rows. Use team names from the listed matches. Only include confirmed goals or confirmed assists.`
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter player stats returned ${response.status}.`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") {
+    throw new Error("OpenRouter player stats response did not include text content.");
+  }
+
+  try {
+    return parseLlmPlayerStats(JSON.parse(content), targets);
+  } catch {
+    throw new Error("OpenRouter player stats did not return valid JSON.");
+  }
 }
 
 async function fetchApiFootballFixtureEvents(fixtureId: string) {
@@ -425,6 +550,10 @@ async function syncScores(request: NextRequest) {
 
     const playerStats: PlayerMatchStat[] = [];
     const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
+    const syncCandidates = [...updatedMatchesById.values()]
+      .filter((match) => (force || isActiveSyncWindow(match)) && match.status !== "scheduled" && match.homeScore !== null && match.awayScore !== null)
+      .slice(0, 8);
+
     if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
       const eventTargets = feedItems
         .map((item) => ({
@@ -443,6 +572,27 @@ async function syncScores(request: NextRequest) {
         }
         playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
       }
+    }
+
+    const statMatchIds = new Set(playerStats.map((stat) => stat.matchId));
+    const llmTargets = syncCandidates
+      .filter((match) => !statMatchIds.has(match.id))
+      .map((match) => {
+        const home = getTeam(match.homeTeamId);
+        const away = getTeam(match.awayTeamId);
+        return home && away
+          ? {
+              match,
+              homeName: home.name,
+              awayName: away.name
+            }
+          : null;
+      })
+      .filter((target): target is LlmPlayerStatTarget => Boolean(target))
+      .slice(0, 4);
+
+    if (llmTargets.length > 0) {
+      playerStats.push(...(await fetchOpenRouterPlayerStats(llmTargets)));
     }
 
     if (playerStats.length > 0) {
