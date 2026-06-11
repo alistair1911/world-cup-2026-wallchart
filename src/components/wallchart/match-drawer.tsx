@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, MessageCircle, Send, Sparkles, Lock, Save, X } from "lucide-react";
+import { Check, MessageCircle, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -283,15 +283,31 @@ export function MatchDrawer({
               </div>
             </div>
 
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
               {resolvedHome ? (
-                <Link href={`/teams/${resolvedHome.id}`} className="rounded-md bg-white px-2 py-1 text-xs font-black text-cup-ink ring-1 ring-slate-200">
-                  {resolvedHome.name} profile
+                <Link
+                  href={`/teams/${resolvedHome.id}`}
+                  className="interactive-pop flex items-center gap-3 rounded-lg bg-white p-3 text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
+                >
+                  <Flag team={resolvedHome} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black">{resolvedHome.name}</span>
+                    <span className="text-[10px] font-black uppercase text-cup-red">Open team profile</span>
+                  </span>
+                  <UsersRound className="h-4 w-4 text-cup-red" />
                 </Link>
               ) : null}
               {resolvedAway ? (
-                <Link href={`/teams/${resolvedAway.id}`} className="rounded-md bg-white px-2 py-1 text-xs font-black text-cup-ink ring-1 ring-slate-200">
-                  {resolvedAway.name} profile
+                <Link
+                  href={`/teams/${resolvedAway.id}`}
+                  className="interactive-pop flex items-center gap-3 rounded-lg bg-white p-3 text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
+                >
+                  <Flag team={resolvedAway} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black">{resolvedAway.name}</span>
+                    <span className="text-[10px] font-black uppercase text-cup-red">Open team profile</span>
+                  </span>
+                  <UsersRound className="h-4 w-4 text-cup-red" />
                 </Link>
               ) : null}
             </div>

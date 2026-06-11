@@ -1,5 +1,6 @@
 import { TEAMS, getTeam } from "./tournament-data";
 import type { Team } from "./types";
+import { PLAYER_PHOTOS } from "./player-photo-map";
 
 export type PlayerProfile = {
   id: string;
@@ -453,6 +454,7 @@ export function getTeamProfile(teamId: string): TeamProfile | null {
       ...details,
       id,
       teamId: team.id,
+      photoUrl: player.photoUrl ?? PLAYER_PHOTOS[id as keyof typeof PLAYER_PHOTOS],
       traits: traitsFor(id, player.position, player.role),
       stats: statsFor(id, player.position)
     };

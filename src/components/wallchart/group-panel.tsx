@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UsersRound } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import type { GroupLetter, Match, StandingRow } from "@/lib/types";
 import { Flag } from "./flag";
@@ -59,6 +60,20 @@ export function GroupPanel({ group, rows, matches, standings, onSelectMatch, com
             ))}
           </tbody>
         </table>
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          {rows.map((row) => (
+            <Link
+              key={row.team.id}
+              href={`/teams/${row.team.id}`}
+              className="interactive-pop flex min-w-0 items-center gap-2 rounded-md bg-gradient-to-br from-white to-cup-sky px-2 py-2 text-xs font-black text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
+              title={`${row.team.name} profile`}
+            >
+              <Flag team={row.team} />
+              <span className="min-w-0 flex-1 truncate">{row.team.code}</span>
+              <UsersRound className="h-3.5 w-3.5 shrink-0 text-cup-red" />
+            </Link>
+          ))}
+        </div>
         <div className="space-y-2">
           {matches.map((match) => (
             <MatchCard
