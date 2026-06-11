@@ -7,6 +7,12 @@ export type PlayerProfile = {
   teamId: string;
   position: string;
   role: string;
+  club?: string;
+  age?: number;
+  foot?: "Left" | "Right" | "Both";
+  height?: string;
+  traits: string[];
+  stats: Array<{ label: string; value: number }>;
   shirtNumber?: number;
   photoUrl?: string;
 };
@@ -19,7 +25,128 @@ export type TeamProfile = {
   players: PlayerProfile[];
 };
 
-const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId">>> = {
+const positionStats: Record<string, Array<{ label: string; value: number }>> = {
+  GK: [
+    { label: "Reflexes", value: 86 },
+    { label: "Handling", value: 82 },
+    { label: "Kicking", value: 78 },
+    { label: "Command", value: 84 }
+  ],
+  CB: [
+    { label: "Defending", value: 87 },
+    { label: "Aerial", value: 84 },
+    { label: "Recovery", value: 79 },
+    { label: "Passing", value: 74 }
+  ],
+  DF: [
+    { label: "Defending", value: 82 },
+    { label: "Physical", value: 80 },
+    { label: "Recovery", value: 78 },
+    { label: "Passing", value: 70 }
+  ],
+  LB: [
+    { label: "Pace", value: 88 },
+    { label: "Crossing", value: 80 },
+    { label: "Recovery", value: 82 },
+    { label: "Stamina", value: 86 }
+  ],
+  RB: [
+    { label: "Pace", value: 87 },
+    { label: "Crossing", value: 79 },
+    { label: "Recovery", value: 82 },
+    { label: "Stamina", value: 85 }
+  ],
+  DM: [
+    { label: "Control", value: 88 },
+    { label: "Ball wins", value: 87 },
+    { label: "Passing", value: 86 },
+    { label: "Composure", value: 90 }
+  ],
+  CM: [
+    { label: "Passing", value: 86 },
+    { label: "Engine", value: 84 },
+    { label: "Control", value: 85 },
+    { label: "Pressing", value: 80 }
+  ],
+  AM: [
+    { label: "Creativity", value: 88 },
+    { label: "Dribbling", value: 86 },
+    { label: "Vision", value: 87 },
+    { label: "Shooting", value: 78 }
+  ],
+  LW: [
+    { label: "Pace", value: 89 },
+    { label: "Dribbling", value: 88 },
+    { label: "Chance creation", value: 84 },
+    { label: "Finishing", value: 79 }
+  ],
+  RW: [
+    { label: "Pace", value: 89 },
+    { label: "Dribbling", value: 88 },
+    { label: "Chance creation", value: 84 },
+    { label: "Finishing", value: 79 }
+  ],
+  FW: [
+    { label: "Movement", value: 85 },
+    { label: "Finishing", value: 83 },
+    { label: "Pressing", value: 78 },
+    { label: "Link play", value: 80 }
+  ],
+  ST: [
+    { label: "Finishing", value: 87 },
+    { label: "Movement", value: 84 },
+    { label: "Strength", value: 81 },
+    { label: "Box instinct", value: 88 }
+  ]
+};
+
+const playerDetails: Record<string, Partial<Pick<PlayerProfile, "club" | "age" | "foot" | "height" | "traits">>> = {
+  "spain-lamine-yamal": {
+    club: "Barcelona",
+    age: 18,
+    foot: "Left",
+    height: "1.80 m",
+    traits: ["Family favorite", "1v1 threat", "Cut inside", "Final pass"]
+  },
+  "spain-rodri": {
+    club: "Manchester City",
+    age: 30,
+    foot: "Right",
+    height: "1.91 m",
+    traits: ["Tempo control", "Press resistance", "Switches play"]
+  },
+  "spain-pedri": {
+    club: "Barcelona",
+    age: 23,
+    foot: "Right",
+    height: "1.74 m",
+    traits: ["Between lines", "Composure", "Quick combinations"]
+  },
+  "spain-nico-williams": {
+    club: "Athletic Club",
+    age: 23,
+    foot: "Right",
+    height: "1.81 m",
+    traits: ["Direct winger", "Explosive carry", "Back-post danger"]
+  },
+  "spain-unai-simon": {
+    club: "Athletic Club",
+    age: 29,
+    foot: "Right",
+    height: "1.90 m",
+    traits: ["Build-up keeper", "Big saves", "Box command"]
+  }
+};
+
+const statBoosts: Record<string, Partial<Record<string, number>>> = {
+  "spain-lamine-yamal": { Pace: 92, Dribbling: 94, "Chance creation": 91, Finishing: 83 },
+  "spain-rodri": { Control: 95, "Ball wins": 91, Passing: 94, Composure: 96 },
+  "spain-pedri": { Passing: 91, Engine: 84, Control: 92, Pressing: 80 },
+  "spain-nico-williams": { Pace: 94, Dribbling: 89, "Chance creation": 85, Finishing: 82 },
+  "spain-unai-simon": { Reflexes: 86, Handling: 83, Kicking: 86, Command: 84 }
+};
+
+const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" | "traits" | "stats">>> = {
   mexico: [
     { name: "Santiago Gimenez", position: "ST", role: "Penalty-box striker" },
     { name: "Edson Alvarez", position: "DM", role: "Ball-winning shield" },
@@ -290,17 +417,46 @@ export function avatarUrl(name: string) {
   return `https://ui-avatars.com/api/?${params.toString()}`;
 }
 
+function statsFor(id: string, position: string) {
+  const base = positionStats[position] ?? positionStats.FW;
+  const boosts = statBoosts[id] ?? {};
+  return base.map((stat) => ({ ...stat, value: boosts[stat.label] ?? stat.value }));
+}
+
+function traitsFor(id: string, position: string, role: string) {
+  const details = playerDetails[id];
+  if (details?.traits?.length) {
+    return details.traits;
+  }
+
+  const positionTrait = ["GK", "CB", "DF", "LB", "RB"].includes(position)
+    ? "Defensive reliability"
+    : ["DM", "CM", "AM"].includes(position)
+      ? "Midfield influence"
+      : "Final-third threat";
+
+  return [positionTrait, role, "Tournament watch"];
+}
+
 export function getTeamProfile(teamId: string): TeamProfile | null {
   const team = getTeam(teamId);
   if (!team) {
     return null;
   }
 
-  const players = (featuredPlayers[team.id] ?? []).map((player) => ({
-    ...player,
-    id: playerId(team.id, player.name),
-    teamId: team.id
-  }));
+  const players = (featuredPlayers[team.id] ?? []).map((player) => {
+    const id = playerId(team.id, player.name);
+    const details = playerDetails[id] ?? {};
+
+    return {
+      ...player,
+      ...details,
+      id,
+      teamId: team.id,
+      traits: traitsFor(id, player.position, player.role),
+      stats: statsFor(id, player.position)
+    };
+  });
 
   return {
     team,
