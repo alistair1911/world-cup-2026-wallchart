@@ -7,6 +7,14 @@ import type { Match, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+function isMissingPlayerStatsTable(message: string) {
+  const value = message.toLowerCase();
+  return (
+    value.includes("player_match_stats") &&
+    (value.includes("could not find") || value.includes("does not exist") || value.includes("schema cache"))
+  );
+}
+
 function isAuthorized(request: NextRequest) {
   const secret = process.env.SCORE_SYNC_SECRET || process.env.CRON_SECRET;
   const userAgent = request.headers.get("user-agent");
@@ -595,12 +603,22 @@ async function syncScores(request: NextRequest) {
       playerStats.push(...(await fetchOpenRouterPlayerStats(llmTargets)));
     }
 
+    let playerStatsUpdated = 0;
+    let warning: string | null = null;
+
     if (playerStats.length > 0) {
       const { error } = await supabase
         .from("player_match_stats")
         .upsert(playerStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
       if (error) {
-        throw new Error(error.message);
+        if (isMissingPlayerStatsTable(error.message)) {
+          warning =
+            "Player stats table is missing in Supabase. Run the player_match_stats SQL once, then press Sync again.";
+        } else {
+          throw new Error(error.message);
+        }
+      } else {
+        playerStatsUpdated = playerStats.length;
       }
     }
 
@@ -608,7 +626,9 @@ async function syncScores(request: NextRequest) {
       ok: true,
       provider: process.env.SCORE_PROVIDER || "generic",
       received: feedItems.length,
-      playerStatsUpdated: playerStats.length,
+      playerStatsFound: playerStats.length,
+      playerStatsUpdated,
+      warning,
       updated: result.updates.map((match) => ({
         id: match.id,
         matchNumber: match.matchNumber,

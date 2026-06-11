@@ -205,7 +205,8 @@ export function WallchartApp() {
         const scoreText =
           updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}` : "Sync checked. No score changes";
         const statText = statsUpdated > 0 ? ` and ${statsUpdated} player stat row${statsUpdated === 1 ? "" : "s"}` : "";
-        setSyncMessage(`${scoreText}${statText}.`);
+        const warningText = result.warning ? ` ${result.warning}` : "";
+        setSyncMessage(`${scoreText}${statText}.${warningText}`);
       }
     },
     [refreshTournamentState]
