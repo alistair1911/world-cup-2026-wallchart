@@ -79,6 +79,17 @@ export type MatchComment = {
   createdAt: string;
 };
 
+export type PlayerMatchStat = {
+  matchId: string;
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  goals: number;
+  assists: number;
+  updatedBy?: UserKey | null;
+  updatedAt?: string | null;
+};
+
 export type FamilySession = {
   userKey: UserKey;
   displayName: string;

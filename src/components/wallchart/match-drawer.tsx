@@ -1,17 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, MessageCircle, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
+import { Check, MessageCircle, Minus, Plus, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
-import { getTeamProfile } from "@/lib/profile-data";
+import { avatarUrl, getTeamProfile, type PlayerProfile } from "@/lib/profile-data";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
 import { isPredictionLocked, predictionLockTime } from "@/lib/standings";
-import type { FamilySession, GroupLetter, Match, MatchComment, Prediction, StandingRow, Team, UserKey } from "@/lib/types";
+import type {
+  FamilySession,
+  GroupLetter,
+  Match,
+  MatchComment,
+  PlayerMatchStat,
+  Prediction,
+  StandingRow,
+  Team,
+  UserKey
+} from "@/lib/types";
 import { clampScore, formatKickoff } from "@/lib/utils";
 import { getVenueInfo } from "@/lib/venues";
 import { Flag } from "./flag";
@@ -22,11 +32,23 @@ type MatchDrawerProps = {
   standings: Record<GroupLetter, StandingRow[]>;
   predictions: Prediction[];
   comments: MatchComment[];
+  playerStats: PlayerMatchStat[];
   session: FamilySession;
   onClose: () => void;
   onSaveResult: (match: Match) => Promise<void>;
   onSavePrediction: (prediction: Prediction) => Promise<void>;
   onSaveComment: (matchId: string, body: string) => Promise<void>;
+  onSavePlayerStats: (matchId: string, stats: PlayerMatchStat[]) => Promise<void>;
+};
+
+type PlayerStatDraft = {
+  goals: string;
+  assists: string;
+};
+
+type StatPlayer = {
+  player: PlayerProfile;
+  team: Team;
 };
 
 function scoreToText(value: number | null) {
@@ -46,16 +68,23 @@ function predictionTone(status: string) {
   return "red";
 }
 
+function statValue(value?: string) {
+  const parsed = clampScore(value ?? "");
+  return parsed ?? 0;
+}
+
 export function MatchDrawer({
   match,
   standings,
   predictions,
   comments,
+  playerStats,
   session,
   onClose,
   onSaveResult,
   onSavePrediction,
-  onSaveComment
+  onSaveComment,
+  onSavePlayerStats
 }: MatchDrawerProps) {
   const teams = useMemo(() => (match ? getMatchTeams(match, standings) : { home: null, away: null }), [match, standings]);
   const [homeScore, setHomeScore] = useState("");
@@ -66,6 +95,7 @@ export function MatchDrawer({
   const [predictionAway, setPredictionAway] = useState("");
   const [predictionWinnerId, setPredictionWinnerId] = useState("");
   const [commentBody, setCommentBody] = useState("");
+  const [statDrafts, setStatDrafts] = useState<Record<string, PlayerStatDraft>>({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -79,6 +109,14 @@ export function MatchDrawer({
   const hasSpain = resolvedHome?.id === "spain" || resolvedAway?.id === "spain";
   const spainProfile = hasSpain ? getTeamProfile("spain") : null;
   const yamal = spainProfile?.players.find((player) => player.name === "Lamine Yamal");
+  const statPlayers = useMemo<StatPlayer[]>(() => {
+    const profiles = [resolvedHome?.id, resolvedAway?.id]
+      .filter((teamId): teamId is string => Boolean(teamId))
+      .map((teamId) => getTeamProfile(teamId))
+      .filter((profile): profile is NonNullable<ReturnType<typeof getTeamProfile>> => Boolean(profile));
+
+    return profiles.flatMap((profile) => profile.players.map((player) => ({ player, team: profile.team })));
+  }, [resolvedHome?.id, resolvedAway?.id]);
   const quickComments = useMemo(
     () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
     [match, resolvedHome, resolvedAway]
@@ -96,9 +134,23 @@ export function MatchDrawer({
     setPredictionHome(scoreToText(ownPrediction?.homeScore ?? null));
     setPredictionAway(scoreToText(ownPrediction?.awayScore ?? null));
     setPredictionWinnerId(ownPrediction?.predictedWinnerTeamId ?? "");
+    setStatDrafts(
+      Object.fromEntries(
+        statPlayers.map(({ player }) => {
+          const row = playerStats.find((stat) => stat.playerId === player.id);
+          return [
+            player.id,
+            {
+              goals: row?.goals ? String(row.goals) : "",
+              assists: row?.assists ? String(row.assists) : ""
+            }
+          ];
+        })
+      )
+    );
     setCommentBody("");
     setMessage(null);
-  }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId]);
+  }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId, playerStats, statPlayers]);
 
   if (!match) {
     return null;
@@ -111,12 +163,58 @@ export function MatchDrawer({
   const predictionAwayValue = clampScore(predictionAway);
   const tiedFinal = status === "final" && homeValue !== null && awayValue !== null && homeValue === awayValue;
   const canPickWinner = isKnockout && resolvedHome && resolvedAway;
+  const homeStatGoals = statPlayers
+    .filter(({ team }) => team.id === resolvedHome?.id)
+    .reduce((total, { player }) => total + statValue(statDrafts[player.id]?.goals), 0);
+  const awayStatGoals = statPlayers
+    .filter(({ team }) => team.id === resolvedAway?.id)
+    .reduce((total, { player }) => total + statValue(statDrafts[player.id]?.goals), 0);
+
+  function setPlayerStat(playerId: string, field: keyof PlayerStatDraft, nextValue: string) {
+    const parsed = clampScore(nextValue);
+    setStatDrafts((current) => ({
+      ...current,
+      [playerId]: {
+        goals: current[playerId]?.goals ?? "",
+        assists: current[playerId]?.assists ?? "",
+        [field]: parsed === null ? "" : String(Math.min(20, parsed))
+      }
+    }));
+  }
+
+  function stepPlayerStat(playerId: string, field: keyof PlayerStatDraft, delta: number) {
+    setStatDrafts((current) => {
+      const value = statValue(current[playerId]?.[field]);
+      const nextValue = Math.max(0, Math.min(20, value + delta));
+      return {
+        ...current,
+        [playerId]: {
+          goals: current[playerId]?.goals ?? "",
+          assists: current[playerId]?.assists ?? "",
+          [field]: nextValue === 0 ? "" : String(nextValue)
+        }
+      };
+    });
+  }
+
+  function collectPlayerStats() {
+    return statPlayers.map(({ player, team }) => ({
+      matchId: activeMatch.id,
+      playerId: player.id,
+      playerName: player.name,
+      teamId: team.id,
+      goals: statValue(statDrafts[player.id]?.goals),
+      assists: statValue(statDrafts[player.id]?.assists),
+      updatedBy: session.userKey,
+      updatedAt: new Date().toISOString()
+    }));
+  }
 
   async function handleResultSave() {
     setSaving(true);
     setMessage(null);
     try {
-      await onSaveResult({
+      const updatedMatch = {
         ...activeMatch,
         homeTeamId: activeMatch.homeTeamId ?? resolvedHome?.id,
         awayTeamId: activeMatch.awayTeamId ?? resolvedAway?.id,
@@ -126,8 +224,13 @@ export function MatchDrawer({
         penaltyWinnerId: tiedFinal ? penaltyWinnerId || null : null,
         updatedBy: session.userKey,
         updatedAt: new Date().toISOString()
-      });
-      setMessage("Result saved.");
+      };
+
+      await onSaveResult(updatedMatch);
+      if (status === "final" && statPlayers.length > 0) {
+        await onSavePlayerStats(activeMatch.id, collectPlayerStats());
+      }
+      setMessage(status === "final" ? "Final result and player stats saved." : "Result saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save result.");
     } finally {
@@ -174,6 +277,24 @@ export function MatchDrawer({
     }
   }
 
+  async function handlePlayerStatsSave() {
+    if (status !== "final" && activeMatch.status !== "final") {
+      setMessage("Mark the match final before saving player stats.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await onSavePlayerStats(activeMatch.id, collectPlayerStats());
+      setMessage("Player stats saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save player stats.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function formatCommentTime(value: string) {
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
@@ -187,12 +308,14 @@ export function MatchDrawer({
     <div className="fixed inset-0 z-50 flex justify-end bg-cup-ink/35">
       <button type="button" aria-label="Close drawer backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
       <aside className="saved-pop relative flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white shadow-2xl">
-        <div className="sticky top-0 z-10 border-b border-slate-200 bg-gradient-to-br from-white to-cup-sky p-4 backdrop-blur">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
           <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <div className="text-xs font-black uppercase text-cup-red">Match {activeMatch.matchNumber}</div>
-              <h2 className="mt-1 text-2xl font-black text-cup-ink">
-                {resolvedHome?.name ?? activeMatch.homeSeed?.label ?? "TBD"} vs {resolvedAway?.name ?? activeMatch.awaySeed?.label ?? "TBD"}
+              <h2 className="mt-2 flex flex-wrap items-center gap-2 text-xl font-black text-cup-ink">
+                <TeamHeadingLink team={resolvedHome} fallback={activeMatch.homeSeed?.label ?? "TBD"} />
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">vs</span>
+                <TeamHeadingLink team={resolvedAway} fallback={activeMatch.awaySeed?.label ?? "TBD"} />
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 {formatKickoff(activeMatch.kickoff)} - {activeMatch.venue}
@@ -258,12 +381,12 @@ export function MatchDrawer({
             </section>
           ) : null}
 
-          <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-black uppercase text-slate-600">Score Sync</h3>
+                <h3 className="text-sm font-black uppercase text-slate-600">Match Score</h3>
                 <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                  Live/final scores update automatically from the provider. Use the top-bar Sync button to check now.
+                  Automatic score sync can update the final result. Manual override stays available below.
                 </p>
               </div>
               <Badge tone={activeMatch.status === "live" ? "gold" : activeMatch.status === "final" ? "green" : "slate"}>
@@ -271,45 +394,10 @@ export function MatchDrawer({
               </Badge>
             </div>
 
-            <div className="mb-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <div className="min-w-0 text-center">
-                <div className="truncate text-sm font-black text-cup-ink">{resolvedHome?.code ?? activeMatch.homeSeed?.label}</div>
-                <div className="mt-1 text-3xl font-black text-cup-ink">{homeValue ?? "-"}</div>
-              </div>
-              <div className="text-xs font-black uppercase text-slate-400">vs</div>
-              <div className="min-w-0 text-center">
-                <div className="truncate text-sm font-black text-cup-ink">{resolvedAway?.code ?? activeMatch.awaySeed?.label}</div>
-                <div className="mt-1 text-3xl font-black text-cup-ink">{awayValue ?? "-"}</div>
-              </div>
-            </div>
-
-            <div className="mb-3 grid gap-2 sm:grid-cols-2">
-              {resolvedHome ? (
-                <Link
-                  href={`/teams/${resolvedHome.id}`}
-                  className="interactive-pop flex items-center gap-3 rounded-lg bg-white p-3 text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
-                >
-                  <Flag team={resolvedHome} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black">{resolvedHome.name}</span>
-                    <span className="text-[10px] font-black uppercase text-cup-red">Open team profile</span>
-                  </span>
-                  <UsersRound className="h-4 w-4 text-cup-red" />
-                </Link>
-              ) : null}
-              {resolvedAway ? (
-                <Link
-                  href={`/teams/${resolvedAway.id}`}
-                  className="interactive-pop flex items-center gap-3 rounded-lg bg-white p-3 text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
-                >
-                  <Flag team={resolvedAway} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black">{resolvedAway.name}</span>
-                    <span className="text-[10px] font-black uppercase text-cup-red">Open team profile</span>
-                  </span>
-                  <UsersRound className="h-4 w-4 text-cup-red" />
-                </Link>
-              ) : null}
+            <div className="mb-3 space-y-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+              <ScoreRow team={resolvedHome} fallback={activeMatch.homeSeed?.label} score={homeValue} />
+              <div className="mx-auto h-px w-full bg-slate-200" />
+              <ScoreRow team={resolvedAway} fallback={activeMatch.awaySeed?.label} score={awayValue} />
             </div>
 
             <details className="rounded-md bg-white/50 p-2">
@@ -370,6 +458,91 @@ export function MatchDrawer({
                 Save Manual Result
               </Button>
             </details>
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-cup-sky p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
+                <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
+                  Goals and assists count on the leaderboard once this match is final.
+                </p>
+              </div>
+              <Badge tone={status === "final" || activeMatch.status === "final" ? "green" : "slate"}>
+                {status === "final" || activeMatch.status === "final" ? "Counts" : "Draft"}
+              </Badge>
+            </div>
+
+            {statPlayers.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 bg-white/75 p-3 text-sm font-bold text-slate-500">
+                Player stats appear once both teams are known.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid gap-2 rounded-lg bg-white/80 p-3 text-xs font-black text-slate-500 ring-1 ring-slate-200 sm:grid-cols-2">
+                  <div>
+                    {resolvedHome?.code ?? "HOME"} goals entered: {homeStatGoals}
+                    {homeValue !== null ? ` / ${homeValue}` : ""}
+                  </div>
+                  <div>
+                    {resolvedAway?.code ?? "AWAY"} goals entered: {awayStatGoals}
+                    {awayValue !== null ? ` / ${awayValue}` : ""}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {statPlayers.map(({ player, team }) => (
+                    <div key={player.id} className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                      <div className="mb-3 flex items-center gap-3">
+                        <img
+                          src={player.photoUrl ?? avatarUrl(player.name)}
+                          alt={`${player.name} portrait`}
+                          className="h-10 w-10 rounded-full object-cover object-top ring-1 ring-black/10"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-black text-cup-ink">{player.name}</div>
+                          <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500">
+                            <Flag team={team} />
+                            <span>{team.code}</span>
+                            <span>- {player.position}</span>
+                          </div>
+                        </div>
+                        <Link
+                          href={`/players/${player.id}`}
+                          className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-cup-ink hover:bg-cup-gold"
+                        >
+                          Profile
+                        </Link>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <StatStepper
+                          label="Goals"
+                          value={statDrafts[player.id]?.goals ?? ""}
+                          onChange={(value) => setPlayerStat(player.id, "goals", value)}
+                          onStep={(delta) => stepPlayerStat(player.id, "goals", delta)}
+                        />
+                        <StatStepper
+                          label="Assists"
+                          value={statDrafts[player.id]?.assists ?? ""}
+                          onChange={(value) => setPlayerStat(player.id, "assists", value)}
+                          onStep={(delta) => stepPlayerStat(player.id, "assists", delta)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={handlePlayerStatsSave}
+                  disabled={saving || (status !== "final" && activeMatch.status !== "final")}
+                >
+                  <Save className="h-4 w-4" />
+                  Save Player Stats
+                </Button>
+              </div>
+            )}
           </section>
 
           <section className="rounded-lg border border-cup-gold/40 bg-gradient-to-br from-amber-50 to-white p-4">
@@ -511,6 +684,94 @@ export function MatchDrawer({
           {message ? <div className="saved-pop rounded-md bg-cup-sky p-3 text-sm font-bold text-cup-ink">{message}</div> : null}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function TeamHeadingLink({ team, fallback }: { team: Team | null; fallback: string }) {
+  if (!team) {
+    return <span className="rounded-lg bg-slate-100 px-3 py-2 text-cup-ink">{fallback}</span>;
+  }
+
+  return (
+    <Link
+      href={`/teams/${team.id}`}
+      className="interactive-pop inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-cup-ink ring-1 ring-slate-200 hover:ring-cup-gold"
+    >
+      <Flag team={team} />
+      <span className="truncate">{team.name}</span>
+      <UsersRound className="h-4 w-4 shrink-0 text-cup-red" />
+    </Link>
+  );
+}
+
+function ScoreRow({ team, fallback, score }: { team: Team | null; fallback?: string; score: number | null }) {
+  const content = (
+    <div className="flex min-w-0 items-center gap-3">
+      <Flag team={team} />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-black text-cup-ink">{team?.name ?? fallback ?? "TBD"}</div>
+        <div className="text-[10px] font-black uppercase text-slate-500">
+          {team ? "Open team profile" : "Seed placeholder"}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-3">
+      {team ? (
+        <Link href={`/teams/${team.id}`} className="interactive-pop min-w-0 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 hover:ring-cup-gold">
+          {content}
+        </Link>
+      ) : (
+        <div className="min-w-0 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200">{content}</div>
+      )}
+      <div className="grid h-12 w-14 place-items-center rounded-md bg-cup-ink text-3xl font-black text-cup-gold shadow-sm">
+        {score ?? "-"}
+      </div>
+    </div>
+  );
+}
+
+function StatStepper({
+  label,
+  value,
+  onChange,
+  onStep
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onStep: (delta: number) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-black uppercase text-slate-500">{label}</div>
+      <div className="grid grid-cols-[32px_1fr_32px] overflow-hidden rounded-md ring-1 ring-slate-200">
+        <button
+          type="button"
+          onClick={() => onStep(-1)}
+          className="grid h-9 place-items-center bg-slate-50 text-cup-ink hover:bg-slate-100"
+          aria-label={`Decrease ${label.toLowerCase()}`}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          inputMode="numeric"
+          className="score-input h-9 min-w-0 border-x border-slate-200 bg-white text-center text-sm font-black text-cup-ink outline-none focus:bg-amber-50"
+        />
+        <button
+          type="button"
+          onClick={() => onStep(1)}
+          className="grid h-9 place-items-center bg-slate-50 text-cup-ink hover:bg-cup-gold"
+          aria-label={`Increase ${label.toLowerCase()}`}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

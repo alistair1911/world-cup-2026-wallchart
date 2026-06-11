@@ -41,20 +41,23 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
         </Link>
 
         <section className="overflow-hidden rounded-lg border border-white/80 bg-white/94 shadow-lift">
-          <div className="bg-gradient-to-r from-cup-ink via-pitch-700 to-cup-red p-5 text-white">
+          <div className="relative overflow-hidden border-b border-slate-200 bg-white p-5 text-cup-ink">
+            <div className="absolute inset-0 opacity-55">
+              <div className="h-full w-full bg-[linear-gradient(90deg,rgba(15,81,50,.08)_1px,transparent_1px),linear-gradient(0deg,rgba(15,81,50,.08)_1px,transparent_1px)] bg-[size:34px_34px]" />
+            </div>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="flex min-w-0 gap-4">
-                <FederationMark team={profile.team} logoUrl={federationLogo} />
+              <div className="relative flex min-w-0 gap-4">
+                <FederationMark team={profile.team} logoUrl={federationLogo} light />
                 <div className="min-w-0">
                   <div className="mb-2 flex items-center gap-3">
                     <Flag team={profile.team} />
                     <Badge tone="gold">Group {profile.team.group}</Badge>
                   </div>
                   <h1 className="text-4xl font-black">{profile.team.name}</h1>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold text-white/78">{profile.style}</p>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold text-slate-600">{profile.style}</p>
                 </div>
               </div>
-              <div className="rounded-lg bg-white/12 p-4 text-right backdrop-blur">
+              <div className="relative rounded-lg bg-cup-ink p-4 text-right text-white shadow-sm">
                 <div className="text-xs font-black uppercase text-white/65">Preferred shape</div>
                 <div className="text-3xl font-black text-cup-gold">{profile.formation}</div>
               </div>
@@ -142,7 +145,7 @@ function TeamPhotoBoard({ profile, federationLogo }: { profile: NonNullable<Retu
   const featured = profile.players.slice(0, 5);
 
   return (
-    <div className="relative overflow-hidden bg-gradient-to-br from-cup-ink via-pitch-700 to-cup-red p-5 text-white">
+    <div className="relative overflow-hidden bg-gradient-to-br from-cup-ink via-pitch-800 to-slate-950 p-5 text-white">
       <div className="absolute inset-0 opacity-20">
         <div className="h-full w-full bg-[linear-gradient(90deg,rgba(255,255,255,.35)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,.25)_1px,transparent_1px)] bg-[size:36px_36px]" />
       </div>
@@ -152,7 +155,7 @@ function TeamPhotoBoard({ profile, federationLogo }: { profile: NonNullable<Retu
             <div className="text-xs font-black uppercase text-white/60">Team picture board</div>
             <div className="text-2xl font-black">{profile.team.name} watchlist</div>
           </div>
-          <FederationMark team={profile.team} logoUrl={federationLogo} compact />
+          <FederationMark team={profile.team} logoUrl={federationLogo} compact light />
         </div>
         <div className="grid grid-cols-5 items-end gap-2">
           {featured.map((player, index) => (

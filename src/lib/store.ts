@@ -3,11 +3,21 @@
 import { INITIAL_MATCHES } from "./tournament-data";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
-import type { FamilySession, Match, MatchComment, MatchPhase, MatchStatus, Prediction, UserKey } from "./types";
+import type {
+  FamilySession,
+  Match,
+  MatchComment,
+  MatchPhase,
+  MatchStatus,
+  PlayerMatchStat,
+  Prediction,
+  UserKey
+} from "./types";
 
 const LOCAL_MATCHES_KEY = "wc26-family-match-overrides";
 const LOCAL_PREDICTIONS_KEY = "wc26-family-predictions";
 const LOCAL_COMMENTS_KEY = "wc26-family-comments";
+const LOCAL_PLAYER_STATS_KEY = "wc26-family-player-stats";
 const LOCAL_MIGRATION_KEY = "wc26-family-local-migrated";
 
 type StoredMatchRow = {
@@ -43,6 +53,17 @@ type StoredCommentRow = {
   created_at: string;
 };
 
+type StoredPlayerStatRow = {
+  match_id: string;
+  player_id: string;
+  player_name: string;
+  team_id: string;
+  goals: number;
+  assists: number;
+  updated_by?: string | null;
+  updated_at?: string | null;
+};
+
 type StoredProfileRow = {
   id: string;
   user_key: UserKey;
@@ -52,8 +73,10 @@ export type TournamentState = {
   matches: Match[];
   predictions: Prediction[];
   comments: MatchComment[];
+  playerStats: PlayerMatchStat[];
   error?: string;
   commentsError?: string;
+  playerStatsError?: string;
 };
 
 export type ScoreSyncSummary = {
@@ -88,6 +111,14 @@ function readLocalPredictions() {
 function readLocalComments() {
   try {
     return JSON.parse(window.localStorage.getItem(LOCAL_COMMENTS_KEY) || "[]") as MatchComment[];
+  } catch {
+    return [];
+  }
+}
+
+function readLocalPlayerStats() {
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_PLAYER_STATS_KEY) || "[]") as PlayerMatchStat[];
   } catch {
     return [];
   }
@@ -244,7 +275,8 @@ export async function loadTournamentState(): Promise<TournamentState> {
     return {
       matches: mergeMatches(readLocalMatches()),
       predictions: readLocalPredictions(),
-      comments: readLocalComments()
+      comments: readLocalComments(),
+      playerStats: readLocalPlayerStats()
     };
   }
 
@@ -253,12 +285,14 @@ export async function loadTournamentState(): Promise<TournamentState> {
       { data: matchRows, error: matchError },
       { data: predictionRows, error: predictionError },
       { data: profiles },
-      { data: commentRows, error: commentError }
+      { data: commentRows, error: commentError },
+      { data: playerStatRows, error: playerStatsError }
     ] = await Promise.all([
       supabase.from("matches").select("*"),
       supabase.from("predictions").select("*"),
       supabase.from("profiles").select("id, user_key, display_name"),
-      supabase.from("comments").select("*").order("created_at", { ascending: true })
+      supabase.from("comments").select("*").order("created_at", { ascending: true }),
+      supabase.from("player_match_stats").select("*")
     ]);
 
     if (matchError || predictionError) {
@@ -303,17 +337,37 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
+    const playerStats: PlayerMatchStat[] = [];
+    if (!playerStatsError) {
+      for (const row of (playerStatRows || []) as StoredPlayerStatRow[]) {
+        const profile = row.updated_by ? profileMap.get(row.updated_by) : null;
+        playerStats.push({
+          matchId: row.match_id,
+          playerId: row.player_id,
+          playerName: row.player_name,
+          teamId: row.team_id,
+          goals: row.goals,
+          assists: row.assists,
+          updatedBy: profile?.user_key ?? null,
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
     return {
       matches: mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)),
       predictions,
       comments,
-      commentsError: commentError?.message
+      playerStats,
+      commentsError: commentError?.message,
+      playerStatsError: playerStatsError?.message
     };
   } catch (error) {
     return {
       matches: INITIAL_MATCHES,
       predictions: [],
       comments: [],
+      playerStats: [],
       error: error instanceof Error ? error.message : "Could not load tournament data."
     };
   }
@@ -434,6 +488,54 @@ export async function saveComment(session: FamilySession, matchId: string, body:
     body: data.body,
     createdAt: data.created_at
   };
+}
+
+export async function savePlayerStats(session: FamilySession, matchId: string, stats: PlayerMatchStat[]) {
+  const cleaned = stats.map((stat) => ({
+    ...stat,
+    matchId,
+    goals: Math.max(0, Math.min(20, Math.trunc(stat.goals || 0))),
+    assists: Math.max(0, Math.min(20, Math.trunc(stat.assists || 0))),
+    updatedBy: session.userKey,
+    updatedAt: new Date().toISOString()
+  }));
+
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    const existing = readLocalPlayerStats().filter(
+      (item) => item.matchId !== matchId || !cleaned.some((stat) => stat.playerId === item.playerId)
+    );
+    window.localStorage.setItem(LOCAL_PLAYER_STATS_KEY, JSON.stringify([...existing, ...cleaned]));
+    return;
+  }
+
+  if (!session.authUserId) {
+    throw new Error("Missing Supabase user.");
+  }
+
+  await ensureProfileBestEffort(session);
+
+  const { error } = await supabase.from("player_match_stats").upsert(
+    cleaned.map((stat) => ({
+      match_id: stat.matchId,
+      player_id: stat.playerId,
+      player_name: stat.playerName,
+      team_id: stat.teamId,
+      goals: stat.goals,
+      assists: stat.assists,
+      updated_by: session.authUserId,
+      updated_at: new Date().toISOString()
+    })),
+    { onConflict: "match_id,player_id" }
+  );
+
+  if (error) {
+    if (error.message.toLowerCase().includes("player_match_stats")) {
+      throw new Error("Player stats need the updated Supabase schema. Run supabase/schema.sql once in Supabase SQL Editor.");
+    }
+    throw new Error(error.message);
+  }
 }
 
 export async function syncLiveScores(): Promise<ScoreSyncSummary> {

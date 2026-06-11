@@ -15,10 +15,11 @@ import {
   migrateLocalFamilyData,
   saveComment,
   saveMatchResult,
+  savePlayerStats,
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
-import type { FamilySession, GroupLetter, Match, MatchComment, Prediction } from "@/lib/types";
+import type { FamilySession, GroupLetter, Match, MatchComment, PlayerMatchStat, Prediction } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
 import { GroupPanel } from "./group-panel";
@@ -45,6 +46,7 @@ export function WallchartApp() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [comments, setComments] = useState<MatchComment[]>([]);
+  const [playerStats, setPlayerStats] = useState<PlayerMatchStat[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,6 +63,7 @@ export function WallchartApp() {
       setMatches(state.matches);
       setPredictions(state.predictions);
       setComments(state.comments);
+      setPlayerStats(state.playerStats);
       setError(state.error ?? null);
       setLastRefreshed(new Date());
     } finally {
@@ -104,6 +107,7 @@ export function WallchartApp() {
       setMatches(state.matches);
       setPredictions(state.predictions);
       setComments(state.comments);
+      setPlayerStats(state.playerStats);
       setError(profileError || state.error || null);
       setSyncMessage(migrationMessage);
       setLastRefreshed(new Date());
@@ -181,6 +185,18 @@ export function WallchartApp() {
 
     const comment = await saveComment(session, matchId, body);
     setComments((current) => [...current, comment]);
+  }
+
+  async function handleSavePlayerStats(matchId: string, stats: PlayerMatchStat[]) {
+    if (!session) {
+      return;
+    }
+
+    await savePlayerStats(session, matchId, stats);
+    setPlayerStats((current) => [
+      ...current.filter((item) => item.matchId !== matchId || !stats.some((stat) => stat.playerId === item.playerId)),
+      ...stats
+    ]);
   }
 
   async function handleSyncScores() {
@@ -307,7 +323,7 @@ export function WallchartApp() {
           />
         </div>
         <div className="space-y-4">
-          <LeaderboardPanel matches={matches} predictions={predictions} />
+          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} />
           {rightGroups.map((group) => (
             <GroupPanel
               key={group}
@@ -371,7 +387,9 @@ export function WallchartApp() {
             />
           </div>
         ) : null}
-        {mobileTab === "leaderboard" ? <LeaderboardPanel matches={matches} predictions={predictions} /> : null}
+        {mobileTab === "leaderboard" ? (
+          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} />
+        ) : null}
       </section>
 
       <MatchDrawer
@@ -379,11 +397,13 @@ export function WallchartApp() {
         standings={standings}
         predictions={predictions}
         comments={selectedMatch ? comments.filter((comment) => comment.matchId === selectedMatch.id) : []}
+        playerStats={selectedMatch ? playerStats.filter((stat) => stat.matchId === selectedMatch.id) : []}
         session={session}
         onClose={() => setSelectedMatch(null)}
         onSaveResult={handleSaveResult}
         onSavePrediction={handleSavePrediction}
         onSaveComment={handleSaveComment}
+        onSavePlayerStats={handleSavePlayerStats}
       />
     </main>
   );

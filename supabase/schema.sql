@@ -53,20 +53,40 @@ create table if not exists public.comments (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.player_match_stats (
+  id uuid primary key default gen_random_uuid(),
+  match_id text not null,
+  player_id text not null,
+  player_name text not null,
+  team_id text not null,
+  goals integer not null default 0 check (goals >= 0 and goals <= 20),
+  assists integer not null default 0 check (assists >= 0 and assists <= 20),
+  updated_by uuid references auth.users(id),
+  updated_at timestamptz not null default now(),
+  unique (match_id, player_id)
+);
+
 create index if not exists comments_match_id_created_at_idx
   on public.comments (match_id, created_at);
+
+create index if not exists player_match_stats_match_id_idx
+  on public.player_match_stats (match_id);
+
+create index if not exists player_match_stats_player_id_idx
+  on public.player_match_stats (player_id);
 
 alter table public.profiles enable row level security;
 alter table public.teams enable row level security;
 alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
 alter table public.comments enable row level security;
+alter table public.player_match_stats enable row level security;
 
 grant usage on schema public to anon, authenticated, service_role;
 grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
-grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments to authenticated;
-grant insert, update on public.profiles, public.matches, public.predictions, public.comments to authenticated;
+grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats to authenticated;
+grant insert, update on public.profiles, public.matches, public.predictions, public.comments, public.player_match_stats to authenticated;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 create policy "Authenticated users can read profiles"
@@ -143,6 +163,25 @@ create policy "Users can create their own comments"
   to authenticated
   with check (user_id = auth.uid());
 
+drop policy if exists "Authenticated users can read player stats" on public.player_match_stats;
+create policy "Authenticated users can read player stats"
+  on public.player_match_stats for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Authenticated users can create player stats" on public.player_match_stats;
+create policy "Authenticated users can create player stats"
+  on public.player_match_stats for insert
+  to authenticated
+  with check (true);
+
+drop policy if exists "Authenticated users can update player stats" on public.player_match_stats;
+create policy "Authenticated users can update player stats"
+  on public.player_match_stats for update
+  to authenticated
+  using (true)
+  with check (true);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -161,6 +200,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_predictions_updated_at on public.predictions;
 create trigger set_predictions_updated_at
 before update on public.predictions
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_player_match_stats_updated_at on public.player_match_stats;
+create trigger set_player_match_stats_updated_at
+before update on public.player_match_stats
 for each row execute function public.set_updated_at();
 
 -- After creating the two Auth users, replace the UUIDs below and run:
