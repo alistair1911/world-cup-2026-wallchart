@@ -7,6 +7,7 @@ import { Flag } from "@/components/wallchart/flag";
 import { avatarUrl, getAllTeamProfiles, getTeamProfile } from "@/lib/profile-data";
 import { getTeamLogo } from "@/lib/team-logo-map";
 import type { Team } from "@/lib/types";
+import { LiveFormationBoard } from "./live-formation-board";
 import { LiveSquadPanel } from "./live-squad-panel";
 
 type TeamPageProps = {
@@ -122,30 +123,7 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
             </div>
 
             <div className="space-y-4">
-              <Panel className="p-4">
-                <h2 className="mb-3 text-sm font-black uppercase text-slate-500">Federation</h2>
-                <div className="flex items-center gap-4">
-                  <FederationMark team={profile.team} logoUrl={federationLogo} light />
-                  <div className="min-w-0">
-                    <div className="truncate text-lg font-black text-cup-ink">{profile.team.name}</div>
-                    <div className="mt-1 text-xs font-bold uppercase text-slate-500">
-                      {federationLogo ? "National federation crest" : "Federation crest fallback"}
-                    </div>
-                  </div>
-                </div>
-              </Panel>
-
-              <Panel className="overflow-hidden p-4">
-                <h2 className="mb-3 text-sm font-black uppercase text-slate-500">Formation Board</h2>
-                <div className="relative min-h-[560px] overflow-hidden rounded-lg bg-gradient-to-b from-pitch-600 to-pitch-800 p-4 text-white">
-                  <div className="absolute inset-x-8 top-1/2 h-px bg-white/35" />
-                  <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/35" />
-                  <div className="absolute inset-x-0 top-4 text-center text-xs font-black uppercase text-white/60">{profile.formation}</div>
-                  {profile.players.map((player, index) => (
-                    <PitchPlayer key={player.id} player={player} index={index} />
-                  ))}
-                </div>
-              </Panel>
+              <LiveFormationBoard teamId={profile.team.id} formation={profile.formation} curatedPlayers={profile.players} />
             </div>
           </div>
         </section>
@@ -215,54 +193,5 @@ function FederationMark({
         </div>
       )}
     </div>
-  );
-}
-
-function pitchPosition(position: string, index: number) {
-  const slots: Record<string, Array<{ left: string; top: string }>> = {
-    GK: [{ left: "50%", top: "88%" }],
-    CB: [
-      { left: "39%", top: "72%" },
-      { left: "61%", top: "72%" }
-    ],
-    DF: [{ left: "50%", top: "72%" }],
-    LB: [{ left: "20%", top: "70%" }],
-    RB: [{ left: "80%", top: "70%" }],
-    DM: [{ left: "50%", top: "58%" }],
-    CM: [
-      { left: "36%", top: "48%" },
-      { left: "64%", top: "48%" }
-    ],
-    AM: [{ left: "50%", top: "36%" }],
-    LW: [{ left: "22%", top: "20%" }],
-    RW: [{ left: "78%", top: "20%" }],
-    FW: [
-      { left: "42%", top: "18%" },
-      { left: "58%", top: "18%" }
-    ],
-    ST: [{ left: "50%", top: "14%" }]
-  };
-
-  const options = slots[position] ?? [{ left: `${28 + index * 12}%`, top: "36%" }];
-  return options[index % options.length];
-}
-
-function PitchPlayer({ player, index }: { player: { id: string; name: string; position: string; photoUrl?: string }; index: number }) {
-  const point = pitchPosition(player.position, index);
-
-  return (
-    <Link
-      href={`/players/${player.id}`}
-      className="interactive-pop absolute w-24 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white/94 p-2 text-center text-cup-ink shadow-lift"
-      style={{ left: point.left, top: point.top }}
-    >
-      <img
-        src={player.photoUrl ?? avatarUrl(player.name)}
-        alt={`${player.name} portrait`}
-        className="mx-auto mb-1 h-10 w-10 rounded-full object-cover object-top ring-2 ring-cup-gold"
-      />
-      <span className="text-[10px] font-black text-cup-red">{player.position}</span>
-      <span className="block truncate text-xs font-black leading-tight">{player.name}</span>
-    </Link>
   );
 }
