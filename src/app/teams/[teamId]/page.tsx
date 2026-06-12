@@ -172,10 +172,6 @@ function TeamPhotoBoard({ profile, federationLogo }: { profile: NonNullable<Retu
             </Link>
           ))}
         </div>
-        <p className="mt-4 text-xs font-semibold leading-5 text-white/72">
-          Real official squad photos are added only when a usable licensed source is available. This board keeps the guide visual
-          without borrowing unlicensed team photography.
-        </p>
       </div>
     </div>
   );
