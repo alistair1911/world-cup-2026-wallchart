@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
 import { Flag } from "@/components/wallchart/flag";
 import { avatarUrl, getAllTeamProfiles, getTeamProfile } from "@/lib/profile-data";
 import { getTeamLogo } from "@/lib/team-logo-map";
 import type { Team } from "@/lib/types";
+import { LiveSquadPanel } from "./live-squad-panel";
 
 type TeamPageProps = {
   params: Promise<{ teamId: string }>;
@@ -36,9 +38,18 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
   return (
     <main className="app-shell min-h-screen p-4 lg:p-8">
       <div className="mx-auto max-w-6xl space-y-5">
-        <Link href="/" className="inline-flex rounded-md bg-white/90 px-3 py-2 text-sm font-black text-cup-ink shadow-sm">
-          Back to wallchart
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" className="inline-flex rounded-md bg-white/90 px-3 py-2 text-sm font-black text-cup-ink shadow-sm">
+            Back to wallchart
+          </Link>
+          <Link
+            href="/"
+            aria-label="Close team profile"
+            className="interactive-pop grid h-10 w-10 place-items-center rounded-full bg-cup-ink text-white shadow-lift ring-1 ring-white/40"
+          >
+            <X className="h-5 w-5" />
+          </Link>
+        </div>
 
         <section className="overflow-hidden rounded-lg border border-white/80 bg-white/94 shadow-lift">
           <div className="relative overflow-hidden border-b border-slate-200 bg-white p-5 text-cup-ink">
@@ -101,6 +112,8 @@ export default async function TeamProfilePage({ params }: TeamPageProps) {
                   ))}
                 </div>
               </Panel>
+
+              <LiveSquadPanel teamId={profile.team.id} teamName={profile.team.name} curatedPlayers={profile.players} />
 
               <Panel className="p-4">
                 <h2 className="mb-2 text-sm font-black uppercase text-slate-500">Coach Note</h2>
