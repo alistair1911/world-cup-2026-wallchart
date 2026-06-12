@@ -11,17 +11,6 @@ type LiveFormationBoardProps = {
   curatedPlayers: PlayerProfile[];
 };
 
-const POSITION_ROWS: Array<{
-  id: "FW" | "MF" | "DF" | "GK";
-  label: string;
-  top: string;
-}> = [
-  { id: "FW", label: "Attackers", top: "18%" },
-  { id: "MF", label: "Midfielders", top: "42%" },
-  { id: "DF", label: "Defenders", top: "66%" },
-  { id: "GK", label: "Goalkeepers", top: "86%" }
-];
-
 function groupPlayers(players: SquadBoardPlayer[]) {
   return {
     GK: players.filter((player) => player.position === "GK"),
@@ -31,36 +20,104 @@ function groupPlayers(players: SquadBoardPlayer[]) {
   };
 }
 
+function parseFormation(formation: string) {
+  const parts = formation
+    .split("-")
+    .map((part) => Number(part))
+    .filter((part) => Number.isFinite(part) && part > 0);
+
+  if (parts.length < 2) {
+    return { defenders: 4, midfielders: 3, attackers: 3 };
+  }
+
+  return {
+    defenders: parts[0] ?? 4,
+    midfielders: parts.slice(1, -1).reduce((total, part) => total + part, 0) || parts[1] || 3,
+    attackers: parts[parts.length - 1] ?? 3
+  };
+}
+
+function takePlayers(players: SquadBoardPlayer[], count: number, used: Set<string>) {
+  const picked = players.filter((player) => !used.has(player.key)).slice(0, count);
+  picked.forEach((player) => used.add(player.key));
+  return picked;
+}
+
+function comparableName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function curatedRank(curatedPlayers: PlayerProfile[]) {
+  return new Map(curatedPlayers.map((player, index) => [comparableName(player.name), index]));
+}
+
+function sortByCuratedPriority(players: SquadBoardPlayer[], rank: Map<string, number>) {
+  return [...players].sort((a, b) => {
+    const aRank = rank.get(comparableName(a.name)) ?? 999;
+    const bRank = rank.get(comparableName(b.name)) ?? 999;
+    return aRank - bRank || (a.number ?? 99) - (b.number ?? 99) || a.name.localeCompare(b.name);
+  });
+}
+
+function projectedLineup(players: SquadBoardPlayer[], formation: string, curatedPlayers: PlayerProfile[]) {
+  const groups = groupPlayers(players);
+  const shape = parseFormation(formation);
+  const used = new Set<string>();
+  const rank = curatedRank(curatedPlayers);
+
+  const goalkeepers = takePlayers(sortByCuratedPriority(groups.GK, rank), 1, used);
+  const defenders = takePlayers(sortByCuratedPriority(groups.DF, rank), shape.defenders, used);
+  const midfielders = takePlayers(sortByCuratedPriority(groups.MF, rank), shape.midfielders, used);
+  const attackers = takePlayers(sortByCuratedPriority(groups.FW, rank), shape.attackers, used);
+  const selectedCount = goalkeepers.length + defenders.length + midfielders.length + attackers.length;
+
+  if (selectedCount < 11) {
+    const remaining = players.filter((player) => !used.has(player.key));
+    const fillers = takePlayers(remaining, 11 - selectedCount, used);
+    midfielders.push(...fillers);
+  }
+
+  return [
+    { id: "FW", label: "Attack", top: "15%", players: attackers },
+    { id: "MF", label: "Midfield", top: "39%", players: midfielders },
+    { id: "DF", label: "Defence", top: "63%", players: defenders },
+    { id: "GK", label: "Keeper", top: "84%", players: goalkeepers }
+  ];
+}
+
 function SquadChip({ player }: { player: SquadBoardPlayer }) {
   const content = (
     <>
       <img
         src={player.photoUrl ?? avatarUrl(player.name)}
         alt={`${player.name} portrait`}
-        className="h-8 w-8 shrink-0 rounded-full object-cover object-top ring-2 ring-cup-gold"
+        className="h-9 w-9 shrink-0 rounded-full object-cover object-top ring-2 ring-cup-gold"
       />
-      <div className="min-w-0 flex-1 text-left">
-        <div className="flex items-center gap-1">
-          {player.number ? <span className="text-[9px] font-black text-cup-red">#{player.number}</span> : null}
-          <span className="truncate text-[10px] font-black leading-tight text-cup-ink">{player.name}</span>
+      <div className="mt-1 min-w-0 text-center">
+        <div className="truncate text-[10px] font-black leading-tight text-cup-ink">{player.name}</div>
+        <div className="text-[9px] font-black uppercase text-cup-red">
+          {player.number ? `#${player.number} ` : ""}
+          {player.position}
         </div>
-        <div className="text-[9px] font-black uppercase text-slate-500">{player.position}</div>
       </div>
     </>
   );
 
   return player.href ? (
-    <Link href={player.href} className="interactive-pop flex min-w-0 items-center gap-1.5 rounded-md bg-white/95 p-1.5 shadow-sm ring-1 ring-white/50">
+    <Link href={player.href} className="interactive-pop block min-w-0 rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50">
       {content}
     </Link>
   ) : (
-    <div className="flex min-w-0 items-center gap-1.5 rounded-md bg-white/95 p-1.5 shadow-sm ring-1 ring-white/50">{content}</div>
+    <div className="block min-w-0 rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50">{content}</div>
   );
 }
 
 export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFormationBoardProps) {
   const { players, liveCount, loading } = useLiveSquad(teamId, curatedPlayers);
-  const groups = groupPlayers(players);
+  const rows = projectedLineup(players, formation, curatedPlayers);
 
   return (
     <Panel className="overflow-hidden p-4">
@@ -68,13 +125,13 @@ export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFo
         <div>
           <h2 className="text-sm font-black uppercase text-slate-500">Formation Board</h2>
           <p className="mt-1 text-xs font-bold text-slate-500">
-            {liveCount > 0 ? `${liveCount} squad players by position` : "Curated watchlist by position"}
+            {liveCount > 0 ? "Projected starting XI from live squad" : "Projected XI from curated watchlist"}
           </p>
         </div>
         <div className="rounded-md bg-cup-ink px-2 py-1 text-xs font-black text-cup-gold">{formation}</div>
       </div>
 
-      <div className="relative min-h-[620px] overflow-hidden rounded-lg bg-gradient-to-b from-pitch-500 via-pitch-700 to-pitch-900 p-3 text-white">
+      <div className="relative min-h-[560px] overflow-hidden rounded-lg bg-gradient-to-b from-pitch-500 via-pitch-700 to-pitch-900 p-3 text-white">
         <div className="absolute inset-x-7 top-1/2 h-px bg-white/35" />
         <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/35" />
         <div className="absolute inset-x-10 bottom-4 h-24 rounded-t-xl border-x border-t border-white/30" />
@@ -86,16 +143,17 @@ export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFo
           </div>
         ) : null}
 
-        {POSITION_ROWS.map((row) => {
-          const rowPlayers = groups[row.id];
+        {rows.map((row) => {
           return (
-            <div key={row.id} className="absolute left-3 right-3" style={{ top: row.top }}>
-              <div className="mb-1 flex items-center justify-between text-[10px] font-black uppercase text-white/75">
-                <span>{row.label}</span>
-                <span>{rowPlayers.length}</span>
+            <div key={row.id} className="absolute left-3 right-3 -translate-y-1/2" style={{ top: row.top }}>
+              <div className="mb-1 text-center text-[10px] font-black uppercase text-white/70">
+                {row.label}
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {rowPlayers.map((player) => (
+              <div
+                className="grid gap-1.5"
+                style={{ gridTemplateColumns: `repeat(${Math.max(1, row.players.length)}, minmax(0, 1fr))` }}
+              >
+                {row.players.map((player) => (
                   <SquadChip key={`${row.id}-${player.key}`} player={player} />
                 ))}
               </div>
