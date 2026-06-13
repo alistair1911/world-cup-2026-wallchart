@@ -1,8 +1,9 @@
-import { Medal, Sparkles, Target, Trophy } from "lucide-react";
+import { BadgeCheck, Medal, Sparkles, Star, Target, Trophy } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { avatarUrl } from "@/lib/profile-data";
 import { buildPlayerStatLeaders, type PlayerStatLeader } from "@/lib/player-stats";
 import { buildLeaderboard } from "@/lib/predictions";
+import { getReZeroProgress, type ReZeroBadge } from "@/lib/rezero-progression";
 import type { Match, PlayerMatchStat, Prediction } from "@/lib/types";
 import { Flag } from "./flag";
 
@@ -24,43 +25,52 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
         <h2 className="text-base font-black">Tata vs Lucas</h2>
       </div>
       <div className="space-y-2">
-        {leaderboard.map((user, index) => (
-          <div
-            key={user.key}
-            className={`interactive-pop rounded-md border p-2.5 ${
-              index === 0
-                ? "border-cup-gold bg-gradient-to-br from-amber-100 to-white"
-                : "border-slate-200 bg-gradient-to-br from-white to-slate-50"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white ${
-                    index === 0 ? "bg-cup-gold text-cup-ink" : "bg-cup-ink"
-                  }`}
-                >
-                  {index === 0 ? <Medal className="h-4 w-4" /> : index + 1}
-                </span>
-                <span className="font-black">{user.displayName}</span>
+        {leaderboard.map((user, index) => {
+          const progression = getReZeroProgress(user.points);
+
+          return (
+            <div
+              key={user.key}
+              className={`interactive-pop rounded-md border p-2.5 ${
+                index === 0
+                  ? "border-cup-gold bg-gradient-to-br from-amber-100 to-white"
+                  : "border-slate-200 bg-gradient-to-br from-white to-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white ${
+                      index === 0 ? "bg-cup-gold text-cup-ink" : "bg-cup-ink"
+                    }`}
+                  >
+                    {index === 0 ? <Medal className="h-4 w-4" /> : index + 1}
+                  </span>
+                  <div>
+                    <div className="font-black">{user.displayName}</div>
+                    <div className="text-[10px] font-black uppercase text-slate-500">Level {progression.current.level}</div>
+                  </div>
+                </div>
+                <span className="text-xl font-black text-cup-red">{user.points}</span>
               </div>
-              <span className="text-xl font-black text-cup-red">{user.points}</span>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-cup-red via-cup-gold to-pitch-600 transition-all"
+                  style={{ width: `${Math.max(8, (user.points / topScore) * 100)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px] font-bold uppercase text-slate-500">
+                <span className="flex items-center gap-1">
+                  <Target className="h-3 w-3 text-cup-red" />
+                  {user.exact} exact
+                </span>
+                <span>{user.correctOutcomes} outcomes</span>
+              </div>
+
+              <ReZeroLevelCard points={user.points} />
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-cup-red via-cup-gold to-pitch-600 transition-all"
-                style={{ width: `${Math.max(8, (user.points / topScore) * 100)}%` }}
-              />
-            </div>
-            <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px] font-bold uppercase text-slate-500">
-              <span className="flex items-center gap-1">
-                <Target className="h-3 w-3 text-cup-red" />
-                {user.exact} exact
-              </span>
-              <span>{user.correctOutcomes} outcomes</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-3 border-t border-slate-200 pt-3">
@@ -78,6 +88,57 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
         </div>
       </div>
     </Panel>
+  );
+}
+
+function ReZeroLevelCard({ points }: { points: number }) {
+  const progression = getReZeroProgress(points);
+
+  return (
+    <div className={`mt-2 rounded-md bg-gradient-to-br ${progression.current.accent} p-2 ring-1 ring-black/5`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[10px] font-black uppercase text-cup-ink/70">
+            <Star className="h-3 w-3 text-cup-gold" />
+            Re:Zero checkpoint
+          </div>
+          <div className="mt-0.5 truncate text-sm font-black text-cup-ink">{progression.current.title}</div>
+          <p className="mt-0.5 line-clamp-2 text-[10px] font-bold leading-4 text-slate-600">{progression.current.subtitle}</p>
+        </div>
+        <div className="shrink-0 rounded-md bg-white/80 px-2 py-1 text-center ring-1 ring-black/5">
+          <div className="text-base font-black text-cup-red">{progression.current.level}</div>
+          <div className="text-[8px] font-black uppercase text-slate-500">Level</div>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <div className="mb-1 flex justify-between text-[9px] font-black uppercase text-slate-500">
+          <span>{progression.next ? `${progression.pointsToNext} pts to next` : "Final checkpoint"}</span>
+          <span>{progression.next?.title ?? "Max level"}</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-white/80">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-violet-500 via-cup-red to-cup-gold transition-all"
+            style={{ width: `${Math.max(6, progression.progress)}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {progression.earned.slice(-4).map((badge) => (
+          <ReZeroBadgeChip key={badge.title} badge={badge} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReZeroBadgeChip({ badge }: { badge: ReZeroBadge }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/85 px-2 py-1 text-[9px] font-black text-cup-ink ring-1 ring-black/5">
+      <BadgeCheck className="h-3 w-3 shrink-0 text-cup-red" />
+      <span className="truncate">{badge.title}</span>
+    </span>
   );
 }
 
