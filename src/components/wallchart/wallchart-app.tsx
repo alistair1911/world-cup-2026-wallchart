@@ -19,6 +19,7 @@ import {
   syncLiveScores
 } from "@/lib/store";
 import type { FamilySession, GroupLetter, Match, MatchComment, PlayerMatchStat, Prediction } from "@/lib/types";
+import type { UserKey } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
 import { GroupPanel } from "./group-panel";
@@ -27,6 +28,7 @@ import { MatchDrawer } from "./match-drawer";
 import { PlayerProfileDrawer } from "./player-profile-drawer";
 import { TeamProfileDrawer } from "./team-profile-drawer";
 import { TodayPanel } from "./today-panel";
+import { UserProfileDrawer } from "./user-profile-drawer";
 import { WorldCupMark } from "./world-cup-mark";
 
 type MobileTab = "today" | "groups" | "bracket" | "leaderboard";
@@ -60,6 +62,7 @@ export function WallchartApp() {
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [selectedUserKey, setSelectedUserKey] = useState<UserKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -370,7 +373,7 @@ export function WallchartApp() {
           />
         </div>
         <div className="space-y-4">
-          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} />
+          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
           {rightGroups.map((group) => (
             <GroupPanel
               key={group}
@@ -437,7 +440,7 @@ export function WallchartApp() {
           </div>
         ) : null}
         {mobileTab === "leaderboard" ? (
-          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} />
+          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
         ) : null}
       </section>
 
@@ -459,6 +462,7 @@ export function WallchartApp() {
         onClose={() => setSelectedPlayerId(null)}
         onSelectTeam={(teamId) => setSelectedTeamId(teamId)}
       />
+      <UserProfileDrawer userKey={selectedUserKey} matches={matches} predictions={predictions} onClose={() => setSelectedUserKey(null)} />
     </main>
   );
 }

@@ -10,16 +10,17 @@ import {
   type ReZeroBadge,
   type ReZeroExactBadge
 } from "@/lib/rezero-progression";
-import type { Match, PlayerMatchStat, Prediction } from "@/lib/types";
+import type { Match, PlayerMatchStat, Prediction, UserKey } from "@/lib/types";
 import { Flag } from "./flag";
 
 type LeaderboardPanelProps = {
   matches: Match[];
   predictions: Prediction[];
   playerStats: PlayerMatchStat[];
+  onSelectUser?: (userKey: UserKey) => void;
 };
 
-export function LeaderboardPanel({ matches, predictions, playerStats }: LeaderboardPanelProps) {
+export function LeaderboardPanel({ matches, predictions, playerStats, onSelectUser }: LeaderboardPanelProps) {
   const leaderboard = buildLeaderboard(matches, predictions);
   const statLeaders = buildPlayerStatLeaders(playerStats, matches);
   const topScore = Math.max(1, ...leaderboard.map((user) => user.points));
@@ -38,6 +39,15 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
           return (
             <div
               key={user.key}
+              role={onSelectUser ? "button" : undefined}
+              tabIndex={onSelectUser ? 0 : undefined}
+              onClick={() => onSelectUser?.(user.key)}
+              onKeyDown={(event) => {
+                if ((event.key === "Enter" || event.key === " ") && onSelectUser) {
+                  event.preventDefault();
+                  onSelectUser(user.key);
+                }
+              }}
               className={`interactive-pop rounded-md border p-2.5 ${
                 index === 0
                   ? "border-cup-gold bg-gradient-to-br from-amber-100 to-white"
@@ -52,6 +62,7 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
                     <div className="text-[10px] font-black uppercase text-slate-500">
                       Level {progression.current.level} - {avatarTheme.title}
                     </div>
+                    {onSelectUser ? <div className="text-[9px] font-black uppercase text-cup-red">Open profile</div> : null}
                   </div>
                 </div>
                 <span className="text-xl font-black text-cup-red">{user.points}</span>
