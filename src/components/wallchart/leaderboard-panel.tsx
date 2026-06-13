@@ -3,7 +3,7 @@ import { Panel } from "@/components/ui/panel";
 import { avatarUrl } from "@/lib/profile-data";
 import { buildPlayerStatLeaders, type PlayerStatLeader } from "@/lib/player-stats";
 import { buildLeaderboard } from "@/lib/predictions";
-import { getReZeroProgress, type ReZeroBadge } from "@/lib/rezero-progression";
+import { getReZeroExactProgress, getReZeroProgress, type ReZeroBadge, type ReZeroExactBadge } from "@/lib/rezero-progression";
 import type { Match, PlayerMatchStat, Prediction } from "@/lib/types";
 import { Flag } from "./flag";
 
@@ -68,6 +68,7 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
               </div>
 
               <ReZeroLevelCard points={user.points} />
+              <ReZeroExactCard exact={user.exact} />
             </div>
           );
         })}
@@ -133,10 +134,66 @@ function ReZeroLevelCard({ points }: { points: number }) {
   );
 }
 
+function ReZeroExactCard({ exact }: { exact: number }) {
+  const progression = getReZeroExactProgress(exact);
+  const current = progression.current;
+
+  return (
+    <div className={`mt-2 rounded-md bg-gradient-to-br ${current?.accent ?? "from-white to-slate-50"} p-2 ring-1 ring-black/5`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[10px] font-black uppercase text-cup-ink/70">
+            <Target className="h-3 w-3 text-cup-red" />
+            Exact score badge
+          </div>
+          <div className="mt-0.5 truncate text-sm font-black text-cup-ink">{current?.title ?? "Awaiting First Perfect Loop"}</div>
+          <p className="mt-0.5 line-clamp-2 text-[10px] font-bold leading-4 text-slate-600">
+            {current?.subtitle ?? "Hit one exact score prediction to unlock the first Re:Zero exact-score badge."}
+          </p>
+        </div>
+        <div className="shrink-0 rounded-md bg-white/80 px-2 py-1 text-center ring-1 ring-black/5">
+          <div className="text-base font-black text-cup-red">{exact}</div>
+          <div className="text-[8px] font-black uppercase text-slate-500">Exact</div>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <div className="mb-1 flex justify-between text-[9px] font-black uppercase text-slate-500">
+          <span>{progression.next ? `${progression.exactToNext} exact to next` : "Perfect track complete"}</span>
+          <span>{progression.next?.title ?? "Max exact badge"}</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-white/80">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-cup-red transition-all"
+            style={{ width: `${Math.max(6, progression.progress)}%` }}
+          />
+        </div>
+      </div>
+
+      {progression.earned.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {progression.earned.slice(-3).map((badge) => (
+            <ReZeroExactBadgeChip key={badge.title} badge={badge} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ReZeroBadgeChip({ badge }: { badge: ReZeroBadge }) {
   return (
     <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/85 px-2 py-1 text-[9px] font-black text-cup-ink ring-1 ring-black/5">
       <BadgeCheck className="h-3 w-3 shrink-0 text-cup-red" />
+      <span className="truncate">{badge.title}</span>
+    </span>
+  );
+}
+
+function ReZeroExactBadgeChip({ badge }: { badge: ReZeroExactBadge }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/85 px-2 py-1 text-[9px] font-black text-cup-ink ring-1 ring-black/5">
+      <Target className="h-3 w-3 shrink-0 text-blue-600" />
       <span className="truncate">{badge.title}</span>
     </span>
   );
