@@ -73,7 +73,13 @@ async function fetchApiFootballScorePayload() {
     throw new Error(`API-Football returned ${response.status}.`);
   }
 
-  return response.json();
+  const payload = await response.json();
+  const items = payload && typeof payload === "object" ? (payload as Record<string, unknown>).response : null;
+  if (Array.isArray(items) && items.length === 0) {
+    throw new Error("API-Football returned no fixtures for the configured league and season.");
+  }
+
+  return payload;
 }
 
 async function fetchScorePayload() {
