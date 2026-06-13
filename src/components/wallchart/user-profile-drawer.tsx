@@ -40,7 +40,16 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
     <div className="fixed inset-0 z-50">
       <button type="button" aria-label="Close user profile backdrop" className="absolute inset-0 cursor-default bg-cup-ink/55" onClick={onClose} />
       <aside className="absolute right-0 top-0 flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-slate-50 shadow-2xl">
-        <div className={`sticky top-0 z-10 overflow-hidden border-b border-slate-200 bg-gradient-to-br ${avatarTheme.gradient} p-4 shadow-sm`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          aria-label="Close user profile drawer"
+          className="fixed right-3 top-3 z-[70] h-11 w-11 rounded-full bg-cup-ink text-white shadow-lift ring-2 ring-white hover:bg-cup-red hover:text-white"
+        >
+          <X className="h-6 w-6" />
+        </Button>
+        <div className={`relative z-10 overflow-hidden border-b border-slate-200 bg-gradient-to-br ${avatarTheme.gradient} p-4 pt-16 shadow-sm sm:pt-4`}>
           <img
             src={avatarTheme.backdropSrc}
             alt=""
@@ -49,19 +58,17 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
           />
           <div className="absolute inset-0 bg-white/50" />
           <div className="relative">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-center sm:text-left">
               <LargeProgressionAvatar userName={leaderboardUser.displayName} userKey={userKey} level={pointProgress.current.level} />
-              <div className="min-w-0">
+              <div className="min-w-0 pb-2 sm:pb-0">
                 <div className="text-xs font-black uppercase text-cup-red">Family Profile</div>
-                <h2 className="truncate text-3xl font-black text-cup-ink">{leaderboardUser.displayName}</h2>
+                <h2 className="text-3xl font-black text-cup-ink sm:truncate">{leaderboardUser.displayName}</h2>
                 <p className="mt-1 text-sm font-bold text-slate-600">{avatarTheme.title}</p>
+                <p className="mt-2 text-xs font-black uppercase text-slate-500">
+                  Level {pointProgress.current.level} - {leaderboardUser.points} pts - {leaderboardUser.exact} exact
+                </p>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close user profile drawer">
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
           </div>
         </div>
 
@@ -201,12 +208,12 @@ function LargeProgressionAvatar({ userName, userKey, level }: { userName: string
   const theme = getReZeroAvatarTheme(userKey, level);
 
   return (
-    <div className="relative h-24 w-24 shrink-0">
+    <div className="relative h-32 w-32 shrink-0 sm:h-24 sm:w-24">
       <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${theme.gradient} shadow-lift ring-2 ring-white`} />
       <img
         src={theme.imageSrc}
         alt={`${userName} Re:Zero avatar`}
-        className="absolute inset-2 h-20 w-20 rounded-xl bg-white object-contain p-1 ring-1 ring-black/10"
+        className="absolute inset-2 h-28 w-28 rounded-xl bg-white object-contain p-1 ring-1 ring-black/10 sm:h-20 sm:w-20"
         style={{ objectPosition: theme.imagePosition }}
       />
       <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-white px-2 py-1 text-[10px] font-black text-cup-ink shadow-sm ring-1 ring-black/5">
