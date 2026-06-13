@@ -40,15 +40,7 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
     <div className="fixed inset-0 z-50">
       <button type="button" aria-label="Close user profile backdrop" className="absolute inset-0 cursor-default bg-cup-ink/55" onClick={onClose} />
       <aside className="absolute right-0 top-0 flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-slate-50 shadow-2xl">
-        <div className={`sticky top-0 z-10 overflow-hidden border-b border-slate-200 bg-gradient-to-br ${avatarTheme.gradient} p-4 shadow-sm`}>
-          <img
-            src={avatarTheme.backdropSrc}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover opacity-20"
-            style={{ objectPosition: "50% 35%" }}
-          />
-          <div className="absolute inset-0 bg-white/50" />
-          <div className="relative">
+        <div className={`sticky top-0 z-10 border-b border-slate-200 bg-gradient-to-br ${avatarTheme.gradient} p-4 shadow-sm`}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <LargeProgressionAvatar userName={leaderboardUser.displayName} userKey={userKey} level={pointProgress.current.level} />
@@ -61,7 +53,6 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close user profile drawer">
               <X className="h-5 w-5" />
             </Button>
-          </div>
           </div>
         </div>
 
@@ -115,22 +106,10 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {REZERO_BADGES.map((badge) => (
-                <BadgeRow
-                  key={badge.title}
-                  title={badge.title}
-                  detail={`${badge.minPoints}+ pts`}
-                  earned={leaderboardUser.points >= badge.minPoints}
-                  imageSrc={badgeImageFor(badge.title)}
-                />
+                <BadgeRow key={badge.title} title={badge.title} detail={`${badge.minPoints}+ pts`} earned={leaderboardUser.points >= badge.minPoints} />
               ))}
               {REZERO_EXACT_BADGES.map((badge) => (
-                <BadgeRow
-                  key={badge.title}
-                  title={badge.title}
-                  detail={`${badge.minExact}+ exact`}
-                  earned={leaderboardUser.exact >= badge.minExact}
-                  imageSrc={badgeImageFor(badge.title)}
-                />
+                <BadgeRow key={badge.title} title={badge.title} detail={`${badge.minExact}+ exact`} earned={leaderboardUser.exact >= badge.minExact} />
               ))}
             </div>
           </section>
@@ -199,16 +178,22 @@ function buildPredictionHistory(userKey: UserKey, matches: Match[], predictions:
 
 function LargeProgressionAvatar({ userName, userKey, level }: { userName: string; userKey: UserKey; level: number }) {
   const theme = getReZeroAvatarTheme(userKey, level);
+  const initials = userName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2);
 
   return (
     <div className="relative h-24 w-24 shrink-0">
       <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${theme.gradient} shadow-lift ring-2 ring-white`} />
-      <img
-        src={theme.imageSrc}
-        alt={`${userName} Re:Zero avatar`}
-        className="absolute inset-2 h-20 w-20 rounded-xl object-cover ring-1 ring-black/10"
-        style={{ objectPosition: theme.imagePosition }}
-      />
+      <div className="absolute left-1/2 top-4 h-10 w-14 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.hair }} />
+      <div className="absolute left-1/2 top-8 h-12 w-12 -translate-x-1/2 rounded-full bg-[#f7d7bf] ring-1 ring-black/10" />
+      <div className="absolute left-[36px] top-[50px] h-1.5 w-1.5 rounded-full bg-cup-ink" />
+      <div className="absolute right-[36px] top-[50px] h-1.5 w-1.5 rounded-full bg-cup-ink" />
+      <div className="absolute left-1/2 top-[61px] h-1.5 w-5 -translate-x-1/2 rounded-full bg-cup-red/70" />
+      <div className="absolute bottom-3 left-1/2 h-8 w-16 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.outfit }} />
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs font-black uppercase text-white">{initials}</div>
       <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-white px-2 py-1 text-[10px] font-black text-cup-ink shadow-sm ring-1 ring-black/5">
         {theme.charm}
       </div>
@@ -233,33 +218,11 @@ function ProgressBar({ value, color = "from-violet-500 via-cup-red to-cup-gold" 
   );
 }
 
-function badgeImageFor(title: string) {
-  const value = title.toLowerCase();
-  if (value.includes("rem") || value.includes("blue")) {
-    return "/rezero/REM_Character.PNG";
-  }
-  if (value.includes("emilia") || value.includes("hope")) {
-    return "/rezero/Emilia_Character.PNG";
-  }
-  if (value.includes("return") || value.includes("loop") || value.includes("rookie")) {
-    return "/rezero/Natsuki_Subaru_Character.PNG";
-  }
-  if (value.includes("trial") || value.includes("witch") || value.includes("royal") || value.includes("knight")) {
-    return "/rezero/Shaula_Character.PNG";
-  }
-  return "/rezero/rezero5.PNG";
-}
-
-function BadgeRow({ title, detail, earned, imageSrc }: { title: string; detail: string; earned: boolean; imageSrc: string }) {
+function BadgeRow({ title, detail, earned }: { title: string; detail: string; earned: boolean }) {
   return (
     <div className={`rounded-md p-3 ring-1 ${earned ? "bg-white ring-cup-gold/50" : "bg-slate-50 opacity-60 ring-slate-200"}`}>
       <div className="flex items-center gap-2">
-        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white ring-1 ring-black/10">
-          <img src={imageSrc} alt="" className="h-full w-full object-cover" style={{ objectPosition: "50% 18%" }} />
-          <div className="absolute right-0 top-0 rounded-bl bg-white/85 p-0.5">
-            <BadgeCheck className={`h-3 w-3 ${earned ? "text-cup-red" : "text-slate-300"}`} />
-          </div>
-        </div>
+        <BadgeCheck className={`h-4 w-4 ${earned ? "text-cup-red" : "text-slate-300"}`} />
         <div className="min-w-0">
           <div className="truncate text-xs font-black text-cup-ink">{title}</div>
           <div className="text-[10px] font-black uppercase text-slate-500">{earned ? "Unlocked" : detail}</div>

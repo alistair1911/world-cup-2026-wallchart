@@ -117,15 +117,22 @@ function ProgressionAvatar({
   isLeader: boolean;
   theme: ReturnType<typeof getReZeroAvatarTheme>;
 }) {
+  const initials = userName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2);
+
   return (
     <div className="relative h-12 w-12 shrink-0">
       <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.gradient} shadow-sm ring-2 ring-white`} />
-      <img
-        src={theme.imageSrc}
-        alt={`${userName} Re:Zero avatar`}
-        className="absolute inset-1 h-10 w-10 rounded-full object-cover ring-1 ring-black/10"
-        style={{ objectPosition: theme.imagePosition }}
-      />
+      <div className="absolute left-1/2 top-2 h-5 w-7 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.hair }} />
+      <div className="absolute left-1/2 top-4 h-6 w-6 -translate-x-1/2 rounded-full bg-[#f7d7bf] ring-1 ring-black/10" />
+      <div className="absolute left-[17px] top-[25px] h-1 w-1 rounded-full bg-cup-ink" />
+      <div className="absolute right-[17px] top-[25px] h-1 w-1 rounded-full bg-cup-ink" />
+      <div className="absolute left-1/2 top-[30px] h-1 w-3 -translate-x-1/2 rounded-full bg-cup-red/70" />
+      <div className="absolute bottom-1 left-1/2 h-4 w-8 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.outfit }} />
+      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-black uppercase text-white">{initials}</div>
       <div className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-cup-ink px-1 text-[9px] font-black text-white ring-2 ring-white">
         {isLeader ? <Medal className="h-3 w-3 text-cup-gold" /> : rank}
       </div>
