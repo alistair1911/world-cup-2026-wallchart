@@ -14,6 +14,7 @@ import { Flag } from "./flag";
 type TeamProfileDrawerProps = {
   teamId: string | null;
   onClose: () => void;
+  onSelectPlayer: (playerId: string) => void;
 };
 
 function FederationMark({ team, logoUrl }: { team: Team; logoUrl?: string }) {
@@ -31,7 +32,7 @@ function FederationMark({ team, logoUrl }: { team: Team; logoUrl?: string }) {
   );
 }
 
-export function TeamProfileDrawer({ teamId, onClose }: TeamProfileDrawerProps) {
+export function TeamProfileDrawer({ teamId, onClose, onSelectPlayer }: TeamProfileDrawerProps) {
   const profile = teamId ? getTeamProfile(teamId) : null;
 
   if (!teamId || !profile) {
@@ -80,7 +81,12 @@ export function TeamProfileDrawer({ teamId, onClose }: TeamProfileDrawerProps) {
                 </div>
                 <div className="grid grid-cols-5 items-end gap-2">
                   {featured.map((player, index) => (
-                    <div key={player.id} className={`text-center ${index === 0 ? "scale-105" : ""}`}>
+                    <button
+                      key={player.id}
+                      type="button"
+                      onClick={() => onSelectPlayer(player.id)}
+                      className={`interactive-pop min-w-0 text-center ${index === 0 ? "scale-105" : ""}`}
+                    >
                       <img
                         src={player.photoUrl ?? avatarUrl(player.name)}
                         alt={`${player.name} portrait`}
@@ -90,7 +96,7 @@ export function TeamProfileDrawer({ teamId, onClose }: TeamProfileDrawerProps) {
                         <div className="truncate text-[10px] font-black">{player.name}</div>
                         <div className="text-[9px] font-black text-cup-red">{player.position}</div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>

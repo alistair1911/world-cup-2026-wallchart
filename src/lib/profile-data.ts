@@ -136,6 +136,13 @@ const playerDetails: Record<string, Partial<Pick<PlayerProfile, "club" | "age" |
     foot: "Right",
     height: "1.90 m",
     traits: ["Build-up keeper", "Big saves", "Box command"]
+  },
+  "brazil-raphinha": {
+    club: "Barcelona",
+    age: 29,
+    foot: "Left",
+    height: "1.76 m",
+    traits: ["Wide creator", "Pressing winger", "Left-foot delivery", "Set-piece threat"]
   }
 };
 
@@ -144,7 +151,8 @@ const statBoosts: Record<string, Partial<Record<string, number>>> = {
   "spain-rodri": { Control: 95, "Ball wins": 91, Passing: 94, Composure: 96 },
   "spain-pedri": { Passing: 91, Engine: 84, Control: 92, Pressing: 80 },
   "spain-nico-williams": { Pace: 94, Dribbling: 89, "Chance creation": 85, Finishing: 82 },
-  "spain-unai-simon": { Reflexes: 86, Handling: 83, Kicking: 86, Command: 84 }
+  "spain-unai-simon": { Reflexes: 86, Handling: 83, Kicking: 86, Command: 84 },
+  "brazil-raphinha": { Pace: 87, Dribbling: 88, "Chance creation": 90, Finishing: 82 }
 };
 
 const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" | "traits" | "stats">>> = {
@@ -190,6 +198,7 @@ const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" 
   ],
   brazil: [
     { name: "Vinicius Jr.", position: "LW", role: "1v1 winger" },
+    { name: "Raphinha", position: "RW", role: "Right-side creator", photoUrl: "https://media.api-sports.io/football/players/1496.png" },
     { name: "Rodrygo", position: "FW", role: "Flexible attacker" },
     { name: "Bruno Guimaraes", position: "CM", role: "Midfield bite" }
   ],
