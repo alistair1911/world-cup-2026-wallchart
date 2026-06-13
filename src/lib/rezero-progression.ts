@@ -180,35 +180,50 @@ export function getReZeroAvatarTheme(userKey: string, level: number) {
       gradient: "from-amber-200 via-white to-slate-100",
       hair: "#2f241f",
       outfit: "#b91c1c",
-      charm: "Appa"
+      charm: "Appa",
+      imageSrc: "/rezero/Natsuki_Subaru_Character.PNG",
+      imagePosition: "50% 20%",
+      backdropSrc: "/rezero/rezero1.PNG"
     },
     {
       title: "Tata Emilia Camp",
       gradient: "from-violet-200 via-white to-sky-100",
       hair: "#3b2a22",
       outfit: "#7c3aed",
-      charm: "Hope"
+      charm: "Hope",
+      imageSrc: "/rezero/Emilia_Character.PNG",
+      imagePosition: "50% 18%",
+      backdropSrc: "/rezero/rezero2.PNG"
     },
     {
       title: "Tata Rem Resolve",
       gradient: "from-blue-200 via-white to-cyan-100",
       hair: "#2b211d",
       outfit: "#2563eb",
-      charm: "Exact"
+      charm: "Exact",
+      imageSrc: "/rezero/REM_Character.PNG",
+      imagePosition: "50% 18%",
+      backdropSrc: "/rezero/rezero3.PNG"
     },
     {
       title: "Tata Library Keeper",
       gradient: "from-amber-200 via-white to-fuchsia-100",
       hair: "#261c18",
       outfit: "#92400e",
-      charm: "Book"
+      charm: "Book",
+      imageSrc: "/rezero/Emilia_Character.PNG",
+      imagePosition: "50% 55%",
+      backdropSrc: "/rezero/rezero5.PNG"
     },
     {
       title: "Tata Royal Knight",
       gradient: "from-red-200 via-white to-yellow-100",
       hair: "#201716",
       outfit: "#991b1b",
-      charm: "Crown"
+      charm: "Crown",
+      imageSrc: "/rezero/Shaula_Character.PNG",
+      imagePosition: "50% 20%",
+      backdropSrc: "/rezero/rezero6.PNG"
     }
   ];
 
@@ -218,35 +233,50 @@ export function getReZeroAvatarTheme(userKey: string, level: number) {
       gradient: "from-sky-200 via-white to-slate-100",
       hair: "#1f2937",
       outfit: "#0f766e",
-      charm: "Appa"
+      charm: "Appa",
+      imageSrc: "/rezero/Natsuki_Subaru_Character.PNG",
+      imagePosition: "50% 20%",
+      backdropSrc: "/rezero/rezero1.PNG"
     },
     {
       title: "Lucas Spirit Friend",
       gradient: "from-cyan-200 via-white to-violet-100",
       hair: "#111827",
       outfit: "#0891b2",
-      charm: "Puck"
+      charm: "Puck",
+      imageSrc: "/rezero/Emilia_Character.PNG",
+      imagePosition: "50% 18%",
+      backdropSrc: "/rezero/rezero4.PNG"
     },
     {
       title: "Lucas Blue Ribbon",
       gradient: "from-blue-200 via-white to-indigo-100",
       hair: "#111827",
       outfit: "#1d4ed8",
-      charm: "Rem"
+      charm: "Rem",
+      imageSrc: "/rezero/REM_Character.PNG",
+      imagePosition: "50% 18%",
+      backdropSrc: "/rezero/rezero3.PNG"
     },
     {
       title: "Lucas Trial Breaker",
       gradient: "from-emerald-200 via-white to-blue-100",
       hair: "#0f172a",
       outfit: "#047857",
-      charm: "Trial"
+      charm: "Trial",
+      imageSrc: "/rezero/Shaula_Character.PNG",
+      imagePosition: "50% 20%",
+      backdropSrc: "/rezero/rezero6.PNG"
     },
     {
       title: "Lucas Return Hero",
       gradient: "from-violet-200 via-white to-red-100",
       hair: "#020617",
       outfit: "#6d28d9",
-      charm: "Loop"
+      charm: "Loop",
+      imageSrc: "/rezero/Natsuki_Subaru_Character.PNG",
+      imagePosition: "50% 50%",
+      backdropSrc: "/rezero/rezero7.PNG"
     }
   ];
 
