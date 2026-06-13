@@ -64,49 +64,47 @@ export function TeamProfileDrawer({ teamId, onClose }: TeamProfileDrawerProps) {
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-4">
-            <Panel className="overflow-hidden">
-              <div className="relative overflow-hidden bg-gradient-to-br from-cup-ink via-pitch-800 to-slate-950 p-4 text-white">
-                <div className="absolute inset-0 opacity-20">
-                  <div className="h-full w-full bg-[linear-gradient(90deg,rgba(255,255,255,.35)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,.25)_1px,transparent_1px)] bg-[size:36px_36px]" />
+        <div className="space-y-4 p-4">
+          <Panel className="overflow-hidden">
+            <div className="relative overflow-hidden bg-gradient-to-br from-cup-ink via-pitch-800 to-slate-950 p-4 text-white">
+              <div className="absolute inset-0 opacity-20">
+                <div className="h-full w-full bg-[linear-gradient(90deg,rgba(255,255,255,.35)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,.25)_1px,transparent_1px)] bg-[size:36px_36px]" />
+              </div>
+              <div className="relative">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-black uppercase text-white/60">Team picture board</div>
+                    <div className="text-xl font-black">{profile.team.name} watchlist</div>
+                  </div>
+                  <div className="rounded-md bg-white/90 px-2 py-1 text-xs font-black text-cup-ink">{profile.formation}</div>
                 </div>
-                <div className="relative">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-black uppercase text-white/60">Team picture board</div>
-                      <div className="text-xl font-black">{profile.team.name} watchlist</div>
-                    </div>
-                    <div className="rounded-md bg-white/90 px-2 py-1 text-xs font-black text-cup-ink">{profile.formation}</div>
-                  </div>
-                  <div className="grid grid-cols-5 items-end gap-2">
-                    {featured.map((player, index) => (
-                      <div key={player.id} className={`text-center ${index === 0 ? "scale-105" : ""}`}>
-                        <img
-                          src={player.photoUrl ?? avatarUrl(player.name)}
-                          alt={`${player.name} portrait`}
-                          className="mx-auto h-24 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
-                        />
-                        <div className="rounded-b-lg bg-white/92 px-1 py-2 text-cup-ink">
-                          <div className="truncate text-[10px] font-black">{player.name}</div>
-                          <div className="text-[9px] font-black text-cup-red">{player.position}</div>
-                        </div>
+                <div className="grid grid-cols-5 items-end gap-2">
+                  {featured.map((player, index) => (
+                    <div key={player.id} className={`text-center ${index === 0 ? "scale-105" : ""}`}>
+                      <img
+                        src={player.photoUrl ?? avatarUrl(player.name)}
+                        alt={`${player.name} portrait`}
+                        className="mx-auto h-24 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
+                      />
+                      <div className="rounded-b-lg bg-white/92 px-1 py-2 text-cup-ink">
+                        <div className="truncate text-[10px] font-black">{player.name}</div>
+                        <div className="text-[9px] font-black text-cup-red">{player.position}</div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </Panel>
-
-            <LiveSquadPanel teamId={profile.team.id} teamName={profile.team.name} curatedPlayers={profile.players} />
-
-            <Panel className="p-4">
-              <h3 className="mb-2 text-sm font-black uppercase text-slate-500">Coach Note</h3>
-              <p className="text-sm font-semibold leading-6 text-slate-600">{profile.coachNote}</p>
-            </Panel>
-          </div>
+            </div>
+          </Panel>
 
           <LiveFormationBoard teamId={profile.team.id} formation={profile.formation} curatedPlayers={profile.players} />
+
+          <LiveSquadPanel teamId={profile.team.id} teamName={profile.team.name} curatedPlayers={profile.players} />
+
+          <Panel className="p-4">
+            <h3 className="mb-2 text-sm font-black uppercase text-slate-500">Coach Note</h3>
+            <p className="text-sm font-semibold leading-6 text-slate-600">{profile.coachNote}</p>
+          </Panel>
         </div>
       </aside>
     </div>
