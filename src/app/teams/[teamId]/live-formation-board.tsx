@@ -27,12 +27,12 @@ function parseFormation(formation: string) {
     .filter((part) => Number.isFinite(part) && part > 0);
 
   if (parts.length < 2) {
-    return { defenders: 4, midfielders: 3, attackers: 3 };
+    return { defenders: 4, midfieldBands: [3], attackers: 3 };
   }
 
   return {
     defenders: parts[0] ?? 4,
-    midfielders: parts.slice(1, -1).reduce((total, part) => total + part, 0) || parts[1] || 3,
+    midfieldBands: parts.slice(1, -1).length > 0 ? parts.slice(1, -1) : [parts[1] ?? 3],
     attackers: parts[parts.length - 1] ?? 3
   };
 }
@@ -70,22 +70,44 @@ function projectedLineup(players: SquadBoardPlayer[], formation: string, curated
 
   const goalkeepers = takePlayers(sortByCuratedPriority(groups.GK, rank), 1, used);
   const defenders = takePlayers(sortByCuratedPriority(groups.DF, rank), shape.defenders, used);
-  const midfielders = takePlayers(sortByCuratedPriority(groups.MF, rank), shape.midfielders, used);
   const attackers = takePlayers(sortByCuratedPriority(groups.FW, rank), shape.attackers, used);
-  const selectedCount = goalkeepers.length + defenders.length + midfielders.length + attackers.length;
+  const midfieldBands = shape.midfieldBands.map((count) => takePlayers(sortByCuratedPriority(groups.MF, rank), count, used));
+  const selectedCount =
+    goalkeepers.length + defenders.length + attackers.length + midfieldBands.reduce((total, band) => total + band.length, 0);
 
   if (selectedCount < 11) {
     const remaining = players.filter((player) => !used.has(player.key));
     const fillers = takePlayers(remaining, 11 - selectedCount, used);
-    midfielders.push(...fillers);
+    const targetBand = midfieldBands[Math.max(0, midfieldBands.length - 1)] ?? attackers;
+    targetBand.push(...fillers);
   }
 
-  return [
-    { id: "FW", label: "Attack", top: "15%", players: attackers },
-    { id: "MF", label: "Midfield", top: "39%", players: midfielders },
-    { id: "DF", label: "Defence", top: "63%", players: defenders },
-    { id: "GK", label: "Keeper", top: "84%", players: goalkeepers }
+  const middleRows = midfieldBands
+    .map((band, index) => ({
+      id: `MF-${index}`,
+      label:
+        midfieldBands.length === 1
+          ? "Midfield"
+          : index === 0
+            ? "Holding Midfield"
+            : index === midfieldBands.length - 1
+              ? "Attacking Midfield"
+              : "Central Midfield",
+      players: band
+    }))
+    .reverse();
+
+  const rows = [
+    { id: "FW", label: "Attack", players: attackers },
+    ...middleRows,
+    { id: "DF", label: "Defence", players: defenders },
+    { id: "GK", label: "Keeper", players: goalkeepers }
   ];
+
+  return rows.map((row, index) => ({
+    ...row,
+    top: `${14 + (index * 72) / Math.max(1, rows.length - 1)}%`
+  }));
 }
 
 function SquadChip({ player }: { player: SquadBoardPlayer }) {

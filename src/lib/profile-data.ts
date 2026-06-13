@@ -403,6 +403,57 @@ const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" 
 
 const formationByGroup = ["4-3-3", "4-2-3-1", "3-4-2-1", "4-4-2"];
 
+const teamStyles: Record<string, string> = {
+  mexico: "High-energy home-nation football built on quick wide combinations, aggressive pressing spells, and a striker who lives for first-time finishes.",
+  "south-africa": "Bafana Bafana lean on brave goalkeeping, midfield shots from range, and fast support runs that can turn a loose clearance into a chance.",
+  "korea-republic": "Korea Republic are at their best when Son attacks space, Lee Kang-in drifts between lines, and Kim Min-jae lets the back line defend high.",
+  czechia: "Czechia bring set-piece pressure, aerial midfield runners, and Schick’s clinical left foot whenever the game becomes direct and physical.",
+  canada: "Canada want the match stretched: Davies surging from the left, David finishing early chances, and Eustaquio keeping counters connected.",
+  switzerland: "Switzerland play with tournament patience, using Xhaka’s tempo, Akanji’s buildup passing, and Embolo’s power to grind open tight games.",
+  qatar: "Qatar’s threat comes from Afif’s creativity, Almoez Ali’s penalty-box timing, and experienced rotations that look for fast combinations around the area.",
+  "bosnia-herzegovina": "Bosnia and Herzegovina are built around Dzeko’s reference point, Pjanic’s passing rhythm, and second runners attacking knockdowns.",
+  brazil: "Brazil carry star power in waves: Vinicius and Raphinha stretch both wings, Rodrygo floats inside, and Bruno Guimaraes gives the midfield bite.",
+  morocco: "Morocco mix defensive discipline with sudden right-side acceleration, especially when Hakimi overlaps and Amrabat wins the first midfield duel.",
+  haiti: "Haiti can turn games scrappy in a hurry, using Nazon and Pierrot as direct runners while Duverne keeps the defensive shape from breaking.",
+  scotland: "Scotland thrive on emotional momentum, Robertson’s delivery, McTominay’s late-box timing, and McGinn’s ability to make every duel uncomfortable.",
+  usa: "The USA profile is athletic and vertical: Pulisic attacks the half-space, McKennie crashes the box, and Adams sets the pressing tone.",
+  paraguay: "Paraguay are dangerous in transition, with Almiron carrying at speed, Enciso looking for shots early, and Gomez organizing a rugged back line.",
+  australia: "Australia bring set-piece belief, veteran goalkeeping, and hard-running midfielders who keep games alive deep into the final minutes.",
+  turkiye: "Turkiye can swing a match through left-foot artistry, Calhanoglu’s deliveries, Arda Guler’s pockets of space, and brave young attackers.",
+  germany: "Germany’s best look is controlled chaos: Musiala and Wirtz between lines, Kimmich setting rhythm, and quick counter-pressing after turnovers.",
+  curacao: "Curacao lean on the Bacuna brothers’ experience, set-piece bite, and a disciplined shape that tries to make every opponent solve traffic.",
+  "cote-divoire": "Cote d'Ivoire blend power and flair, with Kessie driving midfield contact, Haller attacking crosses, and Adingra adding a sharp wide spark.",
+  ecuador: "Ecuador’s profile is modern and intense: Caicedo wins second balls, Hincapie steps forward, and Paez adds teenage imagination between lines.",
+  netherlands: "The Netherlands want clean buildup into sudden front-line rotations, with Van Dijk commanding space and Gakpo or Simons attacking gaps.",
+  japan: "Japan are a rhythm team: quick passing, Mitoma and Kubo isolations, and Endo balancing the midfield before the next wave arrives.",
+  tunisia: "Tunisia play with edge and compact spacing, using Skhiri’s work rate, Msakni’s experience, and Mejbri’s pressing to disrupt cleaner teams.",
+  sweden: "Sweden can punish any loose defensive line, with Isak’s glide, Gyokeres’ power, and Kulusevski carrying the ball into dangerous zones.",
+  belgium: "Belgium still have match-winners everywhere: De Bruyne’s delivery, Doku’s 1v1 chaos, and Lukaku’s penalty-area force.",
+  egypt: "Egypt’s plan bends toward Salah, but Marmoush’s movement and Elneny’s experience help them create counters without losing midfield balance.",
+  "ir-iran": "Iran are experienced and streetwise, with Taremi and Azmoun timing runs around a compact block that waits for one perfect break.",
+  "new-zealand": "New Zealand bring aerial pressure, Cacace’s left-side energy, and Stamenic’s midfield bite to make games physical and direct.",
+  spain: "High-possession, quick wide overloads, and Yamal isolation on the right.",
+  "cabo-verde": "Cabo Verde carry island-pride confidence, with Ryan Mendes driving attacks, Bebe adding power, and Logan Costa anchoring the back line.",
+  "saudi-arabia": "Saudi Arabia are comfortable in tournament drama, using Salem Al-Dawsari’s big-shot instinct and quick midfield support runs.",
+  uruguay: "Uruguay bring bite and speed together: Valverde powers transitions, Nunez runs behind, and Araujo erases space in recovery.",
+  france: "France can win games in bursts, with Mbappe’s pace, Griezmann’s between-lines brain, and Tchouameni controlling the platform.",
+  senegal: "Senegal combine senior leadership with vertical threat, from Mane’s decisive touches to Koulibaly’s command and Jackson’s runs in behind.",
+  norway: "Norway’s danger is beautifully obvious: Odegaard conducts, Haaland attacks the box, and Sorloth gives defenders another physical problem.",
+  iraq: "Iraq carry a fearless tournament feel, with Aymen Hussein battling centre backs and Ali Jasim giving them a dribble outlet.",
+  argentina: "Argentina still bend games through Messi’s timing, Alvarez’s pressing, and Martinez’s penalty-box theatre when pressure spikes.",
+  algeria: "Algeria play through Mahrez’s silk, Bennacer’s midfield control, and Gouiri’s flexible movement around the front line.",
+  austria: "Austria are organized and intense, with Alaba’s leadership, Sabitzer’s late runs, and Baumgartner thriving in high-press moments.",
+  jordan: "Jordan bring quick wide breaks, Al-Taamari’s running power, Al-Naimat’s box movement, and a midfield willing to scrap for every second ball.",
+  portugal: "Portugal can shift styles without warning: Ronaldo occupies the box, Bruno Fernandes finds the final pass, and Bernardo Silva slows the game down.",
+  uzbekistan: "Uzbekistan arrive with history-chasing energy, Shomurodov’s focal-point play, Fayzullaev’s creativity, and Khusanov’s defensive promise.",
+  colombia: "Colombia are all rhythm and edge, with Luis Diaz driving wide, James shaping set pieces, and Duran adding raw finishing power.",
+  "congo-dr": "DR Congo bring physical presence and direct attacks, with Mbemba’s leadership, Wissa’s running, and Bakambu’s penalty-box experience.",
+  england: "England’s threat comes from Bellingham’s authority, Kane’s complete striker play, and Saka giving balance and delivery from the right.",
+  croatia: "Croatia still trust midfield intelligence, letting Modric, Kovacic, and Gvardiol manage pressure before picking the right forward pass.",
+  ghana: "Ghana can turn loose games electric through Kudus’ dribbling, Partey’s midfield power, and Inaki Williams attacking space.",
+  panama: "Panama are awkward in the best way, with Carrasquilla’s midfield bite, Murillo’s wide engine, and Fajardo hunting box chances."
+};
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -472,14 +523,14 @@ export function getTeamProfile(teamId: string): TeamProfile | null {
   return {
     team,
     formation: team.id === "spain" ? "4-3-3" : formationByGroup[(team.seed + team.group.charCodeAt(0)) % formationByGroup.length],
-    style:
-      team.id === "spain"
-        ? "High-possession, quick wide overloads, and Yamal isolation on the right."
-        : "Compact tournament setup with quick transitions and set-piece chances.",
+    style: teamStyles[team.id] ?? `${team.name} profile built around quick transitions, set pieces, and disciplined tournament spacing.`,
     coachNote:
       team.id === "spain"
         ? "Tata and Lucas watchlist: get Yamal facing forward early, then let Spain control the rhythm."
-        : "Starter profile data; official 2026 squads and lineups should be reviewed closer to kickoff.",
+        : `${team.name} watchlist: start with ${players
+            .slice(0, 2)
+            .map((player) => player.name)
+            .join(" and ")}; confirm the official starting XI closer to kickoff.`,
     players
   };
 }
