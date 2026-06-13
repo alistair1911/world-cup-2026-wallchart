@@ -40,7 +40,6 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
   const exact = match.homeScore === prediction.homeScore && match.awayScore === prediction.awayScore;
   const correctOutcome = actualOutcome === predictedOutcome;
   const sameMargin = actualMargin === predictedMargin;
-  const oneTeamGoals = match.homeScore === prediction.homeScore || match.awayScore === prediction.awayScore;
 
   let basePoints = 0;
   let status: ScoreResult["status"] = "Missed";
@@ -58,9 +57,6 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
     basePoints = 2;
     status = "Correct winner";
     explanation = actualOutcome === "draw" ? "Correct draw result." : "Correct winner.";
-  } else if (oneTeamGoals) {
-    basePoints = 1;
-    explanation = "One team's goals were right.";
   }
 
   const actualWinner = getWinnerTeamId(match);

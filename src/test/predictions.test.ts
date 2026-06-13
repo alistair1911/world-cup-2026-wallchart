@@ -37,8 +37,11 @@ describe("scorePrediction", () => {
     expect(scorePrediction(baseMatch, prediction(4, 1)).points).toBe(2);
   });
 
-  it("awards 1 point for one exact team score when outcome is wrong", () => {
-    expect(scorePrediction(baseMatch, prediction(2, 3)).points).toBe(1);
+  it("awards 0 points when the outcome is wrong, even with one exact team score", () => {
+    const result = scorePrediction(baseMatch, prediction(2, 3));
+
+    expect(result.points).toBe(0);
+    expect(result.status).toBe("Missed");
   });
 
   it("adds knockout advancer bonus", () => {
