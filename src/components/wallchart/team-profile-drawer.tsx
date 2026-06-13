@@ -56,7 +56,7 @@ export function TeamProfileDrawer({ teamId, onClose, onSelectPlayer }: TeamProfi
                   <Badge tone="gold">Group {profile.team.group}</Badge>
                 </div>
                 <h2 className="truncate text-2xl font-black text-cup-ink">{profile.team.name}</h2>
-                <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-600">{profile.style}</p>
+                <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">{profile.style}</p>
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close team profile drawer">
