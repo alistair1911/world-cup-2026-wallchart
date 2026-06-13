@@ -36,6 +36,7 @@ type MatchDrawerProps = {
   onSaveResult: (match: Match) => Promise<void>;
   onSavePrediction: (prediction: Prediction) => Promise<void>;
   onSaveComment: (matchId: string, body: string) => Promise<void>;
+  onSelectTeam: (teamId: string) => void;
 };
 
 function scoreToText(value: number | null) {
@@ -64,7 +65,8 @@ export function MatchDrawer({
   onClose,
   onSaveResult,
   onSavePrediction,
-  onSaveComment
+  onSaveComment,
+  onSelectTeam
 }: MatchDrawerProps) {
   const teams = useMemo(() => (match ? getMatchTeams(match, standings) : { home: null, away: null }), [match, standings]);
   const [homeScore, setHomeScore] = useState("");
@@ -203,9 +205,9 @@ export function MatchDrawer({
             <div className="min-w-0">
               <div className="text-xs font-black uppercase text-cup-red">Match {activeMatch.matchNumber}</div>
               <h2 className="mt-2 flex flex-wrap items-center gap-2 text-xl font-black text-cup-ink">
-                <TeamHeadingLink team={resolvedHome} fallback={activeMatch.homeSeed?.label ?? "TBD"} />
+                <TeamHeadingLink team={resolvedHome} fallback={activeMatch.homeSeed?.label ?? "TBD"} onSelectTeam={onSelectTeam} />
                 <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">vs</span>
-                <TeamHeadingLink team={resolvedAway} fallback={activeMatch.awaySeed?.label ?? "TBD"} />
+                <TeamHeadingLink team={resolvedAway} fallback={activeMatch.awaySeed?.label ?? "TBD"} onSelectTeam={onSelectTeam} />
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 {formatKickoff(activeMatch.kickoff)} - {activeMatch.venue}
@@ -253,12 +255,13 @@ export function MatchDrawer({
                 </p>
                 {yamal ? (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Link
-                      href="/teams/spain"
+                    <button
+                      type="button"
+                      onClick={() => onSelectTeam("spain")}
                       className="rounded-md bg-cup-ink px-3 py-2 text-xs font-black text-white shadow-sm"
                     >
                       Spain profile
-                    </Link>
+                    </button>
                     <Link
                       href={`/players/${yamal.id}`}
                       className="rounded-md bg-cup-gold px-3 py-2 text-xs font-black text-cup-ink shadow-sm"
@@ -285,9 +288,9 @@ export function MatchDrawer({
             </div>
 
             <div className="mb-3 space-y-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-              <ScoreRow team={resolvedHome} fallback={activeMatch.homeSeed?.label} score={homeValue} />
+              <ScoreRow team={resolvedHome} fallback={activeMatch.homeSeed?.label} score={homeValue} onSelectTeam={onSelectTeam} />
               <div className="mx-auto h-px w-full bg-slate-200" />
-              <ScoreRow team={resolvedAway} fallback={activeMatch.awaySeed?.label} score={awayValue} />
+              <ScoreRow team={resolvedAway} fallback={activeMatch.awaySeed?.label} score={awayValue} onSelectTeam={onSelectTeam} />
             </div>
 
             <details className="rounded-md bg-white/50 p-2">
@@ -505,24 +508,43 @@ export function MatchDrawer({
   );
 }
 
-function TeamHeadingLink({ team, fallback }: { team: Team | null; fallback: string }) {
+function TeamHeadingLink({
+  team,
+  fallback,
+  onSelectTeam
+}: {
+  team: Team | null;
+  fallback: string;
+  onSelectTeam: (teamId: string) => void;
+}) {
   if (!team) {
     return <span className="rounded-lg bg-slate-100 px-3 py-2 text-cup-ink">{fallback}</span>;
   }
 
   return (
-    <Link
-      href={`/teams/${team.id}`}
+    <button
+      type="button"
+      onClick={() => onSelectTeam(team.id)}
       className="interactive-pop inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-cup-ink ring-1 ring-slate-200 hover:ring-cup-gold"
     >
       <Flag team={team} />
       <span className="truncate">{team.name}</span>
       <UsersRound className="h-4 w-4 shrink-0 text-cup-red" />
-    </Link>
+    </button>
   );
 }
 
-function ScoreRow({ team, fallback, score }: { team: Team | null; fallback?: string; score: number | null }) {
+function ScoreRow({
+  team,
+  fallback,
+  score,
+  onSelectTeam
+}: {
+  team: Team | null;
+  fallback?: string;
+  score: number | null;
+  onSelectTeam: (teamId: string) => void;
+}) {
   const content = (
     <div className="flex min-w-0 items-center gap-3">
       <Flag team={team} />
@@ -538,9 +560,13 @@ function ScoreRow({ team, fallback, score }: { team: Team | null; fallback?: str
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-3">
       {team ? (
-        <Link href={`/teams/${team.id}`} className="interactive-pop min-w-0 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 hover:ring-cup-gold">
+        <button
+          type="button"
+          onClick={() => onSelectTeam(team.id)}
+          className="interactive-pop min-w-0 rounded-md bg-white px-3 py-2 text-left ring-1 ring-slate-200 hover:ring-cup-gold"
+        >
           {content}
-        </Link>
+        </button>
       ) : (
         <div className="min-w-0 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200">{content}</div>
       )}

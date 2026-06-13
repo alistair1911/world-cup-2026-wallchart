@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { UsersRound } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import type { GroupLetter, Match, StandingRow } from "@/lib/types";
@@ -11,6 +10,7 @@ type GroupPanelProps = {
   matches: Match[];
   standings: Record<GroupLetter, StandingRow[]>;
   onSelectMatch: (match: Match) => void;
+  onSelectTeam: (teamId: string) => void;
   commentCounts?: Record<string, number>;
 };
 
@@ -29,7 +29,7 @@ const groupThemes: Record<GroupLetter, string> = {
   L: "from-lime-700 to-emerald-500"
 };
 
-export function GroupPanel({ group, rows, matches, standings, onSelectMatch, commentCounts = {} }: GroupPanelProps) {
+export function GroupPanel({ group, rows, matches, standings, onSelectMatch, onSelectTeam, commentCounts = {} }: GroupPanelProps) {
   return (
     <Panel className="interactive-pop overflow-hidden">
       <div className={`flex items-center justify-between bg-gradient-to-r ${groupThemes[group]} px-3 py-2 text-white`}>
@@ -48,10 +48,14 @@ export function GroupPanel({ group, rows, matches, standings, onSelectMatch, com
               >
                 <td className="w-6 rounded-l py-1 pl-1 font-black text-slate-400">{index + 1}</td>
                 <td className="truncate py-1 font-bold">
-                  <Link href={`/teams/${row.team.id}`} className="flex min-w-0 items-center gap-1.5 rounded hover:text-cup-red">
+                  <button
+                    type="button"
+                    onClick={() => onSelectTeam(row.team.id)}
+                    className="flex min-w-0 items-center gap-1.5 rounded text-left hover:text-cup-red"
+                  >
                     <Flag team={row.team} />
                     <span className="truncate">{row.team.code}</span>
-                  </Link>
+                  </button>
                 </td>
                 <td className="w-7 py-1 text-center">{row.played}</td>
                 <td className="w-9 py-1 text-center">{row.goalDifference}</td>
@@ -62,16 +66,17 @@ export function GroupPanel({ group, rows, matches, standings, onSelectMatch, com
         </table>
         <div className="mb-3 grid grid-cols-2 gap-2">
           {rows.map((row) => (
-            <Link
+            <button
+              type="button"
               key={row.team.id}
-              href={`/teams/${row.team.id}`}
+              onClick={() => onSelectTeam(row.team.id)}
               className="interactive-pop flex min-w-0 items-center gap-2 rounded-md bg-gradient-to-br from-white to-cup-sky px-2 py-2 text-xs font-black text-cup-ink shadow-sm ring-1 ring-slate-200 hover:ring-cup-gold"
               title={`${row.team.name} profile`}
             >
               <Flag team={row.team} />
-              <span className="min-w-0 flex-1 truncate">{row.team.code}</span>
+              <span className="min-w-0 flex-1 truncate text-left">{row.team.code}</span>
               <UsersRound className="h-3.5 w-3.5 shrink-0 text-cup-red" />
-            </Link>
+            </button>
           ))}
         </div>
         <div className="space-y-2">

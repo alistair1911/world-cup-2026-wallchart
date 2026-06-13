@@ -24,6 +24,7 @@ import { BracketView } from "./bracket-view";
 import { GroupPanel } from "./group-panel";
 import { LeaderboardPanel } from "./leaderboard-panel";
 import { MatchDrawer } from "./match-drawer";
+import { TeamProfileDrawer } from "./team-profile-drawer";
 import { TodayPanel } from "./today-panel";
 import { WorldCupMark } from "./world-cup-mark";
 
@@ -56,6 +57,7 @@ export function WallchartApp() {
   const [comments, setComments] = useState<MatchComment[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerMatchStat[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -352,6 +354,7 @@ export function WallchartApp() {
               matches={groupMatches(matches, group)}
               standings={standings}
               onSelectMatch={setSelectedMatch}
+              onSelectTeam={setSelectedTeamId}
               commentCounts={commentCounts}
             />
           ))}
@@ -374,6 +377,7 @@ export function WallchartApp() {
               matches={groupMatches(matches, group)}
               standings={standings}
               onSelectMatch={setSelectedMatch}
+              onSelectTeam={setSelectedTeamId}
               commentCounts={commentCounts}
             />
           ))}
@@ -414,6 +418,7 @@ export function WallchartApp() {
                 matches={groupMatches(matches, group)}
                 standings={standings}
                 onSelectMatch={setSelectedMatch}
+                onSelectTeam={setSelectedTeamId}
                 commentCounts={commentCounts}
               />
             ))}
@@ -444,7 +449,9 @@ export function WallchartApp() {
         onSaveResult={handleSaveResult}
         onSavePrediction={handleSavePrediction}
         onSaveComment={handleSaveComment}
+        onSelectTeam={setSelectedTeamId}
       />
+      <TeamProfileDrawer teamId={selectedTeamId} onClose={() => setSelectedTeamId(null)} />
     </main>
   );
 }
