@@ -123,7 +123,7 @@ function ProgressionAvatar({
       <img
         src={theme.imageSrc}
         alt={`${userName} Re:Zero avatar`}
-        className="absolute inset-1 h-10 w-10 rounded-full bg-white object-contain p-0.5 ring-1 ring-black/10"
+        className="absolute inset-1 h-10 w-10 rounded-full object-cover ring-1 ring-black/10"
         style={{ objectPosition: theme.imagePosition }}
       />
       <div className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-cup-ink px-1 text-[9px] font-black text-white ring-2 ring-white">
