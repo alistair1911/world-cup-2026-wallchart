@@ -206,7 +206,7 @@ function LargeProgressionAvatar({ userName, userKey, level }: { userName: string
       <img
         src={theme.imageSrc}
         alt={`${userName} Re:Zero avatar`}
-        className="absolute inset-2 h-20 w-20 rounded-xl object-cover ring-1 ring-black/10"
+        className="absolute inset-2 h-20 w-20 rounded-xl bg-white object-contain p-1 ring-1 ring-black/10"
         style={{ objectPosition: theme.imagePosition }}
       />
       <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-white px-2 py-1 text-[10px] font-black text-cup-ink shadow-sm ring-1 ring-black/5">
@@ -255,7 +255,7 @@ function BadgeRow({ title, detail, earned, imageSrc }: { title: string; detail: 
     <div className={`rounded-md p-3 ring-1 ${earned ? "bg-white ring-cup-gold/50" : "bg-slate-50 opacity-60 ring-slate-200"}`}>
       <div className="flex items-center gap-2">
         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white ring-1 ring-black/10">
-          <img src={imageSrc} alt="" className="h-full w-full object-cover" style={{ objectPosition: "50% 18%" }} />
+          <img src={imageSrc} alt="" className="h-full w-full bg-white object-contain p-0.5" style={{ objectPosition: "50% 18%" }} />
           <div className="absolute right-0 top-0 rounded-bl bg-white/85 p-0.5">
             <BadgeCheck className={`h-3 w-3 ${earned ? "text-cup-red" : "text-slate-300"}`} />
           </div>
