@@ -62,6 +62,12 @@ function sortByCuratedPriority(players: SquadBoardPlayer[], rank: Map<string, nu
   });
 }
 
+function rowWidth(playerCount: number) {
+  const count = Math.max(1, playerCount);
+  const chipWidth = count <= 1 ? 7.25 : count <= 3 ? 7 : 6.25;
+  return `min(100%, ${count * chipWidth}rem)`;
+}
+
 function projectedLineup(players: SquadBoardPlayer[], formation: string, curatedPlayers: PlayerProfile[]) {
   const groups = groupPlayers(players);
   const shape = parseFormation(formation);
@@ -176,7 +182,7 @@ export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFo
                   className="grid gap-1.5"
                   style={{
                     gridTemplateColumns: `repeat(${Math.max(1, row.players.length)}, minmax(0, 1fr))`,
-                    width: row.players.length <= 2 ? `min(100%, ${row.players.length * 6.5}rem)` : "100%"
+                    width: rowWidth(row.players.length)
                   }}
                 >
                   {row.players.map((player) => (
