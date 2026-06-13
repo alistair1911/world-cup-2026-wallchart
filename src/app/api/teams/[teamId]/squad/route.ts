@@ -53,6 +53,19 @@ type TeamSquadRow = {
   fetched_at: string;
 };
 
+type PlayerRow = {
+  id: string;
+  team_id: string;
+  name: string;
+  age: number | null;
+  shirt_number: number | null;
+  position: string;
+  photo_url: string | null;
+  provider: string;
+  provider_player_id: string | null;
+  source: string;
+};
+
 const COMPLETE_SQUAD_MINIMUM = 11;
 const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" };
 const PARTIAL_HEADERS = { "Cache-Control": "no-store" };
@@ -129,6 +142,28 @@ function isCompleteSquad(players: SquadPlayer[] | null | undefined) {
   return Array.isArray(players) && players.length >= COMPLETE_SQUAD_MINIMUM;
 }
 
+function playerDbId(teamId: string, player: { id: string; name: string }) {
+  const safeId = player.id
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+  return `${teamId}-${safeId || "player"}`;
+}
+
+function playerRowsToSquadPlayers(rows: PlayerRow[]): SquadPlayer[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    age: row.age,
+    number: row.shirt_number,
+    position: row.position,
+    photoUrl: row.photo_url
+  }));
+}
+
 async function readSavedSquad(supabase: SupabaseClient | null, teamId: string) {
   if (!supabase) {
     return null;
@@ -141,6 +176,25 @@ async function readSavedSquad(supabase: SupabaseClient | null, teamId: string) {
 
   const row = data as TeamSquadRow;
   return isCompleteSquad(row.players) ? row : null;
+}
+
+async function readSavedPlayers(supabase: SupabaseClient | null, teamId: string) {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("players")
+    .select("id, team_id, name, age, shirt_number, position, photo_url, provider, provider_player_id, source")
+    .eq("team_id", teamId)
+    .order("position", { ascending: true })
+    .order("shirt_number", { ascending: true });
+
+  if (error || !data) {
+    return [];
+  }
+
+  return playerRowsToSquadPlayers(data as PlayerRow[]);
 }
 
 async function saveSquad(
@@ -171,6 +225,30 @@ async function saveSquad(
       fetched_at: new Date().toISOString()
     },
     { onConflict: "team_id" }
+  );
+}
+
+async function savePlayers(supabase: SupabaseClient | null, teamId: string, players: SquadPlayer[]) {
+  if (!supabase || players.length === 0) {
+    return;
+  }
+
+  await supabase.from("players").upsert(
+    players.map((player) => ({
+      id: playerDbId(teamId, player),
+      team_id: teamId,
+      name: player.name,
+      age: player.age,
+      shirt_number: player.number,
+      position: player.position,
+      photo_url: player.photoUrl,
+      provider: "api-football",
+      provider_player_id: player.id,
+      source: "api-football-squad",
+      raw: player,
+      fetched_at: new Date().toISOString()
+    })),
+    { onConflict: "id" }
   );
 }
 
@@ -212,6 +290,26 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
     );
   }
 
+  const savedPlayers = await readSavedPlayers(supabase, team.id);
+  if (isCompleteSquad(savedPlayers)) {
+    return NextResponse.json(
+      {
+        ok: true,
+        provider: "supabase",
+        source: "supabase-players",
+        cached: true,
+        formation,
+        team: {
+          id: null,
+          name: team.name,
+          logoUrl: null
+        },
+        players: savedPlayers
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
   try {
     const searchName = TEAM_SEARCH_NAMES[team.id] ?? team.name;
     const search = await fetchApiFootball<ApiFootballTeamSearch>(`/teams?search=${encodeURIComponent(searchName)}`);
@@ -247,6 +345,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
       formation,
       players
     });
+    await savePlayers(supabase, team.id, players);
 
     return NextResponse.json(
       {
