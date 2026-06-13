@@ -19,6 +19,15 @@ type SquadPayload = {
   error?: string;
 };
 
+type CachedSquad = {
+  savedAt: number;
+  players: LiveSquadPlayer[];
+};
+
+const COMPLETE_SQUAD_MINIMUM = 11;
+const SQUAD_CACHE_DAYS = 7;
+const SQUAD_CACHE_MS = SQUAD_CACHE_DAYS * 24 * 60 * 60 * 1000;
+
 export type SquadBoardPlayer = {
   key: string;
   name: string;
@@ -46,6 +55,55 @@ export function normalizeSquadPosition(position: string) {
   return position || "Player";
 }
 
+function squadCacheKey(teamId: string) {
+  return `wc26:squad:${teamId}`;
+}
+
+function readCachedSquad(teamId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const value = window.localStorage.getItem(squadCacheKey(teamId));
+    if (!value) {
+      return null;
+    }
+
+    const cached = JSON.parse(value) as CachedSquad;
+    if (!Array.isArray(cached.players) || cached.players.length < COMPLETE_SQUAD_MINIMUM) {
+      return null;
+    }
+
+    if (Date.now() - cached.savedAt > SQUAD_CACHE_MS) {
+      window.localStorage.removeItem(squadCacheKey(teamId));
+      return null;
+    }
+
+    return cached.players;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSquad(teamId: string, players: LiveSquadPlayer[]) {
+  if (typeof window === "undefined" || players.length < COMPLETE_SQUAD_MINIMUM) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      squadCacheKey(teamId),
+      JSON.stringify({
+        savedAt: Date.now(),
+        players
+      } satisfies CachedSquad)
+    );
+  } catch {
+    // If storage is unavailable, the curated squad still keeps the board usable.
+  }
+}
+
 export function useLiveSquad(teamId: string, curatedPlayers: PlayerProfile[]) {
   const [players, setPlayers] = useState<LiveSquadPlayer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +113,13 @@ export function useLiveSquad(teamId: string, curatedPlayers: PlayerProfile[]) {
     let isMounted = true;
 
     async function loadSquad() {
+      const cachedPlayers = readCachedSquad(teamId);
+      if (cachedPlayers) {
+        setPlayers(cachedPlayers);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError(null);
       try {
@@ -68,7 +133,17 @@ export function useLiveSquad(teamId: string, curatedPlayers: PlayerProfile[]) {
           setPlayers([]);
           return;
         }
-        setPlayers(payload.players ?? []);
+        const nextPlayers = payload.players ?? [];
+        if (nextPlayers.length >= COMPLETE_SQUAD_MINIMUM) {
+          writeCachedSquad(teamId, nextPlayers);
+          setPlayers(nextPlayers);
+          return;
+        }
+
+        setPlayers([]);
+        if (nextPlayers.length > 0) {
+          setError(`API-Football only returned ${nextPlayers.length} players, so the saved watchlist is shown.`);
+        }
       } catch {
         if (isMounted) {
           setError("Could not load live squad.");

@@ -67,7 +67,7 @@ async function fetchApiFootball<T>(path: string): Promise<T> {
 
   const response = await fetch(`https://${host}${path}`, {
     headers,
-    next: { revalidate: 60 * 60 * 24 }
+    next: { revalidate: 60 * 60 * 24 * 7 }
   });
 
   if (!response.ok) {
@@ -100,7 +100,10 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
     const providerTeamId = result?.team?.id;
 
     if (!providerTeamId) {
-      return NextResponse.json({ ok: true, provider: "api-football", players: [], source: "none" });
+      return NextResponse.json(
+        { ok: true, provider: "api-football", players: [], source: "none" },
+        { headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" } }
+      );
     }
 
     const squad = await fetchApiFootball<ApiFootballSquad>(`/players/squads?team=${providerTeamId}`);
@@ -116,17 +119,20 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
           photoUrl: player.photo ?? null
         })) ?? [];
 
-    return NextResponse.json({
-      ok: true,
-      provider: "api-football",
-      source: "api-football-squad",
-      team: {
-        id: providerTeamId,
-        name: result?.team?.name ?? team.name,
-        logoUrl: result?.team?.logo ?? null
+    return NextResponse.json(
+      {
+        ok: true,
+        provider: "api-football",
+        source: "api-football-squad",
+        team: {
+          id: providerTeamId,
+          name: result?.team?.name ?? team.name,
+          logoUrl: result?.team?.logo ?? null
+        },
+        players
       },
-      players
-    });
+      { headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" } }
+    );
   } catch (error) {
     return NextResponse.json(
       {

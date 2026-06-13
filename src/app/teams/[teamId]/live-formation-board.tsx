@@ -43,6 +43,29 @@ function takePlayers(players: SquadBoardPlayer[], count: number, used: Set<strin
   return picked;
 }
 
+function projectedPlayer(position: string, index: number): SquadBoardPlayer {
+  return {
+    key: `projected-${position}-${index}`,
+    name: `Projected ${position}`,
+    number: null,
+    position,
+    detail: "Formation placeholder",
+    photoUrl: null,
+    href: null
+  };
+}
+
+function fillLine(players: SquadBoardPlayer[], count: number, position: string) {
+  if (players.length >= count) {
+    return players.slice(0, count);
+  }
+
+  return [
+    ...players,
+    ...Array.from({ length: count - players.length }, (_item, index) => projectedPlayer(position, players.length + index + 1))
+  ];
+}
+
 function comparableName(name: string) {
   return name
     .normalize("NFD")
@@ -74,10 +97,12 @@ function projectedLineup(players: SquadBoardPlayer[], formation: string, curated
   const used = new Set<string>();
   const rank = curatedRank(curatedPlayers);
 
-  const goalkeepers = takePlayers(sortByCuratedPriority(groups.GK, rank), 1, used);
-  const defenders = takePlayers(sortByCuratedPriority(groups.DF, rank), shape.defenders, used);
-  const attackers = takePlayers(sortByCuratedPriority(groups.FW, rank), shape.attackers, used);
-  const midfieldBands = shape.midfieldBands.map((count) => takePlayers(sortByCuratedPriority(groups.MF, rank), count, used));
+  const goalkeepers = fillLine(takePlayers(sortByCuratedPriority(groups.GK, rank), 1, used), 1, "GK");
+  const defenders = fillLine(takePlayers(sortByCuratedPriority(groups.DF, rank), shape.defenders, used), shape.defenders, "DF");
+  const attackers = fillLine(takePlayers(sortByCuratedPriority(groups.FW, rank), shape.attackers, used), shape.attackers, "FW");
+  const midfieldBands = shape.midfieldBands.map((count) =>
+    fillLine(takePlayers(sortByCuratedPriority(groups.MF, rank), count, used), count, "MF")
+  );
   const selectedCount =
     goalkeepers.length + defenders.length + attackers.length + midfieldBands.reduce((total, band) => total + band.length, 0);
 
