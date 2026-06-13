@@ -171,13 +171,18 @@ export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFo
               <div className="mb-1 text-center text-[10px] font-black uppercase text-white/70">
                 {row.label}
               </div>
-              <div
-                className="grid gap-1.5"
-                style={{ gridTemplateColumns: `repeat(${Math.max(1, row.players.length)}, minmax(0, 1fr))` }}
-              >
-                {row.players.map((player) => (
-                  <SquadChip key={`${row.id}-${player.key}`} player={player} />
-                ))}
+              <div className="flex justify-center">
+                <div
+                  className="grid gap-1.5"
+                  style={{
+                    gridTemplateColumns: `repeat(${Math.max(1, row.players.length)}, minmax(0, 1fr))`,
+                    width: row.players.length <= 2 ? `min(100%, ${row.players.length * 6.5}rem)` : "100%"
+                  }}
+                >
+                  {row.players.map((player) => (
+                    <SquadChip key={`${row.id}-${player.key}`} player={player} />
+                  ))}
+                </div>
               </div>
             </div>
           );
