@@ -3,7 +3,13 @@ import { Panel } from "@/components/ui/panel";
 import { avatarUrl } from "@/lib/profile-data";
 import { buildPlayerStatLeaders, type PlayerStatLeader } from "@/lib/player-stats";
 import { buildLeaderboard } from "@/lib/predictions";
-import { getReZeroExactProgress, getReZeroProgress, type ReZeroBadge, type ReZeroExactBadge } from "@/lib/rezero-progression";
+import {
+  getReZeroAvatarTheme,
+  getReZeroExactProgress,
+  getReZeroProgress,
+  type ReZeroBadge,
+  type ReZeroExactBadge
+} from "@/lib/rezero-progression";
 import type { Match, PlayerMatchStat, Prediction } from "@/lib/types";
 import { Flag } from "./flag";
 
@@ -27,6 +33,7 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
       <div className="space-y-2">
         {leaderboard.map((user, index) => {
           const progression = getReZeroProgress(user.points);
+          const avatarTheme = getReZeroAvatarTheme(user.key, progression.current.level);
 
           return (
             <div
@@ -39,16 +46,12 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white ${
-                      index === 0 ? "bg-cup-gold text-cup-ink" : "bg-cup-ink"
-                    }`}
-                  >
-                    {index === 0 ? <Medal className="h-4 w-4" /> : index + 1}
-                  </span>
+                  <ProgressionAvatar userName={user.displayName} rank={index + 1} isLeader={index === 0} theme={avatarTheme} />
                   <div>
                     <div className="font-black">{user.displayName}</div>
-                    <div className="text-[10px] font-black uppercase text-slate-500">Level {progression.current.level}</div>
+                    <div className="text-[10px] font-black uppercase text-slate-500">
+                      Level {progression.current.level} - {avatarTheme.title}
+                    </div>
                   </div>
                 </div>
                 <span className="text-xl font-black text-cup-red">{user.points}</span>
@@ -89,6 +92,43 @@ export function LeaderboardPanel({ matches, predictions, playerStats }: Leaderbo
         </div>
       </div>
     </Panel>
+  );
+}
+
+function ProgressionAvatar({
+  userName,
+  rank,
+  isLeader,
+  theme
+}: {
+  userName: string;
+  rank: number;
+  isLeader: boolean;
+  theme: ReturnType<typeof getReZeroAvatarTheme>;
+}) {
+  const initials = userName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2);
+
+  return (
+    <div className="relative h-12 w-12 shrink-0">
+      <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.gradient} shadow-sm ring-2 ring-white`} />
+      <div className="absolute left-1/2 top-2 h-5 w-7 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.hair }} />
+      <div className="absolute left-1/2 top-4 h-6 w-6 -translate-x-1/2 rounded-full bg-[#f7d7bf] ring-1 ring-black/10" />
+      <div className="absolute left-[17px] top-[25px] h-1 w-1 rounded-full bg-cup-ink" />
+      <div className="absolute right-[17px] top-[25px] h-1 w-1 rounded-full bg-cup-ink" />
+      <div className="absolute left-1/2 top-[30px] h-1 w-3 -translate-x-1/2 rounded-full bg-cup-red/70" />
+      <div className="absolute bottom-1 left-1/2 h-4 w-8 -translate-x-1/2 rounded-t-full" style={{ backgroundColor: theme.outfit }} />
+      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-black uppercase text-white">{initials}</div>
+      <div className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-cup-ink px-1 text-[9px] font-black text-white ring-2 ring-white">
+        {isLeader ? <Medal className="h-3 w-3 text-cup-gold" /> : rank}
+      </div>
+      <div className="absolute -bottom-1 left-1/2 max-w-[52px] -translate-x-1/2 rounded-full bg-white px-1.5 py-0.5 text-[8px] font-black text-cup-ink shadow-sm ring-1 ring-black/5">
+        {theme.charm}
+      </div>
+    </div>
   );
 }
 

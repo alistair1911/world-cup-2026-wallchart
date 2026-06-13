@@ -169,3 +169,86 @@ export function getReZeroExactProgress(exact: number) {
     progress
   };
 }
+
+export function getReZeroAvatarTheme(userKey: string, level: number) {
+  const isLucas = userKey === "lucas";
+  const stage = Math.min(5, Math.max(1, Math.ceil(level / 2)));
+
+  const tataStages = [
+    {
+      title: "Tata Rookie",
+      gradient: "from-amber-200 via-white to-slate-100",
+      hair: "#2f241f",
+      outfit: "#b91c1c",
+      charm: "Appa"
+    },
+    {
+      title: "Tata Emilia Camp",
+      gradient: "from-violet-200 via-white to-sky-100",
+      hair: "#3b2a22",
+      outfit: "#7c3aed",
+      charm: "Hope"
+    },
+    {
+      title: "Tata Rem Resolve",
+      gradient: "from-blue-200 via-white to-cyan-100",
+      hair: "#2b211d",
+      outfit: "#2563eb",
+      charm: "Exact"
+    },
+    {
+      title: "Tata Library Keeper",
+      gradient: "from-amber-200 via-white to-fuchsia-100",
+      hair: "#261c18",
+      outfit: "#92400e",
+      charm: "Book"
+    },
+    {
+      title: "Tata Royal Knight",
+      gradient: "from-red-200 via-white to-yellow-100",
+      hair: "#201716",
+      outfit: "#991b1b",
+      charm: "Crown"
+    }
+  ];
+
+  const lucasStages = [
+    {
+      title: "Lucas Rookie",
+      gradient: "from-sky-200 via-white to-slate-100",
+      hair: "#1f2937",
+      outfit: "#0f766e",
+      charm: "Appa"
+    },
+    {
+      title: "Lucas Spirit Friend",
+      gradient: "from-cyan-200 via-white to-violet-100",
+      hair: "#111827",
+      outfit: "#0891b2",
+      charm: "Puck"
+    },
+    {
+      title: "Lucas Blue Ribbon",
+      gradient: "from-blue-200 via-white to-indigo-100",
+      hair: "#111827",
+      outfit: "#1d4ed8",
+      charm: "Rem"
+    },
+    {
+      title: "Lucas Trial Breaker",
+      gradient: "from-emerald-200 via-white to-blue-100",
+      hair: "#0f172a",
+      outfit: "#047857",
+      charm: "Trial"
+    },
+    {
+      title: "Lucas Return Hero",
+      gradient: "from-violet-200 via-white to-red-100",
+      hair: "#020617",
+      outfit: "#6d28d9",
+      charm: "Loop"
+    }
+  ];
+
+  return (isLucas ? lucasStages : tataStages)[stage - 1];
+}
