@@ -66,6 +66,19 @@ create table if not exists public.player_match_stats (
   unique (match_id, player_id)
 );
 
+create table if not exists public.team_squads (
+  team_id text primary key,
+  provider text not null default 'api-football',
+  provider_team_id integer,
+  provider_team_name text,
+  provider_logo_url text,
+  formation text,
+  players jsonb not null default '[]'::jsonb,
+  source text not null default 'api-football-squad',
+  fetched_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists comments_match_id_created_at_idx
   on public.comments (match_id, created_at);
 
@@ -75,17 +88,21 @@ create index if not exists player_match_stats_match_id_idx
 create index if not exists player_match_stats_player_id_idx
   on public.player_match_stats (player_id);
 
+create index if not exists team_squads_fetched_at_idx
+  on public.team_squads (fetched_at);
+
 alter table public.profiles enable row level security;
 alter table public.teams enable row level security;
 alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
 alter table public.comments enable row level security;
 alter table public.player_match_stats enable row level security;
+alter table public.team_squads enable row level security;
 
 grant usage on schema public to anon, authenticated, service_role;
 grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
-grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats to authenticated;
+grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats, public.team_squads to authenticated;
 grant insert, update on public.profiles, public.matches, public.predictions, public.comments, public.player_match_stats to authenticated;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
@@ -182,6 +199,12 @@ create policy "Authenticated users can update player stats"
   using (true)
   with check (true);
 
+drop policy if exists "Authenticated users can read team squads" on public.team_squads;
+create policy "Authenticated users can read team squads"
+  on public.team_squads for select
+  to authenticated
+  using (true);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -205,6 +228,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_player_match_stats_updated_at on public.player_match_stats;
 create trigger set_player_match_stats_updated_at
 before update on public.player_match_stats
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_team_squads_updated_at on public.team_squads;
+create trigger set_team_squads_updated_at
+before update on public.team_squads
 for each row execute function public.set_updated_at();
 
 -- After creating the two Auth users, replace the UUIDs below and run:

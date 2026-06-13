@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getTeam } from "@/lib/tournament-data";
 
 type ApiFootballTeamSearch = {
@@ -31,6 +32,31 @@ type ApiFootballSquad = {
   }>;
 };
 
+type SquadPlayer = {
+  id: string;
+  name: string;
+  age: number | null;
+  number: number | null;
+  position: string;
+  photoUrl: string | null;
+};
+
+type TeamSquadRow = {
+  team_id: string;
+  provider: string;
+  provider_team_id: number | null;
+  provider_team_name: string | null;
+  provider_logo_url: string | null;
+  formation: string | null;
+  players: SquadPlayer[];
+  source: string;
+  fetched_at: string;
+};
+
+const COMPLETE_SQUAD_MINIMUM = 11;
+const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" };
+const PARTIAL_HEADERS = { "Cache-Control": "no-store" };
+
 const TEAM_SEARCH_NAMES: Record<string, string> = {
   "bosnia-herzegovina": "Bosnia and Herzegovina",
   "cabo-verde": "Cape Verde",
@@ -46,6 +72,16 @@ const TEAM_SEARCH_NAMES: Record<string, string> = {
   turkiye: "Turkey",
   usa: "USA"
 };
+
+const FORMATIONS = ["4-3-3", "4-2-3-1", "3-4-2-1", "4-4-2"];
+
+function formationForTeam(team: { id: string; seed: number; group: string }) {
+  if (team.id === "spain") {
+    return "4-3-3";
+  }
+
+  return FORMATIONS[(team.seed + team.group.charCodeAt(0)) % FORMATIONS.length];
+}
 
 function apiHeaders() {
   const key = process.env.API_FOOTBALL_KEY;
@@ -67,7 +103,7 @@ async function fetchApiFootball<T>(path: string): Promise<T> {
 
   const response = await fetch(`https://${host}${path}`, {
     headers,
-    next: { revalidate: 60 * 60 * 24 * 7 }
+    cache: "no-store"
   });
 
   if (!response.ok) {
@@ -75,6 +111,67 @@ async function fetchApiFootball<T>(path: string): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+function getServiceSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+function isCompleteSquad(players: SquadPlayer[] | null | undefined) {
+  return Array.isArray(players) && players.length >= COMPLETE_SQUAD_MINIMUM;
+}
+
+async function readSavedSquad(supabase: SupabaseClient | null, teamId: string) {
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase.from("team_squads").select("*").eq("team_id", teamId).maybeSingle();
+  if (error || !data) {
+    return null;
+  }
+
+  const row = data as TeamSquadRow;
+  return isCompleteSquad(row.players) ? row : null;
+}
+
+async function saveSquad(
+  supabase: SupabaseClient | null,
+  input: {
+    teamId: string;
+    providerTeamId: number | null;
+    providerTeamName: string | null;
+    providerLogoUrl: string | null;
+    formation: string;
+    players: SquadPlayer[];
+  }
+) {
+  if (!supabase || !isCompleteSquad(input.players)) {
+    return;
+  }
+
+  await supabase.from("team_squads").upsert(
+    {
+      team_id: input.teamId,
+      provider: "api-football",
+      provider_team_id: input.providerTeamId,
+      provider_team_name: input.providerTeamName,
+      provider_logo_url: input.providerLogoUrl,
+      formation: input.formation,
+      players: input.players,
+      source: "api-football-squad",
+      fetched_at: new Date().toISOString()
+    },
+    { onConflict: "team_id" }
+  );
 }
 
 function preferredTeamResult(payload: ApiFootballTeamSearch, teamName: string) {
@@ -93,6 +190,28 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
     return NextResponse.json({ ok: false, error: "Team not found." }, { status: 404 });
   }
 
+  const supabase = getServiceSupabase();
+  const formation = formationForTeam(team);
+  const savedSquad = await readSavedSquad(supabase, team.id);
+  if (savedSquad) {
+    return NextResponse.json(
+      {
+        ok: true,
+        provider: savedSquad.provider,
+        source: "supabase-team-squads",
+        cached: true,
+        formation: savedSquad.formation ?? formation,
+        team: {
+          id: savedSquad.provider_team_id,
+          name: savedSquad.provider_team_name ?? team.name,
+          logoUrl: savedSquad.provider_logo_url
+        },
+        players: savedSquad.players
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
   try {
     const searchName = TEAM_SEARCH_NAMES[team.id] ?? team.name;
     const search = await fetchApiFootball<ApiFootballTeamSearch>(`/teams?search=${encodeURIComponent(searchName)}`);
@@ -101,29 +220,41 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
 
     if (!providerTeamId) {
       return NextResponse.json(
-        { ok: true, provider: "api-football", players: [], source: "none" },
-        { headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" } }
+        { ok: true, provider: "api-football", players: [], source: "none", formation },
+        { headers: PARTIAL_HEADERS }
       );
     }
 
     const squad = await fetchApiFootball<ApiFootballSquad>(`/players/squads?team=${providerTeamId}`);
-    const players =
-      squad.response?.[0]?.players
-        ?.filter((player) => player.name)
+    const squadPlayers = squad.response?.[0]?.players ?? [];
+    const players: SquadPlayer[] =
+      squadPlayers
         .map((player) => ({
-          id: player.id ? String(player.id) : player.name,
+          id: player.id ? String(player.id) : (player.name ?? "Player"),
           name: player.name ?? "Player",
           age: player.age ?? null,
           number: player.number ?? null,
           position: player.position ?? "Player",
           photoUrl: player.photo ?? null
-        })) ?? [];
+        }))
+        .filter((player) => player.name !== "Player" || player.id !== "Player") ?? [];
+
+    await saveSquad(supabase, {
+      teamId: team.id,
+      providerTeamId,
+      providerTeamName: result?.team?.name ?? team.name,
+      providerLogoUrl: result?.team?.logo ?? null,
+      formation,
+      players
+    });
 
     return NextResponse.json(
       {
         ok: true,
         provider: "api-football",
         source: "api-football-squad",
+        cached: false,
+        formation,
         team: {
           id: providerTeamId,
           name: result?.team?.name ?? team.name,
@@ -131,7 +262,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
         },
         players
       },
-      { headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" } }
+      { headers: isCompleteSquad(players) ? CACHE_HEADERS : PARTIAL_HEADERS }
     );
   } catch (error) {
     return NextResponse.json(
