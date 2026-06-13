@@ -122,7 +122,7 @@ function SquadChip({ player }: { player: SquadBoardPlayer }) {
       <img
         src={player.photoUrl ?? avatarUrl(player.name)}
         alt={`${player.name} portrait`}
-        className="h-9 w-9 shrink-0 rounded-full object-cover object-top ring-2 ring-cup-gold"
+        className="mx-auto h-9 w-9 shrink-0 rounded-full object-cover object-top ring-2 ring-cup-gold"
       />
       <div className="mt-1 min-w-0 text-center">
         <div className="truncate text-[10px] font-black leading-tight text-cup-ink">{player.name}</div>
@@ -135,11 +135,16 @@ function SquadChip({ player }: { player: SquadBoardPlayer }) {
   );
 
   return player.href ? (
-    <Link href={player.href} className="interactive-pop block min-w-0 rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50">
+    <Link
+      href={player.href}
+      className="interactive-pop flex w-full min-w-0 flex-col items-center rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50"
+    >
       {content}
     </Link>
   ) : (
-    <div className="block min-w-0 rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50">{content}</div>
+    <div className="flex w-full min-w-0 flex-col items-center rounded-md bg-white/95 p-1.5 text-center shadow-sm ring-1 ring-white/50">
+      {content}
+    </div>
   );
 }
 
@@ -179,7 +184,7 @@ export function LiveFormationBoard({ teamId, formation, curatedPlayers }: LiveFo
               </div>
               <div className="flex justify-center">
                 <div
-                  className="grid gap-1.5"
+                  className="grid place-items-center gap-1.5"
                   style={{
                     gridTemplateColumns: `repeat(${Math.max(1, row.players.length)}, minmax(0, 1fr))`,
                     width: rowWidth(row.players.length)
