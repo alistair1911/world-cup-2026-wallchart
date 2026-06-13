@@ -53,34 +53,53 @@ async function isFamilyUserRequest(request: NextRequest, supabase: SupabaseClien
   return profile?.user_key === "tata" || profile?.user_key === "lucas";
 }
 
-async function fetchScorePayload() {
-  const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
-
-  if (provider === "openrouter-llm") {
-    return fetchOpenRouterScorePayload();
+async function fetchApiFootballScorePayload() {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) {
+    throw new Error("Missing API_FOOTBALL_KEY.");
   }
 
-  if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
-    const key = process.env.API_FOOTBALL_KEY;
-    if (!key) {
-      throw new Error("Missing API_FOOTBALL_KEY.");
+  const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
+  const league = process.env.API_FOOTBALL_LEAGUE_ID || "1";
+  const season = process.env.API_FOOTBALL_SEASON || "2026";
+  const response = await fetch(`https://${host}/fixtures?league=${league}&season=${season}`, {
+    headers: {
+      "x-apisports-key": key
+    },
+    next: { revalidate: 0 }
+  });
+
+  if (!response.ok) {
+    throw new Error(`API-Football returned ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+async function fetchScorePayload() {
+  const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
+  const warnings: string[] = [];
+
+  if (process.env.API_FOOTBALL_KEY && provider !== "openrouter-llm-only") {
+    try {
+      return { payload: await fetchApiFootballScorePayload(), warnings };
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "API-Football score sync failed.");
+      if (!process.env.OPENROUTER_API_KEY && !process.env.SCORE_FEED_URL) {
+        throw error;
+      }
     }
+  }
 
-    const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
-    const league = process.env.API_FOOTBALL_LEAGUE_ID || "1";
-    const season = process.env.API_FOOTBALL_SEASON || "2026";
-    const response = await fetch(`https://${host}/fixtures?league=${league}&season=${season}`, {
-      headers: {
-        "x-apisports-key": key
-      },
-      next: { revalidate: 0 }
-    });
-
-    if (!response.ok) {
-      throw new Error(`API-Football returned ${response.status}.`);
+  if (provider === "openrouter-llm" || provider === "openrouter-llm-only" || process.env.OPENROUTER_API_KEY) {
+    try {
+      return { payload: await fetchOpenRouterScorePayload(), warnings };
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "OpenRouter score sync failed.");
+      if (!process.env.SCORE_FEED_URL) {
+        throw error;
+      }
     }
-
-    return response.json();
   }
 
   const feedUrl = process.env.SCORE_FEED_URL;
@@ -98,7 +117,7 @@ async function fetchScorePayload() {
     throw new Error(`Score feed returned ${response.status}.`);
   }
 
-  return response.json();
+  return { payload: await response.json(), warnings };
 }
 
 function isForcedSync(request: NextRequest) {
@@ -112,7 +131,7 @@ function isActiveSyncWindow(match: Match, now = new Date()) {
 
   const kickoff = new Date(match.kickoff).getTime();
   const elapsed = now.getTime() - kickoff;
-  return elapsed >= -10 * 60 * 1000 && elapsed <= 220 * 60 * 1000;
+  return elapsed >= -15 * 60 * 1000 && elapsed <= 300 * 60 * 1000;
 }
 
 function clampStat(value: number) {
@@ -540,7 +559,7 @@ async function syncScores(request: NextRequest) {
       });
     }
 
-    const payload = await fetchScorePayload();
+    const { payload, warnings } = await fetchScorePayload();
     const feedItems = normalizeScorePayload(payload, matchesSnapshot);
     const result = buildScoreUpdates(matchesSnapshot, feedItems);
 
@@ -557,6 +576,7 @@ async function syncScores(request: NextRequest) {
     }
 
     const playerStats: PlayerMatchStat[] = [];
+    const statWarnings: string[] = [];
     const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
     const syncCandidates = [...updatedMatchesById.values()]
       .filter((match) => (force || isActiveSyncWindow(match)) && match.status !== "scheduled" && match.homeScore !== null && match.awayScore !== null)
@@ -574,11 +594,15 @@ async function syncScores(request: NextRequest) {
         .slice(0, 6);
 
       for (const target of eventTargets) {
-        const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
-        if (!eventsPayload) {
-          continue;
+        try {
+          const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
+          if (!eventsPayload) {
+            continue;
+          }
+          playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
+        } catch (error) {
+          statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
         }
-        playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
       }
     }
 
@@ -600,11 +624,15 @@ async function syncScores(request: NextRequest) {
       .slice(0, 4);
 
     if (llmTargets.length > 0) {
-      playerStats.push(...(await fetchOpenRouterPlayerStats(llmTargets)));
+      try {
+        playerStats.push(...(await fetchOpenRouterPlayerStats(llmTargets)));
+      } catch (error) {
+        statWarnings.push(error instanceof Error ? error.message : "OpenRouter player stats sync failed.");
+      }
     }
 
     let playerStatsUpdated = 0;
-    let warning: string | null = null;
+    let warning: string | null = [...warnings, ...statWarnings].length > 0 ? [...warnings, ...statWarnings].join(" ") : null;
 
     if (playerStats.length > 0) {
       const { error } = await supabase
@@ -612,8 +640,12 @@ async function syncScores(request: NextRequest) {
         .upsert(playerStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
       if (error) {
         if (isMissingPlayerStatsTable(error.message)) {
-          warning =
-            "Player stats table is missing in Supabase. Run the player_match_stats SQL once, then press Sync again.";
+          warning = [
+            warning,
+            "Player stats table is missing in Supabase. Run the player_match_stats SQL once, then press Sync again."
+          ]
+            .filter(Boolean)
+            .join(" ");
         } else {
           throw new Error(error.message);
         }

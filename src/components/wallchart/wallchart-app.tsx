@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, LogOut, RefreshCw, Trophy, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ function isScoreSyncWindow(match: Match, now = new Date()) {
   }
 
   const elapsed = now.getTime() - new Date(match.kickoff).getTime();
-  return elapsed >= -10 * 60 * 1000 && elapsed <= 220 * 60 * 1000;
+  return elapsed >= -15 * 60 * 1000 && elapsed <= 300 * 60 * 1000;
 }
 
 export function WallchartApp() {
@@ -63,6 +63,7 @@ export function WallchartApp() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
+  const lastAutoSyncAt = useRef(0);
 
   const refreshTournamentState = useCallback(async () => {
     setRefreshing(true);
@@ -229,14 +230,27 @@ export function WallchartApp() {
       return;
     }
 
-    const timer = window.setInterval(() => {
-      if (syncing || !matches.some((match) => isScoreSyncWindow(match))) {
+    const shouldSync = () => matches.some((match) => isScoreSyncWindow(match));
+    const tryAutoSync = () => {
+      if (syncing || !shouldSync()) {
         return;
       }
 
+      const now = Date.now();
+      if (now - lastAutoSyncAt.current < 5 * 60 * 1000) {
+        return;
+      }
+
+      lastAutoSyncAt.current = now;
       runScoreSync(false, false).catch(() => {
         setError("Automatic score sync could not finish.");
       });
+    };
+
+    tryAutoSync();
+
+    const timer = window.setInterval(() => {
+      tryAutoSync();
     }, 5 * 60 * 1000);
 
     return () => window.clearInterval(timer);
