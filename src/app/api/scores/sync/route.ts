@@ -466,9 +466,21 @@ function playerStatToRow(stat: PlayerMatchStat) {
 }
 
 async function syncScores(request: NextRequest) {
+  const force = isForcedSync(request);
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
+    if (!force) {
+      return NextResponse.json({
+        ok: true,
+        provider: "api-football",
+        received: 0,
+        updated: [],
+        playerStatsUpdated: 0,
+        warning: "Automatic sync skipped because Supabase server credentials are unavailable."
+      });
+    }
+
     return NextResponse.json(
       { ok: false, error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY." },
       { status: 500 }
@@ -513,7 +525,6 @@ async function syncScores(request: NextRequest) {
     }
 
     const matchesSnapshot = [...currentMatches.values()];
-    const force = isForcedSync(request);
     const activeMatches = matchesSnapshot.filter((match) => isActiveSyncWindow(match));
     if (!force && activeMatches.length === 0) {
       return NextResponse.json({
@@ -605,8 +616,20 @@ async function syncScores(request: NextRequest) {
       skipped: result.skipped.slice(0, 20)
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not sync scores.";
+    if (!force) {
+      return NextResponse.json({
+        ok: true,
+        provider: "api-football",
+        received: 0,
+        updated: [],
+        playerStatsUpdated: 0,
+        warning: `Automatic sync skipped: ${message}`
+      });
+    }
+
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Could not sync scores." },
+      { ok: false, error: message },
       { status: 500 }
     );
   }

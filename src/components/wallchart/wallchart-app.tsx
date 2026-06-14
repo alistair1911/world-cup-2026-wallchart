@@ -250,7 +250,7 @@ export function WallchartApp() {
 
       lastAutoSyncAt.current = now;
       runScoreSync(false, false).catch(() => {
-        setError("Automatic score sync could not finish.");
+        // Background sync failures must not interrupt the wallchart.
       });
     };
 
