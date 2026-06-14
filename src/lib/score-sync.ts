@@ -229,6 +229,11 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       continue;
     }
 
+    if (match.updatedBy) {
+      skipped.push({ reason: "Protected manual result", item });
+      continue;
+    }
+
     const incomingStatus = normalizeFeedStatus(item.status) ?? match.status;
     if (match.status === "final" && incomingStatus !== "final") {
       skipped.push({ reason: "Ignored non-final update for final match", item });

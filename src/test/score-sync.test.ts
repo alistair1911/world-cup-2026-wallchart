@@ -39,6 +39,31 @@ describe("score sync", () => {
     expect(result.skipped[0]?.reason).toBe("Ignored non-final update for final match");
   });
 
+  it("does not overwrite a manually entered result", () => {
+    const manualMatches = INITIAL_MATCHES.map((match) =>
+      match.id === "M3"
+        ? {
+            ...match,
+            homeScore: 2,
+            awayScore: 1,
+            status: "final" as const,
+            updatedBy: "tata" as const
+          }
+        : match
+    );
+    const result = buildScoreUpdates(manualMatches, [
+      {
+        matchId: "M3",
+        homeScore: 0,
+        awayScore: 3,
+        status: "FT"
+      }
+    ]);
+
+    expect(result.updates).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toBe("Protected manual result");
+  });
+
   it("normalizes an API-Football style fixture payload by teams and kickoff", () => {
     const items = normalizeScorePayload(
       {

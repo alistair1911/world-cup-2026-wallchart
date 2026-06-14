@@ -83,47 +83,7 @@ async function fetchApiFootballScorePayload() {
 }
 
 async function fetchScorePayload() {
-  const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
-  const warnings: string[] = [];
-
-  if (process.env.API_FOOTBALL_KEY && provider !== "openrouter-llm-only") {
-    try {
-      return { payload: await fetchApiFootballScorePayload(), warnings };
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : "API-Football score sync failed.");
-      if (!process.env.OPENROUTER_API_KEY && !process.env.SCORE_FEED_URL) {
-        throw error;
-      }
-    }
-  }
-
-  if (provider === "openrouter-llm" || provider === "openrouter-llm-only" || process.env.OPENROUTER_API_KEY) {
-    try {
-      return { payload: await fetchOpenRouterScorePayload(), warnings };
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : "OpenRouter score sync failed.");
-      if (!process.env.SCORE_FEED_URL) {
-        throw error;
-      }
-    }
-  }
-
-  const feedUrl = process.env.SCORE_FEED_URL;
-  if (!feedUrl) {
-    throw new Error("Missing SCORE_FEED_URL, API_FOOTBALL_KEY, or SCORE_PROVIDER=openrouter-llm.");
-  }
-
-  const headers: Record<string, string> = {};
-  if (process.env.SCORE_FEED_TOKEN) {
-    headers.authorization = `Bearer ${process.env.SCORE_FEED_TOKEN}`;
-  }
-
-  const response = await fetch(feedUrl, { headers, next: { revalidate: 0 } });
-  if (!response.ok) {
-    throw new Error(`Score feed returned ${response.status}.`);
-  }
-
-  return { payload: await response.json(), warnings };
+  return { payload: await fetchApiFootballScorePayload(), warnings: [] as string[] };
 }
 
 function isForcedSync(request: NextRequest) {
@@ -547,6 +507,7 @@ async function syncScores(request: NextRequest) {
         awayScore: row.away_score ?? null,
         status: row.status ?? "scheduled",
         penaltyWinnerId: row.penalty_winner_id ?? null,
+        updatedBy: row.updated_by ? "tata" : null,
         updatedAt: row.updated_at ?? null
       });
     }
@@ -557,7 +518,7 @@ async function syncScores(request: NextRequest) {
     if (!force && activeMatches.length === 0) {
       return NextResponse.json({
         ok: true,
-        provider: process.env.SCORE_PROVIDER || "generic",
+        provider: "api-football",
         received: 0,
         updated: [],
         playerStatsUpdated: 0,
@@ -583,57 +544,25 @@ async function syncScores(request: NextRequest) {
 
     const playerStats: PlayerMatchStat[] = [];
     const statWarnings: string[] = [];
-    const provider = (process.env.SCORE_PROVIDER || (process.env.API_FOOTBALL_KEY ? "api-football" : "")).toLowerCase();
-    const syncCandidates = [...updatedMatchesById.values()]
-      .filter((match) => (force || isActiveSyncWindow(match)) && match.status !== "scheduled" && match.homeScore !== null && match.awayScore !== null)
-      .slice(0, 8);
+    const eventTargets = feedItems
+      .map((item) => ({
+        fixtureId: item.providerFixtureId,
+        match: item.matchId ? updatedMatchesById.get(item.matchId) : null
+      }))
+      .filter((target): target is { fixtureId: string; match: Match } =>
+        Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
+      )
+      .slice(0, 6);
 
-    if (["api-football", "api-sports", "api-football-v3"].includes(provider)) {
-      const eventTargets = feedItems
-        .map((item) => ({
-          fixtureId: item.providerFixtureId,
-          match: item.matchId ? updatedMatchesById.get(item.matchId) : null
-        }))
-        .filter((target): target is { fixtureId: string; match: Match } =>
-          Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
-        )
-        .slice(0, 6);
-
-      for (const target of eventTargets) {
-        try {
-          const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
-          if (!eventsPayload) {
-            continue;
-          }
-          playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
-        } catch (error) {
-          statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
-        }
-      }
-    }
-
-    const statMatchIds = new Set(playerStats.map((stat) => stat.matchId));
-    const llmTargets = syncCandidates
-      .filter((match) => !statMatchIds.has(match.id))
-      .map((match) => {
-        const home = getTeam(match.homeTeamId);
-        const away = getTeam(match.awayTeamId);
-        return home && away
-          ? {
-              match,
-              homeName: home.name,
-              awayName: away.name
-            }
-          : null;
-      })
-      .filter((target): target is LlmPlayerStatTarget => Boolean(target))
-      .slice(0, 4);
-
-    if (llmTargets.length > 0) {
+    for (const target of eventTargets) {
       try {
-        playerStats.push(...(await fetchOpenRouterPlayerStats(llmTargets)));
+        const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
+        if (!eventsPayload) {
+          continue;
+        }
+        playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
       } catch (error) {
-        statWarnings.push(error instanceof Error ? error.message : "OpenRouter player stats sync failed.");
+        statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
       }
     }
 
@@ -662,7 +591,7 @@ async function syncScores(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      provider: process.env.SCORE_PROVIDER || "generic",
+      provider: "api-football",
       received: feedItems.length,
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
