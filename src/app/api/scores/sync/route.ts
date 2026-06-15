@@ -53,37 +53,103 @@ async function isFamilyUserRequest(request: NextRequest, supabase: SupabaseClien
   return profile?.user_key === "tata" || profile?.user_key === "lucas";
 }
 
-async function fetchApiFootballScorePayload() {
+function dateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addMatchDateKey(keys: Set<string>, match: Match, includeAdjacentDates: boolean) {
+  const kickoff = new Date(match.kickoff);
+  keys.add(dateKey(kickoff));
+
+  if (includeAdjacentDates) {
+    keys.add(dateKey(addDays(kickoff, -1)));
+    keys.add(dateKey(addDays(kickoff, 1)));
+  }
+}
+
+function scoreSyncTargetDates(matches: Match[], force: boolean, now = new Date()) {
+  const keys = new Set<string>();
+  const nowMs = now.getTime();
+
+  for (const match of matches) {
+    if (!match.homeTeamId || !match.awayTeamId) {
+      continue;
+    }
+
+    if (!force) {
+      if (isActiveSyncWindow(match, now)) {
+        addMatchDateKey(keys, match, false);
+      }
+      continue;
+    }
+
+    const kickoffMs = new Date(match.kickoff).getTime();
+    const elapsed = nowMs - kickoffMs;
+    const isRecentOrUpcoming = elapsed >= -24 * 60 * 60 * 1000 && elapsed <= 10 * 24 * 60 * 60 * 1000;
+    if (isRecentOrUpcoming || match.status === "live") {
+      addMatchDateKey(keys, match, true);
+    }
+  }
+
+  if (force && keys.size === 0) {
+    for (const match of matches.filter((item) => item.status !== "final").slice(0, 6)) {
+      addMatchDateKey(keys, match, true);
+    }
+  }
+
+  return [...keys].sort();
+}
+
+async function fetchApiFootballFixtureDate(date: string, force: boolean) {
   const key = process.env.API_FOOTBALL_KEY;
   if (!key) {
     throw new Error("Missing API_FOOTBALL_KEY.");
   }
 
   const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
-  const league = process.env.API_FOOTBALL_LEAGUE_ID || "1";
-  const season = process.env.API_FOOTBALL_SEASON || "2026";
-  const response = await fetch(`https://${host}/fixtures?league=${league}&season=${season}`, {
+  const response = await fetch(`https://${host}/fixtures?date=${encodeURIComponent(date)}`, {
     headers: {
       "x-apisports-key": key
     },
-    next: { revalidate: 0 }
+    next: { revalidate: force ? 0 : 300 }
   });
 
   if (!response.ok) {
-    throw new Error(`API-Football returned ${response.status}.`);
+    throw new Error(`API-Football returned ${response.status} for ${date}.`);
   }
 
   const payload = await response.json();
   const items = payload && typeof payload === "object" ? (payload as Record<string, unknown>).response : null;
-  if (Array.isArray(items) && items.length === 0) {
-    throw new Error("API-Football returned no fixtures for the configured league and season.");
-  }
-
-  return payload;
+  return Array.isArray(items) ? items : [];
 }
 
-async function fetchScorePayload() {
-  return { payload: await fetchApiFootballScorePayload(), warnings: [] as string[] };
+async function fetchApiFootballScorePayload(matches: Match[], force: boolean) {
+  const dates = scoreSyncTargetDates(matches, force);
+  if (dates.length === 0) {
+    return { response: [] };
+  }
+
+  const items: unknown[] = [];
+  const limitedDates = dates.slice(0, force ? 24 : 3);
+  for (const date of limitedDates) {
+    items.push(...(await fetchApiFootballFixtureDate(date, force)));
+  }
+
+  if (items.length === 0) {
+    throw new Error(`API-Football returned no fixtures for checked World Cup match dates: ${limitedDates.join(", ")}.`);
+  }
+
+  return { response: items };
+}
+
+async function fetchScorePayload(matches: Match[], force: boolean) {
+  return { payload: await fetchApiFootballScorePayload(matches, force), warnings: [] as string[] };
 }
 
 function isForcedSync(request: NextRequest) {
@@ -537,7 +603,7 @@ async function syncScores(request: NextRequest) {
       });
     }
 
-    const { payload, warnings } = await fetchScorePayload();
+    const { payload, warnings } = await fetchScorePayload(matchesSnapshot, force);
     const feedItems = normalizeScorePayload(payload, matchesSnapshot);
     const result = buildScoreUpdates(matchesSnapshot, feedItems);
 
