@@ -153,7 +153,7 @@ async function fetchScorePayload(matches: Match[], force: boolean) {
 }
 
 function isForcedSync(request: NextRequest) {
-  return request.nextUrl.searchParams.get("force") === "1";
+  return request.nextUrl.searchParams.get("force") === "1" || request.headers.get("user-agent") === "vercel-cron/1.0";
 }
 
 function isActiveSyncWindow(match: Match, now = new Date()) {
