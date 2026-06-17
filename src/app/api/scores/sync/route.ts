@@ -7,6 +7,11 @@ import type { Match, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+const OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL?.trim() === "tencent/hy3-preview"
+    ? process.env.OPENROUTER_MODEL.trim()
+    : "tencent/hy3-preview";
+
 function isMissingPlayerStatsTable(message: string) {
   const value = message.toLowerCase();
   return (
@@ -149,7 +154,16 @@ async function fetchApiFootballScorePayload(matches: Match[], force: boolean) {
 }
 
 async function fetchScorePayload(matches: Match[], force: boolean) {
-  return { payload: await fetchApiFootballScorePayload(matches, force), warnings: [] as string[] };
+  const warnings: string[] = [];
+
+  try {
+    return { payload: await fetchApiFootballScorePayload(matches, force), warnings };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "API-Football score sync failed.";
+    warnings.push(`${message} Falling back to confirmed web score lookup.`);
+  }
+
+  return { payload: await fetchOpenRouterScorePayload(matches, force), warnings };
 }
 
 function isForcedSync(request: NextRequest) {
@@ -287,6 +301,31 @@ function statCount(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? clampStat(value) : 0;
 }
 
+function readTextContent(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const text = value
+    .map((part) => {
+      const record = readEventObject(part);
+      return typeof record?.text === "string" ? record.text : typeof record?.content === "string" ? record.content : "";
+    })
+    .join("")
+    .trim();
+  return text || null;
+}
+
+function parseJsonContent(content: string) {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced ? fenced[1] : trimmed);
+}
+
 function parseLlmPlayerStats(payload: unknown, targets: LlmPlayerStatTarget[]) {
   const items = payload && typeof payload === "object" && Array.isArray((payload as Record<string, unknown>).matches)
     ? ((payload as Record<string, unknown>).matches as unknown[])
@@ -338,7 +377,7 @@ async function fetchOpenRouterPlayerStats(targets: LlmPlayerStatTarget[]) {
     return [];
   }
 
-  const model = process.env.OPENROUTER_MODEL || "inclusionai/ring-2.6-1t";
+  const model = OPENROUTER_MODEL;
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -389,13 +428,13 @@ Aggregate duplicate player rows. Use team names from the listed matches. Only in
   }
 
   const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
+  const content = readTextContent(data?.choices?.[0]?.message?.content);
+  if (!content) {
     throw new Error("OpenRouter player stats response did not include text content.");
   }
 
   try {
-    return parseLlmPlayerStats(JSON.parse(content), targets);
+    return parseLlmPlayerStats(parseJsonContent(content), targets);
   } catch {
     throw new Error("OpenRouter player stats did not return valid JSON.");
   }
@@ -422,20 +461,35 @@ async function fetchApiFootballFixtureEvents(fixtureId: string) {
   return response.json();
 }
 
-async function fetchOpenRouterScorePayload() {
+function scoreLookupTargets(matches: Match[], force: boolean, now = new Date()) {
+  const nowMs = now.getTime();
+  const windowStart = nowMs - (force ? 10 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000);
+  const windowEnd = nowMs + (force ? 24 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000);
+
+  return matches
+    .filter((match) => {
+      if (!match.homeTeamId || !match.awayTeamId || match.updatedBy) {
+        return false;
+      }
+
+      const kickoff = new Date(match.kickoff).getTime();
+      return kickoff >= windowStart && kickoff <= windowEnd;
+    })
+    .slice(0, force ? 16 : 8);
+}
+
+async function fetchOpenRouterScorePayload(matches: Match[], force: boolean) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("Missing OPENROUTER_API_KEY.");
   }
 
-  const model = process.env.OPENROUTER_MODEL || "inclusionai/ring-2.6-1t";
+  const model = OPENROUTER_MODEL;
   const now = new Date();
-  const windowStart = now.getTime() - 8 * 60 * 60 * 1000;
-  const windowEnd = now.getTime() + 18 * 60 * 60 * 1000;
-  const targetMatches = INITIAL_MATCHES.filter((match) => {
-    const kickoff = new Date(match.kickoff).getTime();
-    return kickoff >= windowStart && kickoff <= windowEnd;
-  }).slice(0, 12);
+  const targetMatches = scoreLookupTargets(matches, force, now);
+  if (targetMatches.length === 0) {
+    return { matches: [] };
+  }
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -469,12 +523,16 @@ async function fetchOpenRouterScorePayload() {
           content: `Current time: ${now.toISOString()}.
 Find live or final scores for these FIFA World Cup 2026 wallchart matches only:
 ${targetMatches
-  .map((match) => `M${match.matchNumber}: ${match.homeTeamId ?? match.homeSeed?.label} vs ${match.awayTeamId ?? match.awaySeed?.label}, kickoff ${match.kickoff}`)
+  .map((match) => {
+    const home = getTeam(match.homeTeamId);
+    const away = getTeam(match.awayTeamId);
+    return `M${match.matchNumber}: ${home?.name ?? match.homeTeamId} vs ${away?.name ?? match.awayTeamId}, kickoff ${match.kickoff}, current wallchart status ${match.status}, current wallchart score ${match.homeScore ?? "-"}-${match.awayScore ?? "-"}`;
+  })
   .join("\n")}
 
 Return JSON exactly shaped like:
 {"matches":[{"matchNumber":3,"homeScore":1,"awayScore":0,"status":"live"}]}
-Allowed status values: scheduled, live, final. Only include confirmed live or final scores.`
+Allowed status values: scheduled, live, final. Only include confirmed live or final scores. Do not include predictions, odds, previews, or simulated scores.`
         }
       ]
     })
@@ -485,13 +543,13 @@ Allowed status values: scheduled, live, final. Only include confirmed live or fi
   }
 
   const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
+  const content = readTextContent(data?.choices?.[0]?.message?.content);
+  if (!content) {
     throw new Error("OpenRouter response did not include text content.");
   }
 
   try {
-    return JSON.parse(content);
+    return parseJsonContent(content);
   } catch {
     throw new Error("OpenRouter did not return valid JSON.");
   }
