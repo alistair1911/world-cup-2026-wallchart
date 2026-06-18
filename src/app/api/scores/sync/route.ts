@@ -163,7 +163,13 @@ async function fetchScorePayload(matches: Match[], force: boolean) {
     warnings.push(`${message} Falling back to confirmed web score lookup.`);
   }
 
-  return { payload: await fetchOpenRouterScorePayload(matches, force), warnings };
+  try {
+    return { payload: await fetchOpenRouterScorePayload(matches, force), warnings };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Confirmed web score lookup failed.";
+    warnings.push(`${message} No automatic score changes were applied.`);
+    return { payload: { matches: [] }, warnings };
+  }
 }
 
 function isForcedSync(request: NextRequest) {
@@ -306,6 +312,19 @@ function readTextContent(value: unknown) {
     return value;
   }
 
+  const record = readEventObject(value);
+  if (record) {
+    for (const key of ["text", "content", "output_text", "reasoning"]) {
+      if (typeof record[key] === "string") {
+        return record[key] as string;
+      }
+    }
+
+    if (record.parsed && typeof record.parsed === "object") {
+      return JSON.stringify(record.parsed);
+    }
+  }
+
   if (!Array.isArray(value)) {
     return null;
   }
@@ -318,6 +337,58 @@ function readTextContent(value: unknown) {
     .join("")
     .trim();
   return text || null;
+}
+
+function findJsonText(value: unknown, depth = 0): string | null {
+  if (depth > 5) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.startsWith("{") || trimmed.startsWith("```") ? trimmed : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findJsonText(item, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  const record = readEventObject(value);
+  if (!record) {
+    return null;
+  }
+
+  for (const item of Object.values(record)) {
+    const found = findJsonText(item, depth + 1);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function readOpenRouterContent(data: unknown) {
+  const record = readEventObject(data);
+  const choices = Array.isArray(record?.choices) ? record.choices : [];
+  const choice = readEventObject(choices[0]);
+  const message = readEventObject(choice?.message);
+
+  return (
+    readTextContent(message?.content) ||
+    readTextContent(message?.reasoning) ||
+    readTextContent(message?.parsed) ||
+    readTextContent(choice?.text) ||
+    findJsonText(message) ||
+    findJsonText(choice) ||
+    null
+  );
 }
 
 function parseJsonContent(content: string) {
@@ -428,7 +499,7 @@ Aggregate duplicate player rows. Use team names from the listed matches. Only in
   }
 
   const data = await response.json();
-  const content = readTextContent(data?.choices?.[0]?.message?.content);
+  const content = readOpenRouterContent(data);
   if (!content) {
     throw new Error("OpenRouter player stats response did not include text content.");
   }
@@ -543,7 +614,7 @@ Allowed status values: scheduled, live, final. Only include confirmed live or fi
   }
 
   const data = await response.json();
-  const content = readTextContent(data?.choices?.[0]?.message?.content);
+  const content = readOpenRouterContent(data);
   if (!content) {
     throw new Error("OpenRouter response did not include text content.");
   }
