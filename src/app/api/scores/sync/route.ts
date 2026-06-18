@@ -140,7 +140,18 @@ function readApiFootballErrors(payload: unknown) {
 
   if (typeof errors === "object") {
     const message = Object.entries(errors as Record<string, unknown>)
-      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .map(([key, value]) => {
+        if (typeof value === "string") {
+          return `${key}: ${value}`;
+        }
+        if (Array.isArray(value)) {
+          return `${key}: ${value.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(", ")}`;
+        }
+        if (value && typeof value === "object") {
+          return `${key}: ${JSON.stringify(value)}`;
+        }
+        return `${key}: ${String(value)}`;
+      })
       .join(" ");
     return message || null;
   }
@@ -169,7 +180,7 @@ async function fetchApiFootballFixtureDate(date: string, force: boolean) {
   const payload = await response.json();
   const providerError = readApiFootballErrors(payload);
   if (providerError) {
-    throw new Error(`API-Football error for ${date}: ${providerError}`);
+    throw new Error(`API-Football provider error while checking ${date}: ${providerError}`);
   }
 
   const items = payload && typeof payload === "object" ? (payload as Record<string, unknown>).response : null;

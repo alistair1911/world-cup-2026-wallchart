@@ -158,6 +158,7 @@ export function WallchartApp() {
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
+  const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
   const commentCounts = useMemo(
     () =>
       comments.reduce<Record<string, number>>((counts, comment) => {
@@ -344,6 +345,11 @@ export function WallchartApp() {
           <div className="mt-3 rounded-md bg-amber-100 p-2 text-sm font-black text-amber-900 ring-1 ring-amber-300">
             Local demo mode: comments and predictions are only saved in this browser. Add Supabase env vars in Vercel for Tata
             and Lucas to share the same data.
+          </div>
+        ) : null}
+        {syncDetailMessage ? (
+          <div className="mt-3 rounded-md bg-amber-50 p-2 text-sm font-bold leading-snug text-amber-900 ring-1 ring-amber-300">
+            {syncDetailMessage}
           </div>
         ) : null}
         {error ? <div className="mt-3 rounded-md bg-red-50 p-2 text-sm font-bold text-red-700">{error}</div> : null}
