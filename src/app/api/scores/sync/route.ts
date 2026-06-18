@@ -83,7 +83,7 @@ function scoreSyncTargetDates(matches: Match[], force: boolean, now = new Date()
   const nowMs = now.getTime();
 
   for (const match of matches) {
-    if (!match.homeTeamId || !match.awayTeamId) {
+    if (!match.homeTeamId || !match.awayTeamId || match.updatedBy) {
       continue;
     }
 
@@ -108,7 +108,44 @@ function scoreSyncTargetDates(matches: Match[], force: boolean, now = new Date()
     }
   }
 
-  return [...keys].sort();
+  return [...keys].sort((a, b) => {
+    if (!force) {
+      return a.localeCompare(b);
+    }
+
+    const distanceA = Math.abs(new Date(`${a}T12:00:00.000Z`).getTime() - nowMs);
+    const distanceB = Math.abs(new Date(`${b}T12:00:00.000Z`).getTime() - nowMs);
+    return distanceA - distanceB || a.localeCompare(b);
+  });
+}
+
+function readApiFootballErrors(payload: unknown) {
+  const record = readEventObject(payload);
+  const errors = record?.errors;
+  if (!errors) {
+    return null;
+  }
+
+  if (typeof errors === "string") {
+    return errors.trim() || null;
+  }
+
+  if (Array.isArray(errors)) {
+    const message = errors
+      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .filter(Boolean)
+      .join(" ");
+    return message || null;
+  }
+
+  if (typeof errors === "object") {
+    const message = Object.entries(errors as Record<string, unknown>)
+      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .join(" ");
+    return message || null;
+  }
+
+  return null;
 }
 
 async function fetchApiFootballFixtureDate(date: string, force: boolean) {
@@ -130,6 +167,11 @@ async function fetchApiFootballFixtureDate(date: string, force: boolean) {
   }
 
   const payload = await response.json();
+  const providerError = readApiFootballErrors(payload);
+  if (providerError) {
+    throw new Error(`API-Football error for ${date}: ${providerError}`);
+  }
+
   const items = payload && typeof payload === "object" ? (payload as Record<string, unknown>).response : null;
   return Array.isArray(items) ? items : [];
 }
@@ -141,7 +183,7 @@ async function fetchApiFootballScorePayload(matches: Match[], force: boolean) {
   }
 
   const items: unknown[] = [];
-  const limitedDates = dates.slice(0, force ? 24 : 3);
+  const limitedDates = dates.slice(0, force ? 8 : 1);
   for (const date of limitedDates) {
     items.push(...(await fetchApiFootballFixtureDate(date, force)));
   }
