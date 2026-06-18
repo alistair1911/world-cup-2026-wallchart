@@ -159,6 +159,152 @@ function readApiFootballErrors(payload: unknown) {
   return null;
 }
 
+function espnDate(date: string) {
+  return date.replaceAll("-", "");
+}
+
+function espnStatus(value: unknown) {
+  const competition = readEventObject(value);
+  const status = readEventObject(competition?.status);
+  const type = readEventObject(status?.type);
+  if (type?.completed === true || type?.state === "post") {
+    return "FT";
+  }
+  if (type?.state === "in") {
+    return "live";
+  }
+  if (typeof type?.shortDetail === "string") {
+    return type.shortDetail;
+  }
+  if (typeof type?.detail === "string") {
+    return type.detail;
+  }
+  if (typeof type?.description === "string") {
+    return type.description;
+  }
+  return "scheduled";
+}
+
+function readEspnCompetition(event: unknown) {
+  const record = readEventObject(event);
+  const competitions = Array.isArray(record?.competitions) ? record.competitions : [];
+  return readEventObject(competitions[0]);
+}
+
+function readEspnCompetitors(competition: Record<string, unknown> | null) {
+  return Array.isArray(competition?.competitors) ? competition.competitors.map(readEventObject).filter(Boolean) : [];
+}
+
+function readEspnTeamName(competitor: Record<string, unknown> | null) {
+  const team = readEventObject(competitor?.team);
+  return typeof team?.displayName === "string"
+    ? team.displayName
+    : typeof team?.name === "string"
+      ? team.name
+      : typeof team?.abbreviation === "string"
+        ? team.abbreviation
+        : "";
+}
+
+function readEspnTeamId(competitor: Record<string, unknown> | null) {
+  const team = readEventObject(competitor?.team);
+  return typeof team?.id === "string" || typeof team?.id === "number" ? String(team.id) : null;
+}
+
+function toEspnScoreMatch(event: unknown) {
+  const record = readEventObject(event);
+  const competition = readEspnCompetition(event);
+  if (!record || !competition) {
+    return null;
+  }
+
+  const competitors = readEspnCompetitors(competition);
+  const home = competitors.find((competitor) => competitor?.homeAway === "home") ?? competitors[0] ?? null;
+  const away = competitors.find((competitor) => competitor?.homeAway === "away") ?? competitors[1] ?? null;
+  const homeTeamName = readEspnTeamName(home);
+  const awayTeamName = readEspnTeamName(away);
+  if (!homeTeamName || !awayTeamName) {
+    return null;
+  }
+
+  const homeScore = typeof home?.score === "string" ? Number(home.score) : typeof home?.score === "number" ? home.score : null;
+  const awayScore = typeof away?.score === "string" ? Number(away.score) : typeof away?.score === "number" ? away.score : null;
+
+  return {
+    provider: "espn",
+    providerFixtureId: typeof record.id === "string" || typeof record.id === "number" ? String(record.id) : undefined,
+    homeTeamName,
+    awayTeamName,
+    kickoff: typeof record.date === "string" ? record.date : typeof competition.date === "string" ? competition.date : undefined,
+    homeScore: Number.isFinite(homeScore) ? homeScore : null,
+    awayScore: Number.isFinite(awayScore) ? awayScore : null,
+    status: espnStatus(competition)
+  };
+}
+
+function toEspnEventRow(event: unknown) {
+  const record = readEventObject(event);
+  const competition = readEspnCompetition(event);
+  const match = toEspnScoreMatch(event);
+  if (!record || !competition || !match) {
+    return null;
+  }
+
+  return {
+    eventId: match.providerFixtureId,
+    homeTeamName: match.homeTeamName,
+    awayTeamName: match.awayTeamName,
+    kickoff: match.kickoff,
+    competitors: readEspnCompetitors(competition).map((competitor) => ({
+      id: readEspnTeamId(competitor),
+      name: readEspnTeamName(competitor)
+    })),
+    details: Array.isArray(competition.details) ? competition.details : []
+  };
+}
+
+async function fetchEspnScoreboardDate(date: string, force: boolean) {
+  const response = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${espnDate(date)}&limit=100`,
+    {
+      next: { revalidate: force ? 0 : 300 }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`ESPN returned ${response.status} while checking ${date}.`);
+  }
+
+  const payload = await response.json();
+  const events = payload && typeof payload === "object" && Array.isArray((payload as Record<string, unknown>).events)
+    ? ((payload as Record<string, unknown>).events as unknown[])
+    : [];
+  return events;
+}
+
+async function fetchEspnScorePayload(matches: Match[], force: boolean) {
+  const dates = scoreSyncTargetDates(matches, force);
+  if (dates.length === 0) {
+    return { matches: [], espnEvents: [] };
+  }
+
+  const events: unknown[] = [];
+  const limitedDates = dates.slice(0, force ? 8 : 1);
+  for (const date of limitedDates) {
+    events.push(...(await fetchEspnScoreboardDate(date, force)));
+  }
+
+  const scoreMatches = events.map(toEspnScoreMatch).filter((item): item is NonNullable<ReturnType<typeof toEspnScoreMatch>> => Boolean(item));
+  if (scoreMatches.length === 0) {
+    throw new Error(`ESPN returned no FIFA World Cup fixtures for checked dates: ${limitedDates.join(", ")}.`);
+  }
+
+  return {
+    matches: scoreMatches,
+    espnEvents: events.map(toEspnEventRow).filter(Boolean)
+  };
+}
+
 async function fetchApiFootballFixtureDate(date: string, force: boolean) {
   const key = process.env.API_FOOTBALL_KEY;
   if (!key) {
@@ -206,22 +352,27 @@ async function fetchApiFootballScorePayload(matches: Match[], force: boolean) {
   return { response: items };
 }
 
-async function fetchScorePayload(matches: Match[], force: boolean) {
+type ScoreProvider = "espn" | "openrouter" | "api-football";
+
+async function fetchScorePayload(
+  matches: Match[],
+  force: boolean
+): Promise<{ payload: unknown; warnings: string[]; provider: ScoreProvider }> {
   const warnings: string[] = [];
 
   try {
-    return { payload: await fetchApiFootballScorePayload(matches, force), warnings };
+    return { payload: await fetchEspnScorePayload(matches, force), warnings, provider: "espn" };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "API-Football score sync failed.";
+    const message = error instanceof Error ? error.message : "ESPN score sync failed.";
     warnings.push(`${message} Falling back to confirmed web score lookup.`);
   }
 
   try {
-    return { payload: await fetchOpenRouterScorePayload(matches, force), warnings };
+    return { payload: await fetchOpenRouterScorePayload(matches, force), warnings, provider: "openrouter" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Confirmed web score lookup failed.";
     warnings.push(`${message} No automatic score changes were applied.`);
-    return { payload: { matches: [] }, warnings };
+    return { payload: { matches: [] }, warnings, provider: "openrouter" };
   }
 }
 
@@ -344,6 +495,86 @@ function parseApiFootballEvents(match: Match, payload: unknown) {
   }
 
   return [...totals.values()].map((stat) => ({
+    ...stat,
+    goals: clampStat(stat.goals),
+    assists: clampStat(stat.assists)
+  }));
+}
+
+type EspnEventRow = {
+  eventId?: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  kickoff?: string;
+  competitors: Array<{ id: string | null; name: string }>;
+  details: unknown[];
+};
+
+function readEspnEventRows(payload: unknown) {
+  const record = readEventObject(payload);
+  return Array.isArray(record?.espnEvents) ? (record.espnEvents as EspnEventRow[]) : [];
+}
+
+function espnTeamNameForDetail(row: EspnEventRow, detail: Record<string, unknown>) {
+  const team = readEventObject(detail.team);
+  const teamId = typeof team?.id === "string" || typeof team?.id === "number" ? String(team.id) : null;
+  return row.competitors.find((competitor) => competitor.id === teamId)?.name ?? null;
+}
+
+function espnAthleteName(value: unknown) {
+  const athlete = readEventObject(value);
+  return typeof athlete?.displayName === "string"
+    ? athlete.displayName
+    : typeof athlete?.fullName === "string"
+      ? athlete.fullName
+      : null;
+}
+
+function parseEspnPlayerStats(matches: Match[], payload: unknown) {
+  const totals: PlayerMatchStat[] = [];
+
+  for (const row of readEspnEventRows(payload)) {
+    const feedItem = normalizeScorePayload(
+      {
+        matches: [
+          {
+            providerFixtureId: row.eventId,
+            homeTeamName: row.homeTeamName,
+            awayTeamName: row.awayTeamName,
+            kickoff: row.kickoff,
+            status: "FT"
+          }
+        ]
+      },
+      matches
+    )[0];
+    const match = feedItem?.matchId ? matches.find((item) => item.id === feedItem.matchId) : null;
+    if (!match) {
+      continue;
+    }
+
+    const matchTotals = new Map<string, PlayerMatchStat>();
+    for (const value of row.details) {
+      const detail = readEventObject(value);
+      if (!detail || detail.scoringPlay !== true || detail.ownGoal === true || detail.shootout === true) {
+        continue;
+      }
+
+      const teamName = espnTeamNameForDetail(row, detail);
+      const team = teamName ? eventTeamForMatch(match, teamName) : null;
+      const athletes = Array.isArray(detail.athletesInvolved) ? detail.athletesInvolved : [];
+      const scorer = espnAthleteName(athletes[0]);
+      if (!team || !scorer) {
+        continue;
+      }
+
+      addStat(matchTotals, match, team, scorer, "goals");
+    }
+
+    totals.push(...matchTotals.values());
+  }
+
+  return totals.map((stat) => ({
     ...stat,
     goals: clampStat(stat.goals),
     assists: clampStat(stat.assists)
@@ -721,7 +952,7 @@ async function syncScores(request: NextRequest) {
     if (!force) {
       return NextResponse.json({
         ok: true,
-        provider: "api-football",
+        provider: "espn",
         received: 0,
         updated: [],
         playerStatsUpdated: 0,
@@ -777,7 +1008,7 @@ async function syncScores(request: NextRequest) {
     if (!force && activeMatches.length === 0) {
       return NextResponse.json({
         ok: true,
-        provider: "api-football",
+        provider: "espn",
         received: 0,
         updated: [],
         playerStatsUpdated: 0,
@@ -785,7 +1016,7 @@ async function syncScores(request: NextRequest) {
       });
     }
 
-    const { payload, warnings } = await fetchScorePayload(matchesSnapshot, force);
+    const { payload, warnings, provider } = await fetchScorePayload(matchesSnapshot, force);
     const feedItems = normalizeScorePayload(payload, matchesSnapshot);
     const result = buildScoreUpdates(matchesSnapshot, feedItems);
 
@@ -803,25 +1034,30 @@ async function syncScores(request: NextRequest) {
 
     const playerStats: PlayerMatchStat[] = [];
     const statWarnings: string[] = [];
-    const eventTargets = feedItems
-      .map((item) => ({
-        fixtureId: item.providerFixtureId,
-        match: item.matchId ? updatedMatchesById.get(item.matchId) : null
-      }))
-      .filter((target): target is { fixtureId: string; match: Match } =>
-        Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
-      )
-      .slice(0, 6);
 
-    for (const target of eventTargets) {
-      try {
-        const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
-        if (!eventsPayload) {
-          continue;
+    if (provider === "espn") {
+      playerStats.push(...parseEspnPlayerStats([...updatedMatchesById.values()], payload));
+    } else if (provider === "api-football") {
+      const eventTargets = feedItems
+        .map((item) => ({
+          fixtureId: item.providerFixtureId,
+          match: item.matchId ? updatedMatchesById.get(item.matchId) : null
+        }))
+        .filter((target): target is { fixtureId: string; match: Match } =>
+          Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
+        )
+        .slice(0, 6);
+
+      for (const target of eventTargets) {
+        try {
+          const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
+          if (!eventsPayload) {
+            continue;
+          }
+          playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
+        } catch (error) {
+          statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
         }
-        playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
-      } catch (error) {
-        statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
       }
     }
 
@@ -850,7 +1086,7 @@ async function syncScores(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      provider: "api-football",
+      provider,
       received: feedItems.length,
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
@@ -868,7 +1104,7 @@ async function syncScores(request: NextRequest) {
     if (!force) {
       return NextResponse.json({
         ok: true,
-        provider: "api-football",
+        provider: "espn",
         received: 0,
         updated: [],
         playerStatsUpdated: 0,

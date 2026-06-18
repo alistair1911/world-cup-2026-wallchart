@@ -24,8 +24,8 @@ If Supabase env vars are empty, the app runs in local demo mode with the passcod
    - `NEXT_PUBLIC_LUCAS_EMAIL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `CRON_SECRET`
-   - `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`, or `SCORE_FEED_URL` for a normalized score feed
-   - Optional API-Sports tuning: `API_FOOTBALL_HOST=v3.football.api-sports.io`, `API_FOOTBALL_LEAGUE_ID=1`, `API_FOOTBALL_SEASON=2026`
+   - `SCORE_PROVIDER=espn` for the no-key ESPN scoreboard sync
+   - Optional legacy API-Sports tuning: `API_FOOTBALL_HOST=v3.football.api-sports.io`, `API_FOOTBALL_LEAGUE_ID=1`, `API_FOOTBALL_SEASON=2026`
    - Optional LLM sync: `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=tencent/hy3-preview`
 6. Deploy to Vercel.
 
@@ -43,8 +43,8 @@ If saving says `permission denied for table profiles`, run `supabase/schema.sql`
 - The app refreshes saved scores from Supabase every 60 seconds while Tata or Lucas has the wallchart open.
 - Tata and Lucas can press the top-bar `Sync` button to fetch provider scores immediately.
 - Vercel Hobby allows daily cron jobs, so Vercel Cron calls `/api/scores/sync` once per day. Tata and Lucas can use the top-bar `Sync` button for live checks during match days.
-- For API-Sports/API-Football v3, set `SCORE_PROVIDER=api-football` and `API_FOOTBALL_KEY`. The default host is `v3.football.api-sports.io`; league `1` and season `2026` are used unless overridden.
-- For OpenRouter, set `SCORE_PROVIDER=openrouter-llm`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL=tencent/hy3-preview`. The route asks OpenRouter for confirmed live/final scores for matches near the current time and only accepts valid JSON.
+- ESPN is the primary score provider. It uses the public `site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard` endpoint and does not require an API key.
+- For OpenRouter fallback, set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL=tencent/hy3-preview`. The route asks OpenRouter for confirmed live/final scores for matches near the current time and only accepts valid JSON.
 - For another provider, set `SCORE_FEED_URL` and optionally `SCORE_FEED_TOKEN`. The URL should return `matches`, `fixtures`, or `results` with fields like `matchId` or `matchNumber`, `homeScore`, `awayScore`, and `status`.
 
 Do not commit real API keys. Add them only in Vercel project environment variables.
