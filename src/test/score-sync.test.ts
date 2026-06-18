@@ -64,6 +64,20 @@ describe("score sync", () => {
     expect(result.skipped[0]?.reason).toBe("Protected manual result");
   });
 
+  it("ignores scheduled provider placeholder scores", () => {
+    const result = buildScoreUpdates(INITIAL_MATCHES, [
+      {
+        matchNumber: 25,
+        homeScore: 0,
+        awayScore: 0,
+        status: "scheduled"
+      }
+    ]);
+
+    expect(result.updates).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toBe("Ignored scheduled provider placeholder");
+  });
+
   it("normalizes an API-Football style fixture payload by teams and kickoff", () => {
     const items = normalizeScorePayload(
       {

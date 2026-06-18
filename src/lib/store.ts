@@ -86,6 +86,7 @@ export type ScoreSyncSummary = {
   updated?: Array<{ id: string; matchNumber: number; score: string; status: string }>;
   playerStatsFound?: number;
   playerStatsUpdated?: number;
+  cleanedPlaceholders?: number;
   warning?: string | null;
   error?: string;
 };

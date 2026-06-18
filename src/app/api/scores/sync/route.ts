@@ -944,6 +944,19 @@ function playerStatToRow(stat: PlayerMatchStat) {
   };
 }
 
+function isScheduledZeroPlaceholder(match: Match) {
+  return match.status === "scheduled" && match.homeScore === 0 && match.awayScore === 0 && !match.updatedBy;
+}
+
+function clearScheduledPlaceholder(match: Match): Match {
+  return {
+    ...match,
+    homeScore: null,
+    awayScore: null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 async function syncScores(request: NextRequest) {
   const force = isForcedSync(request);
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1004,7 +1017,20 @@ async function syncScores(request: NextRequest) {
     }
 
     const matchesSnapshot = [...currentMatches.values()];
-    const activeMatches = matchesSnapshot.filter((match) => isActiveSyncWindow(match));
+    const placeholderCleanups = matchesSnapshot.filter(isScheduledZeroPlaceholder).map(clearScheduledPlaceholder);
+    if (placeholderCleanups.length > 0) {
+      const { error } = await supabase.from("matches").upsert(placeholderCleanups.map(matchToRow), { onConflict: "id" });
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      for (const match of placeholderCleanups) {
+        currentMatches.set(match.id, match);
+      }
+    }
+
+    const cleanedMatchesSnapshot = [...currentMatches.values()];
+    const activeMatches = cleanedMatchesSnapshot.filter((match) => isActiveSyncWindow(match));
     if (!force && activeMatches.length === 0) {
       return NextResponse.json({
         ok: true,
@@ -1012,13 +1038,14 @@ async function syncScores(request: NextRequest) {
         received: 0,
         updated: [],
         playerStatsUpdated: 0,
+        cleanedPlaceholders: placeholderCleanups.length,
         skipped: [{ reason: "No matches are in the automatic sync window." }]
       });
     }
 
-    const { payload, warnings, provider } = await fetchScorePayload(matchesSnapshot, force);
-    const feedItems = normalizeScorePayload(payload, matchesSnapshot);
-    const result = buildScoreUpdates(matchesSnapshot, feedItems);
+    const { payload, warnings, provider } = await fetchScorePayload(cleanedMatchesSnapshot, force);
+    const feedItems = normalizeScorePayload(payload, cleanedMatchesSnapshot);
+    const result = buildScoreUpdates(cleanedMatchesSnapshot, feedItems);
 
     if (result.updates.length > 0) {
       const { error } = await supabase.from("matches").upsert(result.updates.map(matchToRow), { onConflict: "id" });
@@ -1027,7 +1054,7 @@ async function syncScores(request: NextRequest) {
       }
     }
 
-    const updatedMatchesById = new Map(matchesSnapshot.map((match) => [match.id, match]));
+    const updatedMatchesById = new Map(cleanedMatchesSnapshot.map((match) => [match.id, match]));
     for (const update of result.updates) {
       updatedMatchesById.set(update.id, update);
     }
@@ -1090,6 +1117,7 @@ async function syncScores(request: NextRequest) {
       received: feedItems.length,
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
+      cleanedPlaceholders: placeholderCleanups.length,
       warning,
       updated: result.updates.map((match) => ({
         id: match.id,

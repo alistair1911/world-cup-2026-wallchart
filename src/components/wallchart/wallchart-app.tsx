@@ -210,12 +210,14 @@ export function WallchartApp() {
       await refreshTournamentState();
       const updated = result.updated?.length ?? 0;
       const statsUpdated = result.playerStatsUpdated ?? 0;
+      const cleaned = result.cleanedPlaceholders ?? 0;
       if (announce) {
         const scoreText =
           updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}` : "Sync checked. No score changes";
         const statText = statsUpdated > 0 ? ` and ${statsUpdated} player stat row${statsUpdated === 1 ? "" : "s"}` : "";
+        const cleanupText = cleaned > 0 ? ` Cleared ${cleaned} scheduled 0-0 placeholder${cleaned === 1 ? "" : "s"}.` : "";
         const warningText = result.warning ? ` ${result.warning}` : "";
-        setSyncMessage(`${scoreText}${statText}.${warningText}`);
+        setSyncMessage(`${scoreText}${statText}.${cleanupText}${warningText}`);
       }
     },
     [refreshTournamentState]

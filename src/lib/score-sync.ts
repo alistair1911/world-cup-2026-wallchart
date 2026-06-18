@@ -240,6 +240,11 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       continue;
     }
 
+    if (incomingStatus === "scheduled") {
+      skipped.push({ reason: "Ignored scheduled provider placeholder", item });
+      continue;
+    }
+
     const homeScore = typeof item.homeScore === "number" ? item.homeScore : match.homeScore;
     const awayScore = typeof item.awayScore === "number" ? item.awayScore : match.awayScore;
     const next: Match = {
