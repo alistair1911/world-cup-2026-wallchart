@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Crown, GripVertical, Save, ShieldCheck, Star, Trophy, X } from "lucide-react";
+import { Check, Crown, GripVertical, Move, Save, ShieldCheck, Star, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -124,6 +124,7 @@ export function FantasyProfileDrawer({
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
   const [formation, setFormation] = useState(savedFormation);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [activeMoveId, setActiveMoveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -191,6 +192,8 @@ export function FantasyProfileDrawer({
     }
 
     setDraft(reindex([...nextStarters.slice(0, FANTASY_STARTERS), ...bench]));
+    setActiveMoveId(null);
+    setDraggingId(null);
     setMessage(null);
   }
 
@@ -205,7 +208,23 @@ export function FantasyProfileDrawer({
 
     const next = draft.map((slot) => (slot.playerId === playerId ? { ...slot, isStarter: false } : slot));
     setDraft(reindex([...next.filter((slot) => slot.isStarter), ...next.filter((slot) => !slot.isStarter)]));
+    setActiveMoveId(null);
+    setDraggingId(null);
     setMessage(null);
+  }
+
+  function pickUpPlayer(playerId: string) {
+    if (!canEdit) {
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+
+    setActiveMoveId((current) => (current === playerId ? null : playerId));
+    const player = optionMap.get(playerId);
+    setMessage(`Moving ${player?.name ?? "player"}. Tap a pitch slot or the bench to snap them into place.`);
   }
 
   function setCaptain(playerId: string) {
@@ -280,7 +299,11 @@ export function FantasyProfileDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
                   <p className="text-xs font-bold text-slate-500">
-                    {canEdit ? "Drag players between the pitch and bench, then save." : "Read-only squad view."}
+                    {canEdit
+                      ? activeMoveId
+                        ? "Tap a pitch slot or the bench to place the selected player."
+                        : "Tap Move or drag players; they snap into the selected slot."
+                      : "Read-only squad view."}
                   </p>
                 </div>
                 <select
@@ -298,12 +321,19 @@ export function FantasyProfileDrawer({
                 </select>
               </div>
 
-              <div className="relative overflow-hidden rounded-lg bg-gradient-to-b from-pitch-700 via-pitch-600 to-pitch-800 p-4 text-white ring-1 ring-pitch-900">
-                <div className="pointer-events-none absolute inset-0 opacity-25">
-                  <div className="absolute left-1/2 top-0 h-full w-px bg-white" />
-                  <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white" />
-                  <div className="absolute inset-x-8 top-3 h-16 rounded-b-full border-x border-b border-white" />
-                  <div className="absolute inset-x-8 bottom-3 h-16 rounded-t-full border-x border-t border-white" />
+              <div
+                className="relative overflow-hidden rounded-lg p-3 text-white shadow-inner ring-1 ring-pitch-950 sm:p-4"
+                style={{
+                  background:
+                    "linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px), repeating-linear-gradient(90deg, #0c5f3e 0 54px, #0f7149 54px 108px)"
+                }}
+              >
+                <div className="pointer-events-none absolute inset-3 rounded-md border-2 border-white/35" />
+                <div className="pointer-events-none absolute inset-0 opacity-45">
+                  <div className="absolute left-1/2 top-0 h-full w-0.5 -translate-x-1/2 bg-white" />
+                  <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white" />
+                  <div className="absolute inset-x-10 top-3 h-16 rounded-b-2xl border-x-2 border-b-2 border-white" />
+                  <div className="absolute inset-x-10 bottom-3 h-16 rounded-t-2xl border-x-2 border-t-2 border-white" />
                 </div>
                 <div className="relative space-y-3">
                   {FORMATION_LINES[formation].map((line) => {
@@ -326,8 +356,10 @@ export function FantasyProfileDrawer({
                               stats={slot ? playerTotals(slot.playerId, scores) : null}
                               canEdit={canEdit}
                               draggingId={draggingId}
+                              activeMoveId={activeMoveId}
                               onDragStart={setDraggingId}
                               onDrop={(playerId) => moveToStarter(playerId, index)}
+                              onPickUp={pickUpPlayer}
                               onSelectPlayer={onSelectPlayer}
                               onSetCaptain={setCaptain}
                             />
@@ -345,7 +377,16 @@ export function FantasyProfileDrawer({
 
           <aside className="space-y-4">
             <div
-              className="rounded-lg bg-white p-4 ring-1 ring-slate-200"
+              className={`rounded-lg bg-white p-4 ring-1 transition ${
+                activeMoveId ? "ring-2 ring-cup-gold shadow-lift" : "ring-slate-200"
+              }`}
+              role={canEdit ? "button" : undefined}
+              tabIndex={canEdit && activeMoveId ? 0 : undefined}
+              onClick={() => {
+                if (activeMoveId) {
+                  moveToBench(activeMoveId);
+                }
+              }}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault();
@@ -372,7 +413,9 @@ export function FantasyProfileDrawer({
                       player={optionMap.get(slot.playerId)}
                       stats={playerTotals(slot.playerId, scores)}
                       canEdit={canEdit}
+                      activeMoveId={activeMoveId}
                       onDragStart={setDraggingId}
+                      onPickUp={pickUpPlayer}
                       onSelectPlayer={onSelectPlayer}
                     />
                   ))
@@ -447,8 +490,11 @@ function PitchSlot({
   player,
   stats,
   canEdit,
+  draggingId,
+  activeMoveId,
   onDragStart,
   onDrop,
+  onPickUp,
   onSelectPlayer,
   onSetCaptain
 }: {
@@ -457,18 +503,34 @@ function PitchSlot({
   stats: ReturnType<typeof playerTotals> | null;
   canEdit: boolean;
   draggingId: string | null;
+  activeMoveId: string | null;
   onDragStart: (playerId: string | null) => void;
   onDrop: (playerId: string) => void;
+  onPickUp: (playerId: string) => void;
   onSelectPlayer: (playerId: string) => void;
   onSetCaptain: (playerId: string) => void;
 }) {
+  const isTarget = Boolean(activeMoveId || draggingId);
+  const isMovingThis = Boolean(slot && slot.playerId === activeMoveId);
+
   return (
     <div
-      className="min-h-[86px] rounded-lg border border-white/20 bg-white/12 p-2 text-center backdrop-blur"
+      className={`min-h-[96px] rounded-lg border p-2 text-center backdrop-blur transition ${
+        isTarget
+          ? "border-cup-gold bg-cup-gold/20 shadow-[inset_0_0_0_2px_rgba(214,166,71,.45)]"
+          : "border-white/25 bg-white/10"
+      }`}
+      role={canEdit ? "button" : undefined}
+      tabIndex={canEdit && isTarget ? 0 : undefined}
+      onClick={() => {
+        if (activeMoveId) {
+          onDrop(activeMoveId);
+        }
+      }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
-        const playerId = event.dataTransfer.getData("text/plain");
+        const playerId = event.dataTransfer.getData("text/plain") || draggingId || activeMoveId;
         if (playerId) {
           onDrop(playerId);
         }
@@ -482,21 +544,45 @@ function PitchSlot({
             onDragStart(slot.playerId);
           }}
           onDragEnd={() => onDragStart(null)}
-          className="interactive-pop group"
+          className={`group rounded-md p-1 transition ${isMovingThis ? "scale-95 opacity-70 ring-2 ring-cup-gold" : "interactive-pop"}`}
         >
-          <button type="button" onClick={() => onSelectPlayer(slot.playerId)} className="w-full">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectPlayer(slot.playerId);
+            }}
+            className="w-full"
+          >
             <img
               src={player.photoUrl ?? avatarUrl(player.name)}
               alt={`${player.name} portrait`}
-              className="mx-auto h-10 w-10 rounded-full object-cover object-top ring-2 ring-white"
+              className="mx-auto h-11 w-11 rounded-full object-cover object-top shadow-lift ring-2 ring-white"
             />
             <div className="mt-1 truncate text-[11px] font-black text-white">{player.name}</div>
             <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
           </button>
           {canEdit ? (
+            <div className="mt-1 flex items-center justify-center gap-1">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPickUp(slot.playerId);
+                }}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                  isMovingThis ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
+                }`}
+              >
+                <Move className="h-3 w-3" />
+                Move
+              </button>
             <button
               type="button"
-              onClick={() => onSetCaptain(slot.playerId)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSetCaptain(slot.playerId);
+              }}
               className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
                 slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
               }`}
@@ -504,11 +590,12 @@ function PitchSlot({
               {slot.isCaptain ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
               {slot.isCaptain ? "Captain" : "Set C"}
             </button>
+            </div>
           ) : null}
         </div>
       ) : (
-        <div className="grid h-full min-h-[70px] place-items-center rounded-md border border-dashed border-white/25 text-[10px] font-black uppercase text-white/55">
-          Drop player
+        <div className="grid h-full min-h-[78px] place-items-center rounded-md border border-dashed border-white/35 bg-black/5 px-2 text-[10px] font-black uppercase text-white/70">
+          {isTarget ? "Tap to place" : "Open slot"}
         </div>
       )}
     </div>
@@ -520,14 +607,18 @@ function BenchRow({
   player,
   stats,
   canEdit,
+  activeMoveId,
   onDragStart,
+  onPickUp,
   onSelectPlayer
 }: {
   slot: FantasyRosterSlot;
   player?: FantasyPlayerOption;
   stats: ReturnType<typeof playerTotals>;
   canEdit: boolean;
+  activeMoveId: string | null;
   onDragStart: (playerId: string | null) => void;
+  onPickUp: (playerId: string) => void;
   onSelectPlayer: (playerId: string) => void;
 }) {
   if (!player) {
@@ -542,9 +633,18 @@ function BenchRow({
         onDragStart(slot.playerId);
       }}
       onDragEnd={() => onDragStart(null)}
-      className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md bg-slate-50 p-2 ring-1 ring-slate-200"
+      className={`grid grid-cols-[1fr_auto] items-center gap-2 rounded-md p-2 ring-1 transition ${
+        activeMoveId === slot.playerId ? "bg-amber-50 ring-cup-gold shadow-sm" : "bg-slate-50 ring-slate-200"
+      }`}
     >
-      <button type="button" onClick={() => onSelectPlayer(slot.playerId)} className="min-w-0 text-left">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelectPlayer(slot.playerId);
+        }}
+        className="min-w-0 text-left"
+      >
         <div className="flex min-w-0 items-center gap-2">
           <img src={player.photoUrl ?? avatarUrl(player.name)} alt={`${player.name} portrait`} className="h-9 w-9 rounded-full object-cover object-top" />
           <div className="min-w-0">
@@ -561,7 +661,19 @@ function BenchRow({
           <div className="text-sm font-black text-cup-red">{stats.points}</div>
           <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
         </div>
-        {canEdit ? <GripVertical className="h-4 w-4 text-slate-400" /> : null}
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPickUp(slot.playerId);
+            }}
+            className="grid h-8 w-8 place-items-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 transition hover:text-cup-red"
+            aria-label={`Move ${player.name}`}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
