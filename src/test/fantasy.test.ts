@@ -3,6 +3,7 @@ import {
   FANTASY_ROUND_ID,
   buildFantasyLeaderboard,
   buildFantasyScoresFromMatches,
+  fantasyPlayerOptions,
   normalizeFantasyPosition,
   scoreFantasyPlayerMatch,
   validateFantasyRoster
@@ -23,6 +24,20 @@ describe("mini-fantasy scoring", () => {
     expect(normalizeFantasyPosition("RB")).toBe("DEF");
     expect(normalizeFantasyPosition("CM")).toBe("MID");
     expect(normalizeFantasyPosition("LW")).toBe("FWD");
+  });
+
+  it("includes full player catalog rows in fantasy options", () => {
+    const options = fantasyPlayerOptions([
+      {
+        id: "spain-test-goalkeeper",
+        teamId: "spain",
+        name: "Test Goalkeeper",
+        position: "Goalkeeper",
+        photoUrl: null
+      }
+    ]);
+
+    expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ id: "spain-test-goalkeeper", fantasyPosition: "GK" })]));
   });
 
   it("builds player match scores from final matches and captain leaderboard totals", () => {

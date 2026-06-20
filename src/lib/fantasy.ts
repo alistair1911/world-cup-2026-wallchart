@@ -5,6 +5,7 @@ import type {
   FantasyPosition,
   FantasyRosterSlot,
   Match,
+  PlayerCatalogItem,
   PlayerMatchStat,
   Team,
   UserKey
@@ -39,46 +40,78 @@ const familyDisplayName: Record<UserKey, string> = {
 };
 
 export function normalizeFantasyPosition(position: string): FantasyPosition {
-  const value = position.toUpperCase();
-  if (value === "GK") {
+  const compact = position.toUpperCase();
+  const value = position.toLowerCase();
+  if (value.includes("goal") || compact === "GK") {
     return "GK";
   }
-  if (["CB", "DF", "LB", "RB", "LWB", "RWB"].includes(value)) {
+  if (value.includes("def") || ["CB", "DF", "LB", "RB", "LWB", "RWB"].includes(compact)) {
     return "DEF";
   }
-  if (["DM", "CM", "AM", "MF"].includes(value)) {
+  if (value.includes("mid") || ["DM", "CM", "AM", "MF"].includes(compact)) {
     return "MID";
   }
   return "FWD";
 }
 
-export function fantasyPlayerOptions(): FantasyPlayerOption[] {
-  return getAllPlayerProfiles()
-    .map(({ player, team }) => ({
+function sortFantasyOptions(options: FantasyPlayerOption[]) {
+  return options.sort(
+    (a, b) =>
+      a.team.group.localeCompare(b.team.group) ||
+      a.team.name.localeCompare(b.team.name) ||
+      a.fantasyPosition.localeCompare(b.fantasyPosition) ||
+      a.name.localeCompare(b.name)
+  );
+}
+
+export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerOption[] {
+  const byId = new Map<string, FantasyPlayerOption>();
+
+  for (const row of playerCatalog) {
+    const team = getTeam(row.teamId);
+    if (!team) {
+      continue;
+    }
+
+    byId.set(row.id, {
+      id: row.id,
+      name: row.name,
+      team,
+      position: row.position,
+      fantasyPosition: normalizeFantasyPosition(row.position),
+      photoUrl: row.photoUrl ?? undefined
+    });
+  }
+
+  for (const { player, team } of getAllPlayerProfiles()) {
+    byId.set(player.id, {
       id: player.id,
       name: player.name,
       team,
       position: player.position,
       fantasyPosition: normalizeFantasyPosition(player.position),
       photoUrl: player.photoUrl
-    }))
-    .sort(
-      (a, b) =>
-        a.team.group.localeCompare(b.team.group) ||
-        a.team.name.localeCompare(b.team.name) ||
-        a.fantasyPosition.localeCompare(b.fantasyPosition) ||
-        a.name.localeCompare(b.name)
-    );
+    });
+  }
+
+  return sortFantasyOptions([...byId.values()]);
 }
 
-export function isFantasyPlayerLocked(playerId: string, matches: Match[], now = new Date()) {
+export function isFantasyPlayerLocked(
+  playerId: string,
+  matches: Match[],
+  now = new Date(),
+  playerCatalog: PlayerCatalogItem[] = []
+) {
   const profile = getPlayerProfile(playerId);
-  if (!profile) {
+  const catalogPlayer = playerCatalog.find((player) => player.id === playerId);
+  const teamId = profile?.team.id ?? catalogPlayer?.teamId;
+  if (!teamId) {
     return false;
   }
 
   const teamMatches = matches
-    .filter((match) => match.homeTeamId === profile.team.id || match.awayTeamId === profile.team.id)
+    .filter((match) => match.homeTeamId === teamId || match.awayTeamId === teamId)
     .filter((match) => match.status !== "final")
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   const nextMatch = teamMatches[0];
@@ -89,7 +122,12 @@ export function isFantasyPlayerLocked(playerId: string, matches: Match[], now = 
   return now.getTime() >= new Date(nextMatch.kickoff).getTime() - 5 * 60 * 1000;
 }
 
-export function validateFantasyRoster(slots: FantasyRosterSlot[], matches: Match[], now = new Date()) {
+export function validateFantasyRoster(
+  slots: FantasyRosterSlot[],
+  matches: Match[],
+  now = new Date(),
+  playerCatalog: PlayerCatalogItem[] = []
+) {
   const uniqueIds = new Set(slots.map((slot) => slot.playerId));
   if (uniqueIds.size !== slots.length) {
     return "Remove duplicate players before saving.";
@@ -103,7 +141,7 @@ export function validateFantasyRoster(slots: FantasyRosterSlot[], matches: Match
   if (slots.filter((slot) => slot.isStarter).length > FANTASY_STARTERS) {
     return `Pick no more than ${FANTASY_STARTERS} starters.`;
   }
-  if (slots.some((slot) => isFantasyPlayerLocked(slot.playerId, matches, now))) {
+  if (slots.some((slot) => isFantasyPlayerLocked(slot.playerId, matches, now, playerCatalog))) {
     return "One or more selected players are locked because their next match is close to kickoff.";
   }
   return null;
@@ -161,13 +199,17 @@ export function scoreFantasyPlayerMatch(input: {
   };
 }
 
-export function buildFantasyScoresFromMatches(matches: Match[], playerStats: PlayerMatchStat[]): FantasyPlayerMatchScore[] {
+export function buildFantasyScoresFromMatches(
+  matches: Match[],
+  playerStats: PlayerMatchStat[],
+  playerCatalog: PlayerCatalogItem[] = []
+): FantasyPlayerMatchScore[] {
   const statsByKey = new Map<string, PlayerMatchStat>();
   for (const stat of playerStats) {
     statsByKey.set(`${stat.matchId}:${stat.playerId}`, stat);
   }
 
-  const profiles = fantasyPlayerOptions();
+  const profiles = fantasyPlayerOptions(playerCatalog);
   const scores: FantasyPlayerMatchScore[] = [];
 
   for (const match of matches.filter((item) => item.status === "final" && item.homeScore !== null && item.awayScore !== null)) {
@@ -214,8 +256,12 @@ export function buildFantasyScoresFromMatches(matches: Match[], playerStats: Pla
   return scores;
 }
 
-export function buildFantasyLeaderboard(rosters: FantasyRosterSlot[], scores: FantasyPlayerMatchScore[]): FantasyLeaderboardRow[] {
-  const options = new Map(fantasyPlayerOptions().map((option) => [option.id, option]));
+export function buildFantasyLeaderboard(
+  rosters: FantasyRosterSlot[],
+  scores: FantasyPlayerMatchScore[],
+  playerCatalog: PlayerCatalogItem[] = []
+): FantasyLeaderboardRow[] {
+  const options = new Map(fantasyPlayerOptions(playerCatalog).map((option) => [option.id, option]));
   const scoresByPlayer = new Map<string, number>();
   for (const score of scores) {
     scoresByPlayer.set(score.playerId, (scoresByPlayer.get(score.playerId) ?? 0) + score.points);

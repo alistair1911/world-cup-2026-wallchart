@@ -12,6 +12,7 @@ import type {
   MatchComment,
   MatchPhase,
   MatchStatus,
+  PlayerCatalogItem,
   PlayerMatchStat,
   Prediction,
   UserKey
@@ -69,6 +70,16 @@ type StoredPlayerStatRow = {
   updated_at?: string | null;
 };
 
+type StoredPlayerRow = {
+  id: string;
+  team_id: string;
+  name: string;
+  age?: number | null;
+  shirt_number?: number | null;
+  position: string;
+  photo_url?: string | null;
+};
+
 type StoredFantasyRosterRow = {
   user_id: string;
   round_id: string;
@@ -108,6 +119,7 @@ export type TournamentState = {
   predictions: Prediction[];
   comments: MatchComment[];
   playerStats: PlayerMatchStat[];
+  playerCatalog: PlayerCatalogItem[];
   fantasyRosters: FantasyRosterSlot[];
   fantasyScores: FantasyPlayerMatchScore[];
   error?: string;
@@ -335,6 +347,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       predictions: readLocalPredictions(),
       comments: readLocalComments(),
       playerStats: readLocalPlayerStats(),
+      playerCatalog: [],
       fantasyRosters: readLocalFantasyRosters(),
       fantasyScores: readLocalFantasyScores()
     };
@@ -347,6 +360,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       { data: profiles },
       { data: commentRows, error: commentError },
       { data: playerStatRows, error: playerStatsError },
+      { data: playerRows, error: playerCatalogError },
       { data: fantasyRosterRows, error: fantasyRosterError },
       { data: fantasyScoreRows, error: fantasyScoreError }
     ] = await Promise.all([
@@ -355,6 +369,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       supabase.from("profiles").select("id, user_key, display_name"),
       supabase.from("comments").select("*").order("created_at", { ascending: true }),
       supabase.from("player_match_stats").select("*"),
+      supabase.from("players").select("id, team_id, name, age, shirt_number, position, photo_url").order("team_id", { ascending: true }),
       supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
       supabase.from("fantasy_player_match_scores").select("*")
     ]);
@@ -462,11 +477,27 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
+    const playerCatalog: PlayerCatalogItem[] = [];
+    if (!playerCatalogError) {
+      for (const row of (playerRows || []) as StoredPlayerRow[]) {
+        playerCatalog.push({
+          id: row.id,
+          teamId: row.team_id,
+          name: row.name,
+          age: row.age ?? null,
+          shirtNumber: row.shirt_number ?? null,
+          position: row.position,
+          photoUrl: row.photo_url ?? null
+        });
+      }
+    }
+
     return {
       matches: mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)),
       predictions,
       comments,
       playerStats,
+      playerCatalog,
       fantasyRosters,
       fantasyScores,
       commentsError: commentError?.message,
@@ -479,6 +510,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       predictions: [],
       comments: [],
       playerStats: [],
+      playerCatalog: [],
       fantasyRosters: [],
       fantasyScores: [],
       error: error instanceof Error ? error.message : "Could not load tournament data."

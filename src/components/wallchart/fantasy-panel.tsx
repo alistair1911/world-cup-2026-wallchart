@@ -16,7 +16,8 @@ import {
   validateFantasyRoster
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
-import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, Match } from "@/lib/types";
+import { TEAMS } from "@/lib/tournament-data";
+import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, Match, PlayerCatalogItem } from "@/lib/types";
 import { Flag } from "./flag";
 
 type FantasyPanelProps = {
@@ -24,6 +25,7 @@ type FantasyPanelProps = {
   matches: Match[];
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
+  playerCatalog: PlayerCatalogItem[];
   onSaveRoster: (slots: FantasyRosterSlot[]) => Promise<void>;
   onSelectPlayer: (playerId: string) => void;
   onSelectTeam: (teamId: string) => void;
@@ -34,13 +36,14 @@ export function FantasyPanel({
   matches,
   rosters,
   scores,
+  playerCatalog,
   onSaveRoster,
   onSelectPlayer,
   onSelectTeam
 }: FantasyPanelProps) {
-  const options = useMemo(() => fantasyPlayerOptions(), []);
+  const options = useMemo(() => fantasyPlayerOptions(playerCatalog), [playerCatalog]);
   const optionMap = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
-  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores), [rosters, scores]);
+  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
   const ownRoster = useMemo(
     () => rosters.filter((slot) => slot.userKey === session.userKey).sort((a, b) => a.slotIndex - b.slotIndex),
     [rosters, session.userKey]
@@ -48,6 +51,7 @@ export function FantasyPanel({
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(ownRoster);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"ALL" | "GK" | "DEF" | "MID" | "FWD">("ALL");
+  const [countryFilter, setCountryFilter] = useState("ALL");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -57,6 +61,7 @@ export function FantasyPanel({
 
   const selectedIds = new Set(draft.map((slot) => slot.playerId));
   const visibleOptions = options
+    .filter((option) => (countryFilter === "ALL" ? true : option.team.id === countryFilter))
     .filter((option) => (filter === "ALL" ? true : option.fantasyPosition === filter))
     .filter((option) => {
       const text = `${option.name} ${option.team.name} ${option.team.code} ${option.position}`.toLowerCase();
@@ -65,7 +70,7 @@ export function FantasyPanel({
     .slice(0, 36);
 
   const starters = draft.filter((slot) => slot.isStarter).length;
-  const rosterError = validateFantasyRoster(draft, matches);
+  const rosterError = validateFantasyRoster(draft, matches, new Date(), playerCatalog);
 
   function addPlayer(playerId: string) {
     if (selectedIds.has(playerId) || draft.length >= FANTASY_SQUAD_SIZE) {
@@ -87,7 +92,7 @@ export function FantasyPanel({
 
   function removePlayer(playerId: string) {
     const player = optionMap.get(playerId);
-    if (isFantasyPlayerLocked(playerId, matches)) {
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
       setMessage(`${player?.name ?? "That player"} is locked for the next match.`);
       return;
     }
@@ -100,7 +105,7 @@ export function FantasyPanel({
   }
 
   function setCaptain(playerId: string) {
-    if (isFantasyPlayerLocked(playerId, matches)) {
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
       setMessage("Captain is locked for this player.");
       return;
     }
@@ -108,7 +113,7 @@ export function FantasyPanel({
   }
 
   function toggleStarter(playerId: string) {
-    if (isFantasyPlayerLocked(playerId, matches)) {
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
       setMessage("Starter status is locked for this player.");
       return;
     }
@@ -126,7 +131,7 @@ export function FantasyPanel({
   }
 
   async function handleSave() {
-    const error = validateFantasyRoster(draft, matches);
+    const error = validateFantasyRoster(draft, matches, new Date(), playerCatalog);
     if (error) {
       setMessage(error);
       return;
@@ -217,7 +222,7 @@ export function FantasyPanel({
               if (!player) {
                 return null;
               }
-              const locked = isFantasyPlayerLocked(player.id, matches);
+              const locked = isFantasyPlayerLocked(player.id, matches, new Date(), playerCatalog);
               return (
                 <div key={slot.playerId} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md bg-white p-2 ring-1 ring-slate-200">
                   <button type="button" onClick={() => onSelectPlayer(player.id)} className="min-w-0 text-left">
@@ -260,11 +265,24 @@ export function FantasyPanel({
       </div>
 
       <div className="mt-3">
-        <div className="mb-2 grid grid-cols-[1fr_auto] gap-2">
+        <div className="mb-2 grid gap-2 sm:grid-cols-[1fr_150px_86px]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search players or teams" className="pl-9" />
           </div>
+          <select
+            value={countryFilter}
+            onChange={(event) => setCountryFilter(event.target.value)}
+            className="h-10 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink"
+            aria-label="Filter fantasy players by country"
+          >
+            <option value="ALL">All countries</option>
+            {TEAMS.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.code} - {team.name}
+              </option>
+            ))}
+          </select>
           <select
             value={filter}
             onChange={(event) => setFilter(event.target.value as typeof filter)}
@@ -281,7 +299,7 @@ export function FantasyPanel({
         <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
           {visibleOptions.map((player) => {
             const selected = selectedIds.has(player.id);
-            const locked = isFantasyPlayerLocked(player.id, matches);
+            const locked = isFantasyPlayerLocked(player.id, matches, new Date(), playerCatalog);
             return (
               <div key={player.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md bg-white p-2 ring-1 ring-slate-200">
                 <button type="button" onClick={() => onSelectTeam(player.team.id)} className="min-w-0 text-left">

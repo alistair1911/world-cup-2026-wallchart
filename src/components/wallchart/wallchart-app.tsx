@@ -26,7 +26,7 @@ import {
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
-import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, GroupLetter, Match, MatchComment, PlayerMatchStat, Prediction } from "@/lib/types";
+import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, GroupLetter, Match, MatchComment, PlayerCatalogItem, PlayerMatchStat, Prediction } from "@/lib/types";
 import type { UserKey } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
@@ -68,6 +68,7 @@ export function WallchartApp() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [comments, setComments] = useState<MatchComment[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerMatchStat[]>([]);
+  const [playerCatalog, setPlayerCatalog] = useState<PlayerCatalogItem[]>([]);
   const [fantasyRosters, setFantasyRosters] = useState<FantasyRosterSlot[]>([]);
   const [fantasyScores, setFantasyScores] = useState<FantasyPlayerMatchScore[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
@@ -91,6 +92,7 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
+      setPlayerCatalog(state.playerCatalog);
       setFantasyRosters(state.fantasyRosters);
       setFantasyScores(state.fantasyScores);
       setError(state.error ?? null);
@@ -137,6 +139,7 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
+      setPlayerCatalog(state.playerCatalog);
       setFantasyRosters(state.fantasyRosters);
       setFantasyScores(state.fantasyScores);
       setError(profileError || state.error || null);
@@ -173,8 +176,8 @@ export function WallchartApp() {
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
   const effectiveFantasyScores = useMemo(
-    () => (fantasyScores.length > 0 ? fantasyScores : buildFantasyScoresFromMatches(matches, playerStats)),
-    [fantasyScores, matches, playerStats]
+    () => (fantasyScores.length > 0 ? fantasyScores : buildFantasyScoresFromMatches(matches, playerStats, playerCatalog)),
+    [fantasyScores, matches, playerStats, playerCatalog]
   );
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
   const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
@@ -237,7 +240,7 @@ export function WallchartApp() {
       return;
     }
 
-    if (isFantasyPlayerLocked(playerId, matches)) {
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
       setSyncMessage("That player is locked for Mini-Fantasy because the next match is close to kickoff.");
       return;
     }
@@ -453,6 +456,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            playerCatalog={playerCatalog}
             onSaveRoster={handleSaveFantasyRoster}
             onSelectPlayer={setSelectedPlayerId}
             onSelectTeam={setSelectedTeamId}
@@ -532,6 +536,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            playerCatalog={playerCatalog}
             onSaveRoster={handleSaveFantasyRoster}
             onSelectPlayer={setSelectedPlayerId}
             onSelectTeam={setSelectedTeamId}

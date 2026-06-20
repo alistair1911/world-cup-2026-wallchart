@@ -4,7 +4,7 @@ import { buildFantasyScoresFromMatches } from "@/lib/fantasy";
 import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
-import type { FantasyPlayerMatchScore, Match, PlayerMatchStat, Team } from "@/lib/types";
+import type { FantasyPlayerMatchScore, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -1165,7 +1165,34 @@ async function syncScores(request: NextRequest) {
         assists: row.assists,
         updatedAt: row.updated_at ?? null
       }));
-      const fantasyScores = buildFantasyScoresFromMatches([...updatedMatchesById.values()], allPlayerStats);
+
+      const { data: playerRows, error: playerRowsError } = await supabase
+        .from("players")
+        .select("id, team_id, name, age, shirt_number, position, photo_url");
+      const playerCatalog: PlayerCatalogItem[] = playerRowsError
+        ? []
+        : ((playerRows || []) as Array<{
+            id: string;
+            team_id: string;
+            name: string;
+            age?: number | null;
+            shirt_number?: number | null;
+            position: string;
+            photo_url?: string | null;
+          }>).map((row) => ({
+            id: row.id,
+            teamId: row.team_id,
+            name: row.name,
+            age: row.age ?? null,
+            shirtNumber: row.shirt_number ?? null,
+            position: row.position,
+            photoUrl: row.photo_url ?? null
+          }));
+      if (playerRowsError) {
+        warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
+      }
+
+      const fantasyScores = buildFantasyScoresFromMatches([...updatedMatchesById.values()], allPlayerStats, playerCatalog);
 
       if (fantasyScores.length > 0) {
         const { error } = await supabase

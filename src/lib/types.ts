@@ -90,6 +90,16 @@ export type PlayerMatchStat = {
   updatedAt?: string | null;
 };
 
+export type PlayerCatalogItem = {
+  id: string;
+  teamId: string;
+  name: string;
+  age?: number | null;
+  shirtNumber?: number | null;
+  position: string;
+  photoUrl?: string | null;
+};
+
 export type FantasyPosition = "GK" | "DEF" | "MID" | "FWD";
 
 export type FantasyRosterSlot = {
