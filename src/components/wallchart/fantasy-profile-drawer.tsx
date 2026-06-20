@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Crown, GripVertical, Move, Plus, Save, Search, ShieldCheck, Star, Trash2, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -104,14 +104,12 @@ function normalizeDraftSlots(
     .slice(0, FANTASY_SQUAD_SIZE);
   const board: Array<FantasyRosterSlot | null> = Array.from({ length: FANTASY_STARTERS }, () => null);
   const bench: FantasyRosterSlot[] = [];
-  const now = new Date().toISOString();
-
   function nextOpenStarterIndex() {
     return board.findIndex((slot) => !slot);
   }
 
   for (const slot of validSlots.sort((a, b) => a.slotIndex - b.slotIndex)) {
-    const normalized = { ...slot, userKey: userKey ?? slot.userKey, updatedAt: now };
+    const normalized = { ...slot, userKey: userKey ?? slot.userKey };
     if (slot.isStarter) {
       const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
       const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
@@ -131,6 +129,12 @@ function normalizeDraftSlots(
       isStarter: false
     }))
   ];
+}
+
+function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
+  return `${formation}:${slots
+    .map((slot) => [slot.playerId, slot.slotIndex, slot.isStarter ? 1 : 0, slot.isCaptain ? 1 : 0, slot.isViceCaptain ? 1 : 0].join(":"))
+    .join("|")}`;
 }
 
 function playerTotals(playerId: string, scores: FantasyPlayerMatchScore[]) {
@@ -181,7 +185,9 @@ export function FantasyProfileDrawer({
   const [positionFilter, setPositionFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const lastSavedKeyRef = useRef("");
   const countryOptions = useMemo(() => {
     const teams = new Map<string, FantasyPlayerOption["team"]>();
     for (const option of options) {
@@ -197,22 +203,53 @@ export function FantasyProfileDrawer({
       .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
       .slice(0, 80);
   }, [countryFilter, options, playerSearch, positionFilter]);
+  const canEdit = Boolean(userKey && userKey === session.userKey);
+  const normalizedDraft = useMemo(() => normalizeDraftSlots(draft, optionMap, userKey), [draft, optionMap, userKey]);
+  const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
 
   useEffect(() => {
     setDraft(savedSlots);
-  }, [savedSlots]);
+    setDirty(false);
+    lastSavedKeyRef.current = rosterSignature(savedSlots, savedFormation);
+  }, [savedFormation, savedSlots]);
 
   useEffect(() => {
     setFormation(savedFormation);
   }, [savedFormation]);
 
+  useEffect(() => {
+    if (!canEdit || !dirty || !userKey) {
+      return;
+    }
+
+    if (lastSavedKeyRef.current === autoSaveKey) {
+      setDirty(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setSaving(true);
+      try {
+        await onSaveRoster(normalizedDraft);
+        await onSaveSettings({ formation });
+        lastSavedKeyRef.current = autoSaveKey;
+        setDirty(false);
+        setMessage("Autosaved.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not autosave Mini-Fantasy.");
+      } finally {
+        setSaving(false);
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [autoSaveKey, canEdit, dirty, formation, normalizedDraft, onSaveRoster, onSaveSettings, userKey]);
+
   if (!userKey) {
     return null;
   }
 
-  const canEdit = userKey === session.userKey;
   const row = leaderboard.find((item) => item.userKey === userKey);
-  const normalizedDraft = normalizeDraftSlots(draft, optionMap, userKey);
   const boardSlots = Array.from({ length: FANTASY_STARTERS }, (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null);
   const starterSlots = boardSlots.filter((slot): slot is FantasyRosterSlot => Boolean(slot));
   const benchSlots = normalizedDraft.filter((slot) => !slot.isStarter);
@@ -277,7 +314,8 @@ export function FantasyProfileDrawer({
     setDraft(normalizeDraftSlots([...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...bench], optionMap, userKey));
     setActiveMoveId(null);
     setDraggingId(null);
-    setMessage(null);
+    setDirty(true);
+    setMessage("Autosaving formation...");
   }
 
   function moveToBench(playerId: string) {
@@ -295,7 +333,8 @@ export function FantasyProfileDrawer({
     setDraft(normalizeDraftSlots(next, optionMap, userKey));
     setActiveMoveId(null);
     setDraggingId(null);
-    setMessage(null);
+    setDirty(true);
+    setMessage("Autosaving bench...");
   }
 
   function pickUpPlayer(playerId: string) {
@@ -313,7 +352,7 @@ export function FantasyProfileDrawer({
   }
 
   function addPlayer(playerId: string) {
-    if (!canEdit) {
+    if (!canEdit || !userKey) {
       return;
     }
     if (selectedPlayerIds.has(playerId)) {
@@ -333,15 +372,16 @@ export function FantasyProfileDrawer({
       userKey,
       playerId,
       roundId: FANTASY_ROUND_ID,
-      slotIndex: normalizedDraft.length,
-      isStarter: starterSlots.length < FANTASY_STARTERS,
+      slotIndex: FANTASY_STARTERS + benchSlots.length,
+      isStarter: false,
       isCaptain: normalizedDraft.length === 0,
       isViceCaptain: normalizedDraft.length === 1,
       updatedAt: new Date().toISOString()
     };
 
     setDraft(normalizeDraftSlots([...normalizedDraft, nextSlot], optionMap, userKey));
-    setMessage("Player added. Save when the squad looks right.");
+    setDirty(true);
+    setMessage("Player added to bench. Autosaving...");
   }
 
   function removePlayer(playerId: string) {
@@ -354,14 +394,28 @@ export function FantasyProfileDrawer({
     }
 
     const removed = normalizedDraft.find((slot) => slot.playerId === playerId);
-    const next = normalizedDraft.filter((slot) => slot.playerId !== playerId);
-    if (removed?.isCaptain && next.length > 0) {
-      next[0] = { ...next[0], isCaptain: true, isViceCaptain: false };
+    if (!removed) {
+      return;
     }
-    setDraft(normalizeDraftSlots(next, optionMap, userKey));
+
+    if (removed.isStarter) {
+      const next = normalizedDraft.map((slot) =>
+        slot.playerId === playerId ? { ...slot, slotIndex: FANTASY_STARTERS, isStarter: false, isCaptain: false, isViceCaptain: false } : slot
+      );
+      setDraft(normalizeDraftSlots(next, optionMap, userKey));
+      setMessage("Player moved to bench. Autosaving...");
+    } else {
+      const next = normalizedDraft.filter((slot) => slot.playerId !== playerId);
+      if (removed.isCaptain && next.length > 0) {
+        next[0] = { ...next[0], isCaptain: true, isViceCaptain: false };
+      }
+      setDraft(normalizeDraftSlots(next, optionMap, userKey));
+      setMessage("Player removed from squad. Autosaving...");
+    }
+
     setActiveMoveId(null);
     setDraggingId(null);
-    setMessage("Player removed. Save to publish the squad.");
+    setDirty(true);
   }
 
   function setCaptain(playerId: string) {
@@ -373,6 +427,8 @@ export function FantasyProfileDrawer({
       return;
     }
     setDraft(normalizedDraft.map((slot) => ({ ...slot, isCaptain: slot.playerId === playerId, isViceCaptain: false })));
+    setDirty(true);
+    setMessage("Autosaving captain...");
   }
 
   async function handleSave() {
@@ -385,6 +441,8 @@ export function FantasyProfileDrawer({
     try {
       await onSaveRoster(normalizedDraft);
       await onSaveSettings({ formation });
+      lastSavedKeyRef.current = rosterSignature(normalizedDraft, formation);
+      setDirty(false);
       setMessage("Fantasy formation saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save Fantasy formation.");
@@ -412,7 +470,7 @@ export function FantasyProfileDrawer({
               {canEdit ? (
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   {saving ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  Save
+                  {dirty ? "Autosaving" : "Saved"}
                 </Button>
               ) : null}
               <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close fantasy profile drawer">
@@ -445,7 +503,11 @@ export function FantasyProfileDrawer({
                 </div>
                 <select
                   value={formation}
-                  onChange={(event) => setFormation(event.target.value)}
+                  onChange={(event) => {
+                    setFormation(event.target.value);
+                    setDirty(true);
+                    setMessage("Autosaving formation...");
+                  }}
                   disabled={!canEdit}
                   className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-cup-ink disabled:opacity-60"
                   aria-label="Fantasy formation"
@@ -852,7 +914,7 @@ function PitchSlot({
                 className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-black text-white"
               >
                 <Trash2 className="h-3 w-3" />
-                Remove
+                Bench
               </button>
             </div>
           ) : null}
