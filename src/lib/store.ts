@@ -8,6 +8,7 @@ import type {
   FamilySession,
   FantasyPlayerMatchScore,
   FantasyRosterSlot,
+  FantasyTeamSetting,
   Match,
   MatchComment,
   MatchPhase,
@@ -24,6 +25,7 @@ const LOCAL_COMMENTS_KEY = "wc26-family-comments";
 const LOCAL_PLAYER_STATS_KEY = "wc26-family-player-stats";
 const LOCAL_FANTASY_ROSTERS_KEY = "wc26-family-fantasy-rosters";
 const LOCAL_FANTASY_SCORES_KEY = "wc26-family-fantasy-scores";
+const LOCAL_FANTASY_TEAMS_KEY = "wc26-family-fantasy-teams";
 const LOCAL_MIGRATION_KEY = "wc26-family-local-migrated";
 
 type StoredMatchRow = {
@@ -91,6 +93,13 @@ type StoredFantasyRosterRow = {
   updated_at?: string | null;
 };
 
+type StoredFantasyTeamRow = {
+  user_id: string;
+  name: string;
+  formation?: string | null;
+  updated_at?: string | null;
+};
+
 type StoredFantasyScoreRow = {
   match_id: string;
   player_id: string;
@@ -127,6 +136,7 @@ export type TournamentState = {
   comments: MatchComment[];
   playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
+  fantasyTeams: FantasyTeamSetting[];
   fantasyRosters: FantasyRosterSlot[];
   fantasyScores: FantasyPlayerMatchScore[];
   error?: string;
@@ -188,6 +198,14 @@ function readLocalPlayerStats() {
 function readLocalFantasyRosters() {
   try {
     return JSON.parse(window.localStorage.getItem(LOCAL_FANTASY_ROSTERS_KEY) || "[]") as FantasyRosterSlot[];
+  } catch {
+    return [];
+  }
+}
+
+function readLocalFantasyTeams() {
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_FANTASY_TEAMS_KEY) || "[]") as FantasyTeamSetting[];
   } catch {
     return [];
   }
@@ -386,6 +404,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       comments: readLocalComments(),
       playerStats: readLocalPlayerStats(),
       playerCatalog: [],
+      fantasyTeams: readLocalFantasyTeams(),
       fantasyRosters: readLocalFantasyRosters(),
       fantasyScores: readLocalFantasyScores()
     };
@@ -399,6 +418,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       { data: commentRows, error: commentError },
       { data: playerStatRows, error: playerStatsError },
       { data: playerRows, error: playerCatalogError },
+      { data: fantasyTeamRows, error: fantasyTeamError },
       { data: fantasyRosterRows, error: fantasyRosterError },
       { data: fantasyScoreRows, error: fantasyScoreError }
     ] = await Promise.all([
@@ -408,6 +428,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       supabase.from("comments").select("*").order("created_at", { ascending: true }),
       supabase.from("player_match_stats").select("*"),
       fetchPlayerCatalogRows(),
+      supabase.from("fantasy_teams").select("*"),
       supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
       supabase.from("fantasy_player_match_scores").select("*")
     ]);
@@ -492,6 +513,23 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
+    const fantasyTeams: FantasyTeamSetting[] = [];
+    if (!fantasyTeamError) {
+      for (const row of (fantasyTeamRows || []) as StoredFantasyTeamRow[]) {
+        const profile = profileMap.get(row.user_id);
+        if (!profile) {
+          continue;
+        }
+
+        fantasyTeams.push({
+          userKey: profile.user_key,
+          name: row.name,
+          formation: row.formation ?? "4-3-3",
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
     const fantasyScores: FantasyPlayerMatchScore[] = [];
     if (!fantasyScoreError) {
       for (const row of (fantasyScoreRows || []) as StoredFantasyScoreRow[]) {
@@ -536,11 +574,12 @@ export async function loadTournamentState(): Promise<TournamentState> {
       comments,
       playerStats,
       playerCatalog,
+      fantasyTeams,
       fantasyRosters,
       fantasyScores,
       commentsError: commentError?.message,
       playerStatsError: playerStatsError?.message,
-      fantasyError: fantasyRosterError?.message ?? fantasyScoreError?.message
+      fantasyError: fantasyTeamError?.message ?? fantasyRosterError?.message ?? fantasyScoreError?.message
     };
   } catch (error) {
     return {
@@ -549,6 +588,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       comments: [],
       playerStats: [],
       playerCatalog: [],
+      fantasyTeams: [],
       fantasyRosters: [],
       fantasyScores: [],
       error: error instanceof Error ? error.message : "Could not load tournament data."
@@ -809,6 +849,51 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
   }
 
   return cleaned;
+}
+
+export async function saveFantasyTeamSettings(
+  session: FamilySession,
+  settings: Pick<FantasyTeamSetting, "formation">
+): Promise<FantasyTeamSetting> {
+  const saved: FantasyTeamSetting = {
+    userKey: session.userKey,
+    name: `${session.displayName}'s Mini-Fantasy`,
+    formation: settings.formation || "4-3-3",
+    updatedAt: new Date().toISOString()
+  };
+
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    const otherTeams = readLocalFantasyTeams().filter((team) => team.userKey !== session.userKey);
+    window.localStorage.setItem(LOCAL_FANTASY_TEAMS_KEY, JSON.stringify([...otherTeams, saved]));
+    return saved;
+  }
+
+  if (!session.authUserId) {
+    throw new Error("Missing Supabase user.");
+  }
+
+  await ensureProfileBestEffort(session);
+
+  const { error } = await supabase.from("fantasy_teams").upsert(
+    {
+      user_id: session.authUserId,
+      name: saved.name,
+      formation: saved.formation,
+      updated_at: saved.updatedAt
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) {
+    if (error.message.toLowerCase().includes("formation")) {
+      throw new Error("Fantasy formations need the updated Supabase schema. Run supabase/schema.sql once in Supabase SQL Editor.");
+    }
+    throw new Error(error.message);
+  }
+
+  return saved;
 }
 
 export async function syncLiveScores(force = true): Promise<ScoreSyncSummary> {

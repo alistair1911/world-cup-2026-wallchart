@@ -113,6 +113,13 @@ export type FantasyRosterSlot = {
   updatedAt?: string | null;
 };
 
+export type FantasyTeamSetting = {
+  userKey: UserKey;
+  name: string;
+  formation: string;
+  updatedAt?: string | null;
+};
+
 export type FantasyPlayerMatchScore = {
   matchId: string;
   playerId: string;

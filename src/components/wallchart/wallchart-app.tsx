@@ -22,11 +22,12 @@ import {
   migrateLocalFamilyData,
   saveComment,
   saveFantasyRoster,
+  saveFantasyTeamSettings,
   saveMatchResult,
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
-import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, GroupLetter, Match, MatchComment, PlayerCatalogItem, PlayerMatchStat, Prediction } from "@/lib/types";
+import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, FantasyTeamSetting, GroupLetter, Match, MatchComment, PlayerCatalogItem, PlayerMatchStat, Prediction } from "@/lib/types";
 import type { UserKey } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
@@ -69,6 +70,7 @@ export function WallchartApp() {
   const [comments, setComments] = useState<MatchComment[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerMatchStat[]>([]);
   const [playerCatalog, setPlayerCatalog] = useState<PlayerCatalogItem[]>([]);
+  const [fantasyTeams, setFantasyTeams] = useState<FantasyTeamSetting[]>([]);
   const [fantasyRosters, setFantasyRosters] = useState<FantasyRosterSlot[]>([]);
   const [fantasyScores, setFantasyScores] = useState<FantasyPlayerMatchScore[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
@@ -93,6 +95,7 @@ export function WallchartApp() {
       setComments(state.comments);
       setPlayerStats(state.playerStats);
       setPlayerCatalog(state.playerCatalog);
+      setFantasyTeams(state.fantasyTeams);
       setFantasyRosters(state.fantasyRosters);
       setFantasyScores(state.fantasyScores);
       setError(state.error ?? null);
@@ -140,6 +143,7 @@ export function WallchartApp() {
       setComments(state.comments);
       setPlayerStats(state.playerStats);
       setPlayerCatalog(state.playerCatalog);
+      setFantasyTeams(state.fantasyTeams);
       setFantasyRosters(state.fantasyRosters);
       setFantasyScores(state.fantasyScores);
       setError(profileError || state.error || null);
@@ -233,6 +237,15 @@ export function WallchartApp() {
 
     const saved = await saveFantasyRoster(session, slots);
     setFantasyRosters((current) => [...current.filter((slot) => slot.userKey !== session.userKey), ...saved]);
+  }
+
+  async function handleSaveFantasyTeamSettings(settings: Pick<FantasyTeamSetting, "formation">) {
+    if (!session) {
+      return;
+    }
+
+    const saved = await saveFantasyTeamSettings(session, settings);
+    setFantasyTeams((current) => [...current.filter((team) => team.userKey !== session.userKey), saved]);
   }
 
   async function handleAddFantasyPlayer(playerId: string) {
@@ -457,7 +470,9 @@ export function WallchartApp() {
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
             playerCatalog={playerCatalog}
+            teamSettings={fantasyTeams}
             onSaveRoster={handleSaveFantasyRoster}
+            onSaveTeamSettings={handleSaveFantasyTeamSettings}
             onSelectPlayer={setSelectedPlayerId}
             onSelectTeam={setSelectedTeamId}
           />
@@ -537,7 +552,9 @@ export function WallchartApp() {
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
             playerCatalog={playerCatalog}
+            teamSettings={fantasyTeams}
             onSaveRoster={handleSaveFantasyRoster}
+            onSaveTeamSettings={handleSaveFantasyTeamSettings}
             onSelectPlayer={setSelectedPlayerId}
             onSelectTeam={setSelectedTeamId}
           />

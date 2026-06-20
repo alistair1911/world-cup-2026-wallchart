@@ -17,7 +17,8 @@ import {
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
 import { TEAMS } from "@/lib/tournament-data";
-import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, Match, PlayerCatalogItem } from "@/lib/types";
+import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, FantasyTeamSetting, Match, PlayerCatalogItem, UserKey } from "@/lib/types";
+import { FantasyProfileDrawer } from "./fantasy-profile-drawer";
 import { Flag } from "./flag";
 
 type FantasyPanelProps = {
@@ -26,7 +27,9 @@ type FantasyPanelProps = {
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
   playerCatalog: PlayerCatalogItem[];
+  teamSettings: FantasyTeamSetting[];
   onSaveRoster: (slots: FantasyRosterSlot[]) => Promise<void>;
+  onSaveTeamSettings: (settings: Pick<FantasyTeamSetting, "formation">) => Promise<void>;
   onSelectPlayer: (playerId: string) => void;
   onSelectTeam: (teamId: string) => void;
 };
@@ -37,7 +40,9 @@ export function FantasyPanel({
   rosters,
   scores,
   playerCatalog,
+  teamSettings,
   onSaveRoster,
+  onSaveTeamSettings,
   onSelectPlayer,
   onSelectTeam
 }: FantasyPanelProps) {
@@ -54,6 +59,7 @@ export function FantasyPanel({
   const [countryFilter, setCountryFilter] = useState("ALL");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedFantasyUser, setSelectedFantasyUser] = useState<UserKey | null>(null);
 
   useEffect(() => {
     setDraft(ownRoster);
@@ -161,11 +167,13 @@ export function FantasyPanel({
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
         {leaderboard.map((row, index) => (
-          <div
+          <button
+            type="button"
             key={row.userKey}
+            onClick={() => setSelectedFantasyUser(row.userKey)}
             className={`rounded-md border p-2.5 ${
               index === 0 ? "border-cup-gold bg-gradient-to-br from-amber-100 to-white" : "border-slate-200 bg-white"
-            }`}
+            } text-left transition hover:-translate-y-0.5 hover:shadow-lift`}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
@@ -192,7 +200,7 @@ export function FantasyPanel({
                 </div>
               </div>
             ) : null}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -338,6 +346,21 @@ export function FantasyPanel({
         <UsersRound className="h-4 w-4 shrink-0 text-cup-red" />
         Tata and Lucas can both pick the same players. ESPN-confirmed stats update after matches.
       </div>
+
+      <FantasyProfileDrawer
+        userKey={selectedFantasyUser}
+        session={session}
+        matches={matches}
+        rosters={rosters}
+        scores={scores}
+        playerCatalog={playerCatalog}
+        teamSettings={teamSettings}
+        onClose={() => setSelectedFantasyUser(null)}
+        onSaveRoster={onSaveRoster}
+        onSaveSettings={onSaveTeamSettings}
+        onSelectPlayer={onSelectPlayer}
+        onSelectTeam={onSelectTeam}
+      />
     </Panel>
   );
 }

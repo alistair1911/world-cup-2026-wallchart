@@ -1,0 +1,568 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Check, Crown, GripVertical, Save, ShieldCheck, Star, Trophy, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  FANTASY_STARTERS,
+  buildFantasyLeaderboard,
+  fantasyPlayerOptions,
+  isFantasyPlayerLocked,
+  type FantasyPlayerOption
+} from "@/lib/fantasy";
+import { avatarUrl } from "@/lib/profile-data";
+import type {
+  FamilySession,
+  FantasyPlayerMatchScore,
+  FantasyRosterSlot,
+  FantasyTeamSetting,
+  Match,
+  PlayerCatalogItem,
+  UserKey
+} from "@/lib/types";
+import { Flag } from "./flag";
+
+type FantasyProfileDrawerProps = {
+  userKey: UserKey | null;
+  session: FamilySession;
+  matches: Match[];
+  rosters: FantasyRosterSlot[];
+  scores: FantasyPlayerMatchScore[];
+  playerCatalog: PlayerCatalogItem[];
+  teamSettings: FantasyTeamSetting[];
+  onClose: () => void;
+  onSaveRoster: (slots: FantasyRosterSlot[]) => Promise<void>;
+  onSaveSettings: (settings: Pick<FantasyTeamSetting, "formation">) => Promise<void>;
+  onSelectPlayer: (playerId: string) => void;
+  onSelectTeam: (teamId: string) => void;
+};
+
+const FORMATIONS = ["4-3-3", "4-2-3-1", "3-4-3", "3-5-2", "4-4-2", "5-3-2"] as const;
+
+const FORMATION_LINES: Record<string, Array<{ id: string; label: string; count: number }>> = {
+  "4-3-3": [
+    { id: "FW", label: "Attack", count: 3 },
+    { id: "MID", label: "Midfield", count: 3 },
+    { id: "DEF", label: "Defence", count: 4 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ],
+  "4-2-3-1": [
+    { id: "ST", label: "Striker", count: 1 },
+    { id: "AM", label: "Creators", count: 3 },
+    { id: "DM", label: "Double pivot", count: 2 },
+    { id: "DEF", label: "Defence", count: 4 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ],
+  "3-4-3": [
+    { id: "FW", label: "Attack", count: 3 },
+    { id: "MID", label: "Midfield", count: 4 },
+    { id: "DEF", label: "Back three", count: 3 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ],
+  "3-5-2": [
+    { id: "FW", label: "Front two", count: 2 },
+    { id: "MID", label: "Midfield five", count: 5 },
+    { id: "DEF", label: "Back three", count: 3 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ],
+  "4-4-2": [
+    { id: "FW", label: "Front two", count: 2 },
+    { id: "MID", label: "Midfield four", count: 4 },
+    { id: "DEF", label: "Defence", count: 4 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ],
+  "5-3-2": [
+    { id: "FW", label: "Front two", count: 2 },
+    { id: "MID", label: "Midfield", count: 3 },
+    { id: "DEF", label: "Back five", count: 5 },
+    { id: "GK", label: "Keeper", count: 1 }
+  ]
+};
+
+function familyName(userKey: UserKey) {
+  return userKey === "tata" ? "Tata" : "Lucas";
+}
+
+function reindex(slots: FantasyRosterSlot[]) {
+  return slots.map((slot, index) => ({ ...slot, slotIndex: index, updatedAt: new Date().toISOString() }));
+}
+
+function playerTotals(playerId: string, scores: FantasyPlayerMatchScore[]) {
+  const rows = scores.filter((score) => score.playerId === playerId);
+  return {
+    points: rows.reduce((total, score) => total + score.points, 0),
+    goals: rows.reduce((total, score) => total + score.goals, 0),
+    assists: rows.reduce((total, score) => total + score.assists, 0),
+    cleanSheets: rows.filter((score) => score.cleanSheet).length
+  };
+}
+
+export function FantasyProfileDrawer({
+  userKey,
+  session,
+  matches,
+  rosters,
+  scores,
+  playerCatalog,
+  teamSettings,
+  onClose,
+  onSaveRoster,
+  onSaveSettings,
+  onSelectPlayer,
+  onSelectTeam
+}: FantasyProfileDrawerProps) {
+  const options = useMemo(() => fantasyPlayerOptions(playerCatalog), [playerCatalog]);
+  const optionMap = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
+  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
+  const setting = userKey ? teamSettings.find((team) => team.userKey === userKey) : null;
+  const savedFormation = setting?.formation ?? "4-3-3";
+  const savedSlots = useMemo(
+    () => (userKey ? rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex) : []),
+    [rosters, userKey]
+  );
+  const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
+  const [formation, setFormation] = useState(savedFormation);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(savedSlots);
+  }, [savedSlots]);
+
+  useEffect(() => {
+    setFormation(savedFormation);
+  }, [savedFormation]);
+
+  if (!userKey) {
+    return null;
+  }
+
+  const canEdit = userKey === session.userKey;
+  const row = leaderboard.find((item) => item.userKey === userKey);
+  const starterSlots = draft.filter((slot) => slot.isStarter).slice(0, FANTASY_STARTERS);
+  const benchSlots = draft.filter((slot) => !slot.isStarter);
+  const selectedTeams = new Set(
+    draft
+      .map((slot) => optionMap.get(slot.playerId)?.team)
+      .filter((team): team is FantasyPlayerOption["team"] => Boolean(team))
+      .map((team) => team.id)
+  );
+  const totals = draft.reduce(
+    (total, slot) => {
+      const output = playerTotals(slot.playerId, scores);
+      total.points += slot.isCaptain ? output.points * 2 : output.points;
+      total.goals += output.goals;
+      total.assists += output.assists;
+      return total;
+    },
+    { points: 0, goals: 0, assists: 0 }
+  );
+
+  function lockedMessage(playerId: string) {
+    const player = optionMap.get(playerId);
+    setMessage(`${player?.name ?? "That player"} is locked close to kickoff.`);
+  }
+
+  function moveToStarter(playerId: string, targetIndex: number) {
+    if (!canEdit) {
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+
+    const playerSlot = draft.find((slot) => slot.playerId === playerId);
+    if (!playerSlot) {
+      return;
+    }
+
+    const starters = draft.filter((slot) => slot.isStarter && slot.playerId !== playerId);
+    const bench = draft.filter((slot) => !slot.isStarter && slot.playerId !== playerId);
+    const replaced = starters[targetIndex];
+    const nextStarters = [...starters];
+    if (replaced) {
+      nextStarters.splice(targetIndex, 1, { ...playerSlot, isStarter: true });
+      bench.unshift({ ...replaced, isStarter: false, isCaptain: false });
+    } else {
+      nextStarters.splice(Math.min(targetIndex, nextStarters.length), 0, { ...playerSlot, isStarter: true });
+    }
+
+    setDraft(reindex([...nextStarters.slice(0, FANTASY_STARTERS), ...bench]));
+    setMessage(null);
+  }
+
+  function moveToBench(playerId: string) {
+    if (!canEdit) {
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+
+    const next = draft.map((slot) => (slot.playerId === playerId ? { ...slot, isStarter: false } : slot));
+    setDraft(reindex([...next.filter((slot) => slot.isStarter), ...next.filter((slot) => !slot.isStarter)]));
+    setMessage(null);
+  }
+
+  function setCaptain(playerId: string) {
+    if (!canEdit) {
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+    setDraft(draft.map((slot) => ({ ...slot, isCaptain: slot.playerId === playerId, isViceCaptain: false })));
+  }
+
+  async function handleSave() {
+    if (!canEdit) {
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await onSaveRoster(draft);
+      await onSaveSettings({ formation });
+      setMessage("Fantasy formation saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save Fantasy formation.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  let boardIndex = 0;
+
+  return (
+    <div className="fixed inset-0 z-[65] flex justify-end bg-cup-ink/45">
+      <button type="button" aria-label="Close fantasy profile backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <aside className="saved-pop relative flex h-full w-full max-w-4xl flex-col overflow-y-auto bg-slate-50 shadow-2xl">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
+              <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                {row?.rosterSize ?? 0} players - {formation} - {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {canEdit ? (
+                <Button size="sm" onClick={handleSave} disabled={saving}>
+                  {saving ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                  Save
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close fantasy profile drawer">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_300px]">
+          <section className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <MiniStat label="Fantasy pts" value={totals.points} />
+              <MiniStat label="Goals" value={totals.goals} />
+              <MiniStat label="Assists" value={totals.assists} />
+              <MiniStat label="Countries" value={selectedTeams.size} />
+            </div>
+
+            <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
+                  <p className="text-xs font-bold text-slate-500">
+                    {canEdit ? "Drag players between the pitch and bench, then save." : "Read-only squad view."}
+                  </p>
+                </div>
+                <select
+                  value={formation}
+                  onChange={(event) => setFormation(event.target.value)}
+                  disabled={!canEdit}
+                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-cup-ink disabled:opacity-60"
+                  aria-label="Fantasy formation"
+                >
+                  {FORMATIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative overflow-hidden rounded-lg bg-gradient-to-b from-pitch-700 via-pitch-600 to-pitch-800 p-4 text-white ring-1 ring-pitch-900">
+                <div className="pointer-events-none absolute inset-0 opacity-25">
+                  <div className="absolute left-1/2 top-0 h-full w-px bg-white" />
+                  <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white" />
+                  <div className="absolute inset-x-8 top-3 h-16 rounded-b-full border-x border-b border-white" />
+                  <div className="absolute inset-x-8 bottom-3 h-16 rounded-t-full border-x border-t border-white" />
+                </div>
+                <div className="relative space-y-3">
+                  {FORMATION_LINES[formation].map((line) => {
+                    const slots = Array.from({ length: line.count }, () => {
+                      const slot = starterSlots[boardIndex] ?? null;
+                      const index = boardIndex;
+                      boardIndex += 1;
+                      return { slot, index };
+                    });
+
+                    return (
+                      <div key={line.id}>
+                        <div className="mb-1 text-center text-[10px] font-black uppercase text-white/60">{line.label}</div>
+                        <div className="mx-auto grid max-w-3xl gap-2" style={{ gridTemplateColumns: `repeat(${line.count}, minmax(0, 1fr))` }}>
+                          {slots.map(({ slot, index }) => (
+                            <PitchSlot
+                              key={`${line.id}-${index}`}
+                              slot={slot}
+                              player={slot ? optionMap.get(slot.playerId) : undefined}
+                              stats={slot ? playerTotals(slot.playerId, scores) : null}
+                              canEdit={canEdit}
+                              draggingId={draggingId}
+                              onDragStart={setDraggingId}
+                              onDrop={(playerId) => moveToStarter(playerId, index)}
+                              onSelectPlayer={onSelectPlayer}
+                              onSetCaptain={setCaptain}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {message ? <div className="mt-3 rounded-md bg-cup-sky p-2 text-xs font-black text-cup-ink">{message}</div> : null}
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <div
+              className="rounded-lg bg-white p-4 ring-1 ring-slate-200"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                const playerId = event.dataTransfer.getData("text/plain") || draggingId;
+                if (playerId) {
+                  moveToBench(playerId);
+                }
+              }}
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-cup-red" />
+                <h3 className="text-sm font-black uppercase text-slate-600">Bench</h3>
+              </div>
+              <div className="space-y-2">
+                {benchSlots.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                    Drag a starter here to bench them.
+                  </div>
+                ) : (
+                  benchSlots.map((slot) => (
+                    <BenchRow
+                      key={slot.playerId}
+                      slot={slot}
+                      player={optionMap.get(slot.playerId)}
+                      stats={playerTotals(slot.playerId, scores)}
+                      canEdit={canEdit}
+                      onDragStart={setDraggingId}
+                      onSelectPlayer={onSelectPlayer}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
+              <div className="mb-3 flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-cup-gold" />
+                <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
+              </div>
+              <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+                {draft.map((slot) => {
+                  const player = optionMap.get(slot.playerId);
+                  if (!player) {
+                    return null;
+                  }
+                  const stats = playerTotals(slot.playerId, scores);
+                  return (
+                    <button
+                      key={slot.playerId}
+                      type="button"
+                      onClick={() => onSelectPlayer(slot.playerId)}
+                      className="w-full rounded-md bg-slate-50 p-2 text-left ring-1 ring-slate-200 transition hover:bg-white"
+                    >
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={player.photoUrl ?? avatarUrl(player.name)}
+                          alt={`${player.name} portrait`}
+                          className="h-9 w-9 rounded-full object-cover object-top"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-black text-cup-ink">
+                            {slot.isCaptain ? "C " : ""}
+                            {player.name}
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                            <Flag team={player.team} />
+                            <span>{player.fantasyPosition}</span>
+                            <span>{slot.isStarter ? "Starter" : "Bench"}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-black text-cup-red">{slot.isCaptain ? stats.points * 2 : stats.points}</div>
+                          <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
+      <div className="text-[10px] font-black uppercase text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-black text-cup-red">{value}</div>
+    </div>
+  );
+}
+
+function PitchSlot({
+  slot,
+  player,
+  stats,
+  canEdit,
+  onDragStart,
+  onDrop,
+  onSelectPlayer,
+  onSetCaptain
+}: {
+  slot: FantasyRosterSlot | null;
+  player?: FantasyPlayerOption;
+  stats: ReturnType<typeof playerTotals> | null;
+  canEdit: boolean;
+  draggingId: string | null;
+  onDragStart: (playerId: string | null) => void;
+  onDrop: (playerId: string) => void;
+  onSelectPlayer: (playerId: string) => void;
+  onSetCaptain: (playerId: string) => void;
+}) {
+  return (
+    <div
+      className="min-h-[86px] rounded-lg border border-white/20 bg-white/12 p-2 text-center backdrop-blur"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const playerId = event.dataTransfer.getData("text/plain");
+        if (playerId) {
+          onDrop(playerId);
+        }
+      }}
+    >
+      {slot && player ? (
+        <div
+          draggable={canEdit}
+          onDragStart={(event) => {
+            event.dataTransfer.setData("text/plain", slot.playerId);
+            onDragStart(slot.playerId);
+          }}
+          onDragEnd={() => onDragStart(null)}
+          className="interactive-pop group"
+        >
+          <button type="button" onClick={() => onSelectPlayer(slot.playerId)} className="w-full">
+            <img
+              src={player.photoUrl ?? avatarUrl(player.name)}
+              alt={`${player.name} portrait`}
+              className="mx-auto h-10 w-10 rounded-full object-cover object-top ring-2 ring-white"
+            />
+            <div className="mt-1 truncate text-[11px] font-black text-white">{player.name}</div>
+            <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
+          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => onSetCaptain(slot.playerId)}
+              className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
+              }`}
+            >
+              {slot.isCaptain ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
+              {slot.isCaptain ? "Captain" : "Set C"}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="grid h-full min-h-[70px] place-items-center rounded-md border border-dashed border-white/25 text-[10px] font-black uppercase text-white/55">
+          Drop player
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BenchRow({
+  slot,
+  player,
+  stats,
+  canEdit,
+  onDragStart,
+  onSelectPlayer
+}: {
+  slot: FantasyRosterSlot;
+  player?: FantasyPlayerOption;
+  stats: ReturnType<typeof playerTotals>;
+  canEdit: boolean;
+  onDragStart: (playerId: string | null) => void;
+  onSelectPlayer: (playerId: string) => void;
+}) {
+  if (!player) {
+    return null;
+  }
+
+  return (
+    <div
+      draggable={canEdit}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("text/plain", slot.playerId);
+        onDragStart(slot.playerId);
+      }}
+      onDragEnd={() => onDragStart(null)}
+      className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md bg-slate-50 p-2 ring-1 ring-slate-200"
+    >
+      <button type="button" onClick={() => onSelectPlayer(slot.playerId)} className="min-w-0 text-left">
+        <div className="flex min-w-0 items-center gap-2">
+          <img src={player.photoUrl ?? avatarUrl(player.name)} alt={`${player.name} portrait`} className="h-9 w-9 rounded-full object-cover object-top" />
+          <div className="min-w-0">
+            <div className="truncate text-xs font-black text-cup-ink">{player.name}</div>
+            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+              <Flag team={player.team} />
+              <Badge tone="green">{player.fantasyPosition}</Badge>
+            </div>
+          </div>
+        </div>
+      </button>
+      <div className="flex items-center gap-1 text-right">
+        <div>
+          <div className="text-sm font-black text-cup-red">{stats.points}</div>
+          <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
+        </div>
+        {canEdit ? <GripVertical className="h-4 w-4 text-slate-400" /> : null}
+      </div>
+    </div>
+  );
+}
