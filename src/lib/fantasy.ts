@@ -325,7 +325,7 @@ export function buildFantasyScoresFromMatches(
   const profiles = fantasyPlayerOptions(playerCatalog);
   const scores: FantasyPlayerMatchScore[] = [];
 
-  for (const match of matches.filter((item) => item.status === "final" && item.homeScore !== null && item.awayScore !== null)) {
+  for (const match of matches) {
     for (const option of profiles) {
       if (option.team.id !== match.homeTeamId && option.team.id !== match.awayTeamId) {
         continue;
@@ -340,7 +340,7 @@ export function buildFantasyScoresFromMatches(
 
       const conceded =
         option.team.id === match.homeTeamId ? match.awayScore ?? null : option.team.id === match.awayTeamId ? match.homeScore ?? null : null;
-      const cleanSheet = conceded === 0;
+      const cleanSheet = match.status === "final" && conceded === 0;
       const { points, breakdown } = scoreFantasyPlayerMatch({
         position: option.fantasyPosition,
         goals: stat.goals,
@@ -369,6 +369,27 @@ export function buildFantasyScoresFromMatches(
   }
 
   return scores;
+}
+
+export function mergeFantasyScores(
+  storedScores: FantasyPlayerMatchScore[],
+  derivedScores: FantasyPlayerMatchScore[],
+  playerCatalog: PlayerCatalogItem[] = []
+): FantasyPlayerMatchScore[] {
+  const options = fantasyOptionMap(playerCatalog);
+  const keyFor = (score: FantasyPlayerMatchScore) => {
+    const option = options.get(score.playerId);
+    return `${score.matchId}:${option?.id ?? score.playerId}`;
+  };
+
+  const merged = new Map<string, FantasyPlayerMatchScore>();
+  for (const score of storedScores) {
+    merged.set(keyFor(score), score);
+  }
+  for (const score of derivedScores) {
+    merged.set(keyFor(score), score);
+  }
+  return [...merged.values()];
 }
 
 export function buildFantasyLeaderboard(

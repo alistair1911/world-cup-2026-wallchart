@@ -11,7 +11,8 @@ import {
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
   buildFantasyScoresFromMatches,
-  isFantasyPlayerLocked
+  isFantasyPlayerLocked,
+  mergeFantasyScores
 } from "@/lib/fantasy";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
@@ -179,10 +180,10 @@ export function WallchartApp() {
 
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
-  const effectiveFantasyScores = useMemo(
-    () => (fantasyScores.length > 0 ? fantasyScores : buildFantasyScoresFromMatches(matches, playerStats, playerCatalog)),
-    [fantasyScores, matches, playerStats, playerCatalog]
-  );
+  const effectiveFantasyScores = useMemo(() => {
+    const derivedScores = buildFantasyScoresFromMatches(matches, playerStats, playerCatalog);
+    return mergeFantasyScores(fantasyScores, derivedScores, playerCatalog);
+  }, [fantasyScores, matches, playerStats, playerCatalog]);
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
   const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
   const commentCounts = useMemo(

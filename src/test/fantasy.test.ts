@@ -5,6 +5,7 @@ import {
   buildFantasyScoresFromMatches,
   fantasyOptionMap,
   fantasyPlayerOptions,
+  mergeFantasyScores,
   normalizeFantasyRosterSlots,
   normalizeFantasyPosition,
   scoreFantasyPlayerMatch,
@@ -209,6 +210,63 @@ describe("mini-fantasy scoring", () => {
     expect(scores.find((score) => score.playerId === "spain-unai-simon")).toMatchObject({
       points: 4,
       cleanSheet: true
+    });
+  });
+
+  it("awards goal and assist points from player stats before a match is final", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "usa" && item.awayTeamId === "paraguay")!,
+      status: "live" as const,
+      homeScore: 1,
+      awayScore: 0
+    };
+
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "usa-christian-pulisic",
+          playerName: "Christian Pulisic",
+          teamId: "usa",
+          goals: 0,
+          assists: 1
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "usa-christian-pulisic")).toMatchObject({
+      points: 3,
+      assists: 1,
+      cleanSheet: false
+    });
+  });
+
+  it("lets current stat-derived fantasy scores replace stale stored rows", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "final" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const derived = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "argentina-lionel-messi",
+          playerName: "Lionel Messi",
+          teamId: "argentina",
+          goals: 3,
+          assists: 0
+        }
+      ]
+    );
+    const staleStored = [{ ...derived[0]!, points: 0, goals: 0, breakdown: {} }];
+
+    expect(mergeFantasyScores(staleStored, derived).find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
     });
   });
 
