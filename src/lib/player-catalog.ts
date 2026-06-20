@@ -3,6 +3,7 @@ import { TEAMS, getTeam } from "./tournament-data";
 import type { PlayerCatalogItem, Team } from "./types";
 
 export const COMPLETE_SQUAD_MINIMUM = 15;
+export const ESPN_PREFERRED_TEAM_IDS = new Set(["czechia", "spain"]);
 
 export const ESPN_TEAM_IDS: Record<string, string> = {
   mexico: "203",
@@ -244,7 +245,8 @@ export function mergePlayerCatalog(
     const byName = new Map<string, PlayerCatalogItem>();
     const byId = new Set<string>();
     const espnTeamRows = espnByTeam.get(team.id) ?? [];
-    const databaseTeamRows = team.id === "czechia" && espnTeamRows.length >= COMPLETE_SQUAD_MINIMUM ? [] : dbByTeam.get(team.id) ?? [];
+    const databaseTeamRows =
+      ESPN_PREFERRED_TEAM_IDS.has(team.id) && espnTeamRows.length >= COMPLETE_SQUAD_MINIMUM ? [] : dbByTeam.get(team.id) ?? [];
     const curatedTeamRows = curatedByTeam.get(team.id) ?? [];
     const orderedRows =
       espnTeamRows.length >= COMPLETE_SQUAD_MINIMUM

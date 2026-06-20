@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   COMPLETE_SQUAD_MINIMUM,
+  ESPN_PREFERRED_TEAM_IDS,
   fetchEspnRoster,
   playerCatalogId
 } from "@/lib/player-catalog";
@@ -283,8 +284,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
 
   const supabase = getServiceSupabase();
   const formation = formationForTeam(team);
+  const preferEspn = ESPN_PREFERRED_TEAM_IDS.has(team.id);
   const savedSquad = await readSavedSquad(supabase, team.id);
-  if (savedSquad && (team.id !== "czechia" || savedSquad.provider === "espn")) {
+  if (savedSquad && (!preferEspn || savedSquad.provider === "espn")) {
     return NextResponse.json(
       {
         ok: true,
@@ -304,7 +306,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
   }
 
   const savedPlayers = await readSavedPlayers(supabase, team.id);
-  if (isCompleteSquad(savedPlayers) && team.id !== "czechia") {
+  if (isCompleteSquad(savedPlayers) && !preferEspn) {
     return NextResponse.json(
       {
         ok: true,

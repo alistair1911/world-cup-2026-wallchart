@@ -64,8 +64,18 @@ function sortFantasyOptions(options: FantasyPlayerOption[]) {
   );
 }
 
+function comparablePlayerName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerOption[] {
   const byId = new Map<string, FantasyPlayerOption>();
+  const catalogNames = new Set<string>();
 
   for (const row of playerCatalog) {
     const team = getTeam(row.teamId);
@@ -73,6 +83,7 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
       continue;
     }
 
+    catalogNames.add(`${team.id}:${comparablePlayerName(row.name)}`);
     byId.set(row.id, {
       id: row.id,
       name: row.name,
@@ -84,6 +95,10 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
   }
 
   for (const { player, team } of getAllPlayerProfiles()) {
+    if (catalogNames.has(`${team.id}:${comparablePlayerName(player.name)}`)) {
+      continue;
+    }
+
     byId.set(player.id, {
       id: player.id,
       name: player.name,

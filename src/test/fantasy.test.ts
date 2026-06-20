@@ -41,6 +41,22 @@ describe("mini-fantasy scoring", () => {
     expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ id: "spain-test-goalkeeper", fantasyPosition: "GK" })]));
   });
 
+  it("does not duplicate curated watchlist players when ESPN/catalog has the same player", () => {
+    const options = fantasyPlayerOptions([
+      {
+        id: "spain-362150",
+        teamId: "spain",
+        name: "Lamine Yamal",
+        position: "Forward",
+        shirtNumber: 19
+      }
+    ]);
+    const yamalOptions = options.filter((option) => option.team.id === "spain" && option.name === "Lamine Yamal");
+
+    expect(yamalOptions).toHaveLength(1);
+    expect(yamalOptions[0].id).toBe("spain-362150");
+  });
+
   it("keeps every team fantasy-eligible and replaces bad Czechia rows with ESPN rows", () => {
     const merged = mergePlayerCatalog(
       [

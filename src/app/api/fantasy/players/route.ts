@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   COMPLETE_SQUAD_MINIMUM,
+  ESPN_PREFERRED_TEAM_IDS,
   fetchEspnRoster,
   mergePlayerCatalog,
   teamsBelowMinimum
@@ -121,7 +122,9 @@ export async function GET() {
   }
 
   const missingTeams = new Set(teamsBelowMinimum(databaseRows).map((team) => team.id));
-  missingTeams.add("czechia");
+  for (const teamId of ESPN_PREFERRED_TEAM_IDS) {
+    missingTeams.add(teamId);
+  }
 
   const teamsToFetch = TEAMS.filter((team) => missingTeams.has(team.id));
   const rosterResults = await Promise.allSettled(teamsToFetch.map((team) => fetchEspnRoster(team)));
