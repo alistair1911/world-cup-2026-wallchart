@@ -86,8 +86,51 @@ function familyName(userKey: UserKey) {
   return userKey === "tata" ? "Tata" : "Lucas";
 }
 
-function reindex(slots: FantasyRosterSlot[]) {
-  return slots.map((slot, index) => ({ ...slot, slotIndex: index, updatedAt: new Date().toISOString() }));
+function normalizeDraftSlots(
+  slots: FantasyRosterSlot[],
+  optionMap: Map<string, FantasyPlayerOption>,
+  userKey: UserKey | null
+) {
+  const seen = new Set<string>();
+  const validSlots = slots
+    .filter((slot) => optionMap.has(slot.playerId))
+    .filter((slot) => {
+      if (seen.has(slot.playerId)) {
+        return false;
+      }
+      seen.add(slot.playerId);
+      return true;
+    })
+    .slice(0, FANTASY_SQUAD_SIZE);
+  const board: Array<FantasyRosterSlot | null> = Array.from({ length: FANTASY_STARTERS }, () => null);
+  const bench: FantasyRosterSlot[] = [];
+  const now = new Date().toISOString();
+
+  function nextOpenStarterIndex() {
+    return board.findIndex((slot) => !slot);
+  }
+
+  for (const slot of validSlots.sort((a, b) => a.slotIndex - b.slotIndex)) {
+    const normalized = { ...slot, userKey: userKey ?? slot.userKey, updatedAt: now };
+    if (slot.isStarter) {
+      const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
+      const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
+      if (targetIndex >= 0) {
+        board[targetIndex] = { ...normalized, slotIndex: targetIndex, isStarter: true };
+        continue;
+      }
+    }
+    bench.push({ ...normalized, isStarter: false, isCaptain: false });
+  }
+
+  return [
+    ...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)),
+    ...bench.slice(0, FANTASY_SQUAD_SIZE - board.filter(Boolean).length).map((slot, index) => ({
+      ...slot,
+      slotIndex: FANTASY_STARTERS + index,
+      isStarter: false
+    }))
+  ];
 }
 
 function playerTotals(playerId: string, scores: FantasyPlayerMatchScore[]) {
@@ -120,8 +163,15 @@ export function FantasyProfileDrawer({
   const setting = userKey ? teamSettings.find((team) => team.userKey === userKey) : null;
   const savedFormation = setting?.formation ?? "4-3-3";
   const savedSlots = useMemo(
-    () => (userKey ? rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex) : []),
-    [rosters, userKey]
+    () =>
+      userKey
+        ? normalizeDraftSlots(
+            rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex),
+            optionMap,
+            userKey
+          )
+        : [],
+    [optionMap, rosters, userKey]
   );
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
   const [formation, setFormation] = useState(savedFormation);
@@ -162,16 +212,18 @@ export function FantasyProfileDrawer({
 
   const canEdit = userKey === session.userKey;
   const row = leaderboard.find((item) => item.userKey === userKey);
-  const starterSlots = draft.filter((slot) => slot.isStarter).slice(0, FANTASY_STARTERS);
-  const benchSlots = draft.filter((slot) => !slot.isStarter);
-  const selectedPlayerIds = new Set(draft.map((slot) => slot.playerId));
+  const normalizedDraft = normalizeDraftSlots(draft, optionMap, userKey);
+  const boardSlots = Array.from({ length: FANTASY_STARTERS }, (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null);
+  const starterSlots = boardSlots.filter((slot): slot is FantasyRosterSlot => Boolean(slot));
+  const benchSlots = normalizedDraft.filter((slot) => !slot.isStarter);
+  const selectedPlayerIds = new Set(normalizedDraft.map((slot) => slot.playerId));
   const selectedTeams = new Set(
-    draft
+    normalizedDraft
       .map((slot) => optionMap.get(slot.playerId)?.team)
       .filter((team): team is FantasyPlayerOption["team"] => Boolean(team))
       .map((team) => team.id)
   );
-  const totals = draft.reduce(
+  const totals = normalizedDraft.reduce(
     (total, slot) => {
       const output = playerTotals(slot.playerId, scores);
       total.points += slot.isCaptain ? output.points * 2 : output.points;
@@ -196,32 +248,33 @@ export function FantasyProfileDrawer({
       return;
     }
 
-    const playerSlot = draft.find((slot) => slot.playerId === playerId);
+    const playerSlot = normalizedDraft.find((slot) => slot.playerId === playerId);
     if (!playerSlot) {
       return;
     }
 
-    const starters = draft.filter((slot) => slot.isStarter);
-    const bench = draft.filter((slot) => !slot.isStarter && slot.playerId !== playerId);
-    const sourceStarterIndex = starters.findIndex((slot) => slot.playerId === playerId);
-    const targetSlot = starters[targetIndex];
-    let nextStarters = [...starters];
+    const board = Array.from(
+      { length: FANTASY_STARTERS },
+      (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null
+    );
+    const bench = normalizedDraft.filter((slot) => !slot.isStarter && slot.playerId !== playerId);
+    const sourceStarterIndex = board.findIndex((slot) => slot?.playerId === playerId);
+    const targetSlot = board[targetIndex];
+    const movedSlot = { ...playerSlot, slotIndex: targetIndex, isStarter: true };
 
-    if (sourceStarterIndex >= 0) {
-      const safeTargetIndex = Math.min(targetIndex, nextStarters.length - 1);
-      if (safeTargetIndex >= 0 && safeTargetIndex !== sourceStarterIndex) {
-        nextStarters[sourceStarterIndex] = nextStarters[safeTargetIndex];
-        nextStarters[safeTargetIndex] = { ...playerSlot, isStarter: true };
-      }
+    if (sourceStarterIndex >= 0 && sourceStarterIndex !== targetIndex) {
+      board[sourceStarterIndex] = targetSlot ? { ...targetSlot, slotIndex: sourceStarterIndex, isStarter: true } : null;
+      board[targetIndex] = movedSlot;
+    } else if (sourceStarterIndex >= 0) {
+      board[targetIndex] = movedSlot;
     } else if (targetSlot) {
-      nextStarters[targetIndex] = { ...playerSlot, isStarter: true };
-      bench.unshift({ ...targetSlot, isStarter: false, isCaptain: false, isViceCaptain: false });
+      board[targetIndex] = movedSlot;
+      bench.unshift({ ...targetSlot, slotIndex: FANTASY_STARTERS, isStarter: false, isCaptain: false, isViceCaptain: false });
     } else {
-      nextStarters = nextStarters.filter((slot) => slot.playerId !== playerId);
-      nextStarters.splice(Math.min(targetIndex, nextStarters.length), 0, { ...playerSlot, isStarter: true });
+      board[targetIndex] = movedSlot;
     }
 
-    setDraft(reindex([...nextStarters.slice(0, FANTASY_STARTERS), ...bench]));
+    setDraft(normalizeDraftSlots([...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...bench], optionMap, userKey));
     setActiveMoveId(null);
     setDraggingId(null);
     setMessage(null);
@@ -236,8 +289,10 @@ export function FantasyProfileDrawer({
       return;
     }
 
-    const next = draft.map((slot) => (slot.playerId === playerId ? { ...slot, isStarter: false } : slot));
-    setDraft(reindex([...next.filter((slot) => slot.isStarter), ...next.filter((slot) => !slot.isStarter)]));
+    const next = normalizedDraft.map((slot) =>
+      slot.playerId === playerId ? { ...slot, slotIndex: FANTASY_STARTERS, isStarter: false, isCaptain: false, isViceCaptain: false } : slot
+    );
+    setDraft(normalizeDraftSlots(next, optionMap, userKey));
     setActiveMoveId(null);
     setDraggingId(null);
     setMessage(null);
@@ -265,7 +320,7 @@ export function FantasyProfileDrawer({
       setMessage("That player is already in this Mini-Fantasy squad.");
       return;
     }
-    if (draft.length >= FANTASY_SQUAD_SIZE) {
+    if (normalizedDraft.length >= FANTASY_SQUAD_SIZE) {
       setMessage(`Mini-Fantasy squad is full at ${FANTASY_SQUAD_SIZE} players.`);
       return;
     }
@@ -278,14 +333,14 @@ export function FantasyProfileDrawer({
       userKey,
       playerId,
       roundId: FANTASY_ROUND_ID,
-      slotIndex: draft.length,
-      isStarter: draft.filter((slot) => slot.isStarter).length < FANTASY_STARTERS,
-      isCaptain: draft.length === 0,
-      isViceCaptain: draft.length === 1,
+      slotIndex: normalizedDraft.length,
+      isStarter: starterSlots.length < FANTASY_STARTERS,
+      isCaptain: normalizedDraft.length === 0,
+      isViceCaptain: normalizedDraft.length === 1,
       updatedAt: new Date().toISOString()
     };
 
-    setDraft(reindex([...draft, nextSlot]));
+    setDraft(normalizeDraftSlots([...normalizedDraft, nextSlot], optionMap, userKey));
     setMessage("Player added. Save when the squad looks right.");
   }
 
@@ -298,12 +353,12 @@ export function FantasyProfileDrawer({
       return;
     }
 
-    const removed = draft.find((slot) => slot.playerId === playerId);
-    const next = draft.filter((slot) => slot.playerId !== playerId);
+    const removed = normalizedDraft.find((slot) => slot.playerId === playerId);
+    const next = normalizedDraft.filter((slot) => slot.playerId !== playerId);
     if (removed?.isCaptain && next.length > 0) {
       next[0] = { ...next[0], isCaptain: true, isViceCaptain: false };
     }
-    setDraft(reindex(next));
+    setDraft(normalizeDraftSlots(next, optionMap, userKey));
     setActiveMoveId(null);
     setDraggingId(null);
     setMessage("Player removed. Save to publish the squad.");
@@ -317,7 +372,7 @@ export function FantasyProfileDrawer({
       lockedMessage(playerId);
       return;
     }
-    setDraft(draft.map((slot) => ({ ...slot, isCaptain: slot.playerId === playerId, isViceCaptain: false })));
+    setDraft(normalizedDraft.map((slot) => ({ ...slot, isCaptain: slot.playerId === playerId, isViceCaptain: false })));
   }
 
   async function handleSave() {
@@ -328,7 +383,7 @@ export function FantasyProfileDrawer({
     setSaving(true);
     setMessage(null);
     try {
-      await onSaveRoster(draft);
+      await onSaveRoster(normalizedDraft);
       await onSaveSettings({ formation });
       setMessage("Fantasy formation saved.");
     } catch (error) {
@@ -350,7 +405,7 @@ export function FantasyProfileDrawer({
               <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
               <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                {row?.rosterSize ?? 0} players - {formation} - {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
+                {normalizedDraft.length} players - {formation} - {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -420,7 +475,7 @@ export function FantasyProfileDrawer({
                 <div className="relative space-y-3">
                   {FORMATION_LINES[formation].map((line) => {
                     const slots = Array.from({ length: line.count }, () => {
-                      const slot = starterSlots[boardIndex] ?? null;
+                      const slot = boardSlots[boardIndex] ?? null;
                       const index = boardIndex;
                       boardIndex += 1;
                       return { slot, index };
@@ -512,10 +567,10 @@ export function FantasyProfileDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-600">Add Players</h3>
                   <p className="text-xs font-bold text-slate-500">
-                    {draft.length}/{FANTASY_SQUAD_SIZE} selected - filter by country or position.
+                    {normalizedDraft.length}/{FANTASY_SQUAD_SIZE} selected - filter by country or position.
                   </p>
                 </div>
-                <Badge tone={draft.length >= FANTASY_SQUAD_SIZE ? "red" : "green"}>{FANTASY_SQUAD_SIZE - draft.length} spots</Badge>
+                <Badge tone={normalizedDraft.length >= FANTASY_SQUAD_SIZE ? "red" : "green"}>{FANTASY_SQUAD_SIZE - normalizedDraft.length} spots</Badge>
               </div>
               <div className="grid gap-2">
                 <label className="relative block">
@@ -588,7 +643,7 @@ export function FantasyProfileDrawer({
                         size="sm"
                         variant={selected ? "secondary" : "ghost"}
                         onClick={() => (selected ? removePlayer(player.id) : addPlayer(player.id))}
-                        disabled={!selected && (locked || draft.length >= FANTASY_SQUAD_SIZE)}
+                        disabled={!selected && (locked || normalizedDraft.length >= FANTASY_SQUAD_SIZE)}
                         aria-label={selected ? `Remove ${player.name}` : `Add ${player.name}`}
                       >
                         {selected ? <Trash2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -605,7 +660,7 @@ export function FantasyProfileDrawer({
                 <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
               </div>
               <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                {draft.map((slot) => {
+                {normalizedDraft.map((slot) => {
                   const player = optionMap.get(slot.playerId);
                   if (!player) {
                     return null;

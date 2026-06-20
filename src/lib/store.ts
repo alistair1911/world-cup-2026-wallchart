@@ -762,18 +762,56 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
 }
 
 export async function saveFantasyRoster(session: FamilySession, slots: FantasyRosterSlot[]) {
-  const cleaned = slots
-    .slice(0, 15)
-    .map((slot, index) => ({
+  const usedIndexes = new Set<number>();
+  const seenPlayers = new Set<string>();
+
+  function nextOpenIndex(start: number, end: number) {
+    for (let index = start; index <= end; index += 1) {
+      if (!usedIndexes.has(index)) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  const cleaned: FantasyRosterSlot[] = [];
+  for (const slot of slots.slice(0, 15).sort((a, b) => a.slotIndex - b.slotIndex)) {
+    if (seenPlayers.has(slot.playerId)) {
+      continue;
+    }
+    seenPlayers.add(slot.playerId);
+
+    const wantsStarter = slot.isStarter;
+    const preferredIndex =
+      Number.isInteger(slot.slotIndex) && slot.slotIndex >= 0 && slot.slotIndex < 15 ? slot.slotIndex : wantsStarter ? nextOpenIndex(0, 10) : nextOpenIndex(11, 14);
+    let slotIndex =
+      wantsStarter && preferredIndex >= 0 && preferredIndex <= 10 && !usedIndexes.has(preferredIndex)
+        ? preferredIndex
+        : !wantsStarter && preferredIndex >= 11 && preferredIndex <= 14 && !usedIndexes.has(preferredIndex)
+          ? preferredIndex
+          : wantsStarter
+            ? nextOpenIndex(0, 10)
+            : nextOpenIndex(11, 14);
+
+    if (slotIndex < 0) {
+      slotIndex = nextOpenIndex(11, 14);
+    }
+    if (slotIndex < 0) {
+      continue;
+    }
+
+    usedIndexes.add(slotIndex);
+    cleaned.push({
       ...slot,
       userKey: session.userKey,
       roundId: slot.roundId || FANTASY_ROUND_ID,
-      slotIndex: index,
-      isStarter: index < 11 ? slot.isStarter : false,
+      slotIndex,
+      isStarter: slotIndex < 11,
       isCaptain: slot.isCaptain,
       isViceCaptain: slot.isViceCaptain,
       updatedAt: new Date().toISOString()
-    }));
+    });
+  }
 
   const captainIndex = cleaned.findIndex((slot) => slot.isCaptain);
   if (captainIndex >= 0) {
