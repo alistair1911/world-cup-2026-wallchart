@@ -55,6 +55,7 @@ describe("mini-fantasy scoring", () => {
 
     expect(yamalOptions).toHaveLength(1);
     expect(yamalOptions[0].id).toBe("spain-362150");
+    expect(yamalOptions[0].photoUrl).toBe("/players/lamine-yamal.jpg");
   });
 
   it("keeps every team fantasy-eligible and replaces bad Czechia rows with ESPN rows", () => {

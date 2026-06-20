@@ -75,7 +75,33 @@ function comparablePlayerName(value: string) {
 
 export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerOption[] {
   const byId = new Map<string, FantasyPlayerOption>();
-  const catalogNames = new Set<string>();
+  const byName = new Map<string, FantasyPlayerOption>();
+
+  function playerKey(teamId: string, name: string) {
+    return `${teamId}:${comparablePlayerName(name)}`;
+  }
+
+  function addOrMerge(option: FantasyPlayerOption) {
+    const key = playerKey(option.team.id, option.name);
+    const existing = byName.get(key);
+
+    if (existing) {
+      const merged = {
+        ...existing,
+        id: existing.id,
+        position: existing.position || option.position,
+        fantasyPosition: existing.fantasyPosition || option.fantasyPosition,
+        photoUrl: existing.photoUrl || option.photoUrl
+      };
+      byName.set(key, merged);
+      byId.set(existing.id, merged);
+      byId.delete(option.id);
+      return;
+    }
+
+    byName.set(key, option);
+    byId.set(option.id, option);
+  }
 
   for (const row of playerCatalog) {
     const team = getTeam(row.teamId);
@@ -83,8 +109,7 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
       continue;
     }
 
-    catalogNames.add(`${team.id}:${comparablePlayerName(row.name)}`);
-    byId.set(row.id, {
+    addOrMerge({
       id: row.id,
       name: row.name,
       team,
@@ -95,11 +120,7 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
   }
 
   for (const { player, team } of getAllPlayerProfiles()) {
-    if (catalogNames.has(`${team.id}:${comparablePlayerName(player.name)}`)) {
-      continue;
-    }
-
-    byId.set(player.id, {
+    addOrMerge({
       id: player.id,
       name: player.name,
       team,

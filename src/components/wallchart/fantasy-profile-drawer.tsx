@@ -482,13 +482,6 @@ export function FantasyProfileDrawer({
 
         <div className="grid gap-4 p-4 lg:grid-cols-[1fr_300px]">
           <section className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-4">
-              <MiniStat label="Fantasy pts" value={totals.points} />
-              <MiniStat label="Goals" value={totals.goals} />
-              <MiniStat label="Assists" value={totals.assists} />
-              <MiniStat label="Countries" value={selectedTeams.size} />
-            </div>
-
             <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -573,6 +566,7 @@ export function FantasyProfileDrawer({
 
               {message ? <div className="mt-3 rounded-md bg-cup-sky p-2 text-xs font-black text-cup-ink">{message}</div> : null}
             </div>
+
           </section>
 
           <aside className="space-y-4">
@@ -763,6 +757,13 @@ export function FantasyProfileDrawer({
               </div>
             </div>
           </aside>
+
+          <div className="grid gap-2 sm:grid-cols-4 lg:col-span-2">
+            <MiniStat label="Fantasy pts" value={totals.points} />
+            <MiniStat label="Goals" value={totals.goals} />
+            <MiniStat label="Assists" value={totals.assists} />
+            <MiniStat label="Countries" value={selectedTeams.size} />
+          </div>
         </div>
       </aside>
     </div>
