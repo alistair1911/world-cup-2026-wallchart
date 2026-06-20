@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
+import {
+  FANTASY_ROUND_ID,
+  FANTASY_SQUAD_SIZE,
+  FANTASY_STARTERS,
+  buildFantasyScoresFromMatches,
+  isFantasyPlayerLocked
+} from "@/lib/fantasy";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
 import { GROUPS } from "@/lib/tournament-data";
@@ -14,14 +21,16 @@ import {
   loadTournamentState,
   migrateLocalFamilyData,
   saveComment,
+  saveFantasyRoster,
   saveMatchResult,
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
-import type { FamilySession, GroupLetter, Match, MatchComment, PlayerMatchStat, Prediction } from "@/lib/types";
+import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, GroupLetter, Match, MatchComment, PlayerMatchStat, Prediction } from "@/lib/types";
 import type { UserKey } from "@/lib/types";
 import { formatKickoff } from "@/lib/utils";
 import { BracketView } from "./bracket-view";
+import { FantasyPanel } from "./fantasy-panel";
 import { GroupPanel } from "./group-panel";
 import { LeaderboardPanel } from "./leaderboard-panel";
 import { MatchDrawer } from "./match-drawer";
@@ -31,7 +40,7 @@ import { TodayPanel } from "./today-panel";
 import { UserProfileDrawer } from "./user-profile-drawer";
 import { WorldCupMark } from "./world-cup-mark";
 
-type MobileTab = "today" | "groups" | "bracket" | "leaderboard";
+type MobileTab = "today" | "groups" | "bracket" | "leaderboard" | "fantasy";
 
 function nextMatch(matches: Match[]) {
   return matches
@@ -59,6 +68,8 @@ export function WallchartApp() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [comments, setComments] = useState<MatchComment[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerMatchStat[]>([]);
+  const [fantasyRosters, setFantasyRosters] = useState<FantasyRosterSlot[]>([]);
+  const [fantasyScores, setFantasyScores] = useState<FantasyPlayerMatchScore[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
@@ -80,6 +91,8 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
+      setFantasyRosters(state.fantasyRosters);
+      setFantasyScores(state.fantasyScores);
       setError(state.error ?? null);
       setLastRefreshed(new Date());
     } finally {
@@ -124,6 +137,8 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
+      setFantasyRosters(state.fantasyRosters);
+      setFantasyScores(state.fantasyScores);
       setError(profileError || state.error || null);
       setSyncMessage(migrationMessage);
       setLastRefreshed(new Date());
@@ -157,6 +172,10 @@ export function WallchartApp() {
 
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
+  const effectiveFantasyScores = useMemo(
+    () => (fantasyScores.length > 0 ? fantasyScores : buildFantasyScoresFromMatches(matches, playerStats)),
+    [fantasyScores, matches, playerStats]
+  );
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
   const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
   const commentCounts = useMemo(
@@ -204,6 +223,52 @@ export function WallchartApp() {
     setComments((current) => [...current, comment]);
   }
 
+  async function handleSaveFantasyRoster(slots: FantasyRosterSlot[]) {
+    if (!session) {
+      return;
+    }
+
+    const saved = await saveFantasyRoster(session, slots);
+    setFantasyRosters((current) => [...current.filter((slot) => slot.userKey !== session.userKey), ...saved]);
+  }
+
+  async function handleAddFantasyPlayer(playerId: string) {
+    if (!session) {
+      return;
+    }
+
+    if (isFantasyPlayerLocked(playerId, matches)) {
+      setSyncMessage("That player is locked for Mini-Fantasy because the next match is close to kickoff.");
+      return;
+    }
+
+    const ownSlots = fantasyRosters
+      .filter((slot) => slot.userKey === session.userKey)
+      .sort((a, b) => a.slotIndex - b.slotIndex);
+    if (ownSlots.some((slot) => slot.playerId === playerId)) {
+      setSyncMessage("Player is already in your Mini-Fantasy squad.");
+      return;
+    }
+    if (ownSlots.length >= FANTASY_SQUAD_SIZE) {
+      setSyncMessage(`Mini-Fantasy squad is full at ${FANTASY_SQUAD_SIZE} players.`);
+      return;
+    }
+
+    const nextSlot: FantasyRosterSlot = {
+      userKey: session.userKey,
+      playerId,
+      roundId: FANTASY_ROUND_ID,
+      slotIndex: ownSlots.length,
+      isStarter: ownSlots.length < FANTASY_STARTERS,
+      isCaptain: ownSlots.length === 0,
+      isViceCaptain: ownSlots.length === 1,
+      updatedAt: new Date().toISOString()
+    };
+
+    await handleSaveFantasyRoster([...ownSlots, nextSlot]);
+    setSyncMessage("Added player to your Mini-Fantasy squad.");
+  }
+
   const runScoreSync = useCallback(
     async (force = true, announce = true) => {
       const result = await syncLiveScores(force);
@@ -214,10 +279,12 @@ export function WallchartApp() {
       if (announce) {
         const scoreText =
           updated > 0 ? `Synced ${updated} score update${updated === 1 ? "" : "s"}` : "Sync checked. No score changes";
+        const fantasyUpdated = result.fantasyScoresUpdated ?? 0;
         const statText = statsUpdated > 0 ? ` and ${statsUpdated} player stat row${statsUpdated === 1 ? "" : "s"}` : "";
+        const fantasyText = fantasyUpdated > 0 ? ` Fantasy updated for ${fantasyUpdated} player-match row${fantasyUpdated === 1 ? "" : "s"}.` : "";
         const cleanupText = cleaned > 0 ? ` Cleared ${cleaned} scheduled 0-0 placeholder${cleaned === 1 ? "" : "s"}.` : "";
         const warningText = result.warning ? ` ${result.warning}` : "";
-        setSyncMessage(`${scoreText}${statText}.${cleanupText}${warningText}`);
+        setSyncMessage(`${scoreText}${statText}.${fantasyText}${cleanupText}${warningText}`);
       }
     },
     [refreshTournamentState]
@@ -381,6 +448,15 @@ export function WallchartApp() {
           />
         </div>
         <div className="space-y-4">
+          <FantasyPanel
+            session={session}
+            matches={matches}
+            rosters={fantasyRosters}
+            scores={effectiveFantasyScores}
+            onSaveRoster={handleSaveFantasyRoster}
+            onSelectPlayer={setSelectedPlayerId}
+            onSelectTeam={setSelectedTeamId}
+          />
           <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
           {rightGroups.map((group) => (
             <GroupPanel
@@ -398,8 +474,8 @@ export function WallchartApp() {
       </section>
 
       <section className="lg:hidden">
-        <div className="mb-3 grid grid-cols-4 rounded-lg bg-cup-ink p-1">
-          {(["today", "groups", "bracket", "leaderboard"] as MobileTab[]).map((tab) => (
+        <div className="mb-3 grid grid-cols-5 rounded-lg bg-cup-ink p-1">
+          {(["today", "groups", "bracket", "leaderboard", "fantasy"] as MobileTab[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -450,6 +526,17 @@ export function WallchartApp() {
         {mobileTab === "leaderboard" ? (
           <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
         ) : null}
+        {mobileTab === "fantasy" ? (
+          <FantasyPanel
+            session={session}
+            matches={matches}
+            rosters={fantasyRosters}
+            scores={effectiveFantasyScores}
+            onSaveRoster={handleSaveFantasyRoster}
+            onSelectPlayer={setSelectedPlayerId}
+            onSelectTeam={setSelectedTeamId}
+          />
+        ) : null}
       </section>
 
       <MatchDrawer
@@ -464,11 +551,21 @@ export function WallchartApp() {
         onSaveComment={handleSaveComment}
         onSelectTeam={setSelectedTeamId}
       />
-      <TeamProfileDrawer teamId={selectedTeamId} onClose={() => setSelectedTeamId(null)} onSelectPlayer={setSelectedPlayerId} />
+      <TeamProfileDrawer
+        teamId={selectedTeamId}
+        onClose={() => setSelectedTeamId(null)}
+        onSelectPlayer={setSelectedPlayerId}
+        onAddFantasyPlayer={handleAddFantasyPlayer}
+        fantasyRosters={fantasyRosters}
+        session={session}
+      />
       <PlayerProfileDrawer
         playerId={selectedPlayerId}
         onClose={() => setSelectedPlayerId(null)}
         onSelectTeam={(teamId) => setSelectedTeamId(teamId)}
+        onAddFantasyPlayer={handleAddFantasyPlayer}
+        fantasyRosters={fantasyRosters}
+        fantasyScores={effectiveFantasyScores}
       />
       <UserProfileDrawer userKey={selectedUserKey} matches={matches} predictions={predictions} onClose={() => setSelectedUserKey(null)} />
     </main>

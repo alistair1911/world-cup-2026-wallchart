@@ -1,10 +1,13 @@
 "use client";
 
 import { INITIAL_MATCHES } from "./tournament-data";
+import { FANTASY_ROUND_ID } from "./fantasy";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
 import type {
   FamilySession,
+  FantasyPlayerMatchScore,
+  FantasyRosterSlot,
   Match,
   MatchComment,
   MatchPhase,
@@ -18,6 +21,8 @@ const LOCAL_MATCHES_KEY = "wc26-family-match-overrides";
 const LOCAL_PREDICTIONS_KEY = "wc26-family-predictions";
 const LOCAL_COMMENTS_KEY = "wc26-family-comments";
 const LOCAL_PLAYER_STATS_KEY = "wc26-family-player-stats";
+const LOCAL_FANTASY_ROSTERS_KEY = "wc26-family-fantasy-rosters";
+const LOCAL_FANTASY_SCORES_KEY = "wc26-family-fantasy-scores";
 const LOCAL_MIGRATION_KEY = "wc26-family-local-migrated";
 
 type StoredMatchRow = {
@@ -64,6 +69,35 @@ type StoredPlayerStatRow = {
   updated_at?: string | null;
 };
 
+type StoredFantasyRosterRow = {
+  user_id: string;
+  round_id: string;
+  player_id: string;
+  slot_index: number;
+  is_starter: boolean;
+  is_captain: boolean;
+  is_vice_captain: boolean;
+  updated_at?: string | null;
+};
+
+type StoredFantasyScoreRow = {
+  match_id: string;
+  player_id: string;
+  team_id: string;
+  points: number;
+  goals: number;
+  assists: number;
+  clean_sheet: boolean;
+  yellow_cards: number;
+  red_cards: number;
+  own_goals: number;
+  penalty_saves: number;
+  penalty_misses: number;
+  breakdown?: Record<string, number> | null;
+  status?: "confirmed" | "needs_review" | null;
+  updated_at?: string | null;
+};
+
 type StoredProfileRow = {
   id: string;
   user_key: UserKey;
@@ -74,9 +108,12 @@ export type TournamentState = {
   predictions: Prediction[];
   comments: MatchComment[];
   playerStats: PlayerMatchStat[];
+  fantasyRosters: FantasyRosterSlot[];
+  fantasyScores: FantasyPlayerMatchScore[];
   error?: string;
   commentsError?: string;
   playerStatsError?: string;
+  fantasyError?: string;
 };
 
 export type ScoreSyncSummary = {
@@ -86,6 +123,7 @@ export type ScoreSyncSummary = {
   updated?: Array<{ id: string; matchNumber: number; score: string; status: string }>;
   playerStatsFound?: number;
   playerStatsUpdated?: number;
+  fantasyScoresUpdated?: number;
   cleanedPlaceholders?: number;
   warning?: string | null;
   error?: string;
@@ -123,6 +161,22 @@ function readLocalComments() {
 function readLocalPlayerStats() {
   try {
     return JSON.parse(window.localStorage.getItem(LOCAL_PLAYER_STATS_KEY) || "[]") as PlayerMatchStat[];
+  } catch {
+    return [];
+  }
+}
+
+function readLocalFantasyRosters() {
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_FANTASY_ROSTERS_KEY) || "[]") as FantasyRosterSlot[];
+  } catch {
+    return [];
+  }
+}
+
+function readLocalFantasyScores() {
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_FANTASY_SCORES_KEY) || "[]") as FantasyPlayerMatchScore[];
   } catch {
     return [];
   }
@@ -280,7 +334,9 @@ export async function loadTournamentState(): Promise<TournamentState> {
       matches: mergeMatches(readLocalMatches()),
       predictions: readLocalPredictions(),
       comments: readLocalComments(),
-      playerStats: readLocalPlayerStats()
+      playerStats: readLocalPlayerStats(),
+      fantasyRosters: readLocalFantasyRosters(),
+      fantasyScores: readLocalFantasyScores()
     };
   }
 
@@ -290,13 +346,17 @@ export async function loadTournamentState(): Promise<TournamentState> {
       { data: predictionRows, error: predictionError },
       { data: profiles },
       { data: commentRows, error: commentError },
-      { data: playerStatRows, error: playerStatsError }
+      { data: playerStatRows, error: playerStatsError },
+      { data: fantasyRosterRows, error: fantasyRosterError },
+      { data: fantasyScoreRows, error: fantasyScoreError }
     ] = await Promise.all([
       supabase.from("matches").select("*"),
       supabase.from("predictions").select("*"),
       supabase.from("profiles").select("id, user_key, display_name"),
       supabase.from("comments").select("*").order("created_at", { ascending: true }),
-      supabase.from("player_match_stats").select("*")
+      supabase.from("player_match_stats").select("*"),
+      supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
+      supabase.from("fantasy_player_match_scores").select("*")
     ]);
 
     if (matchError || predictionError) {
@@ -358,13 +418,60 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
+    const fantasyRosters: FantasyRosterSlot[] = [];
+    if (!fantasyRosterError) {
+      for (const row of (fantasyRosterRows || []) as StoredFantasyRosterRow[]) {
+        const profile = profileMap.get(row.user_id);
+        if (!profile) {
+          continue;
+        }
+
+        fantasyRosters.push({
+          userKey: profile.user_key,
+          playerId: row.player_id,
+          roundId: row.round_id,
+          slotIndex: row.slot_index,
+          isStarter: row.is_starter,
+          isCaptain: row.is_captain,
+          isViceCaptain: row.is_vice_captain,
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
+    const fantasyScores: FantasyPlayerMatchScore[] = [];
+    if (!fantasyScoreError) {
+      for (const row of (fantasyScoreRows || []) as StoredFantasyScoreRow[]) {
+        fantasyScores.push({
+          matchId: row.match_id,
+          playerId: row.player_id,
+          teamId: row.team_id,
+          points: row.points,
+          goals: row.goals,
+          assists: row.assists,
+          cleanSheet: row.clean_sheet,
+          yellowCards: row.yellow_cards,
+          redCards: row.red_cards,
+          ownGoals: row.own_goals,
+          penaltySaves: row.penalty_saves,
+          penaltyMisses: row.penalty_misses,
+          breakdown: row.breakdown ?? {},
+          status: row.status ?? "confirmed",
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
     return {
       matches: mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)),
       predictions,
       comments,
       playerStats,
+      fantasyRosters,
+      fantasyScores,
       commentsError: commentError?.message,
-      playerStatsError: playerStatsError?.message
+      playerStatsError: playerStatsError?.message,
+      fantasyError: fantasyRosterError?.message ?? fantasyScoreError?.message
     };
   } catch (error) {
     return {
@@ -372,6 +479,8 @@ export async function loadTournamentState(): Promise<TournamentState> {
       predictions: [],
       comments: [],
       playerStats: [],
+      fantasyRosters: [],
+      fantasyScores: [],
       error: error instanceof Error ? error.message : "Could not load tournament data."
     };
   }
@@ -540,6 +649,96 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
     }
     throw new Error(error.message);
   }
+}
+
+export async function saveFantasyRoster(session: FamilySession, slots: FantasyRosterSlot[]) {
+  const cleaned = slots
+    .slice(0, 15)
+    .map((slot, index) => ({
+      ...slot,
+      userKey: session.userKey,
+      roundId: slot.roundId || FANTASY_ROUND_ID,
+      slotIndex: index,
+      isStarter: index < 11 ? slot.isStarter : false,
+      isCaptain: slot.isCaptain,
+      isViceCaptain: slot.isViceCaptain,
+      updatedAt: new Date().toISOString()
+    }));
+
+  const captainIndex = cleaned.findIndex((slot) => slot.isCaptain);
+  if (captainIndex >= 0) {
+    for (const [index, slot] of cleaned.entries()) {
+      slot.isCaptain = index === captainIndex;
+    }
+  }
+
+  const viceIndex = cleaned.findIndex((slot) => slot.isViceCaptain && !slot.isCaptain);
+  if (viceIndex >= 0) {
+    for (const [index, slot] of cleaned.entries()) {
+      slot.isViceCaptain = index === viceIndex;
+    }
+  }
+
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    const otherUsers = readLocalFantasyRosters().filter((slot) => slot.userKey !== session.userKey);
+    window.localStorage.setItem(LOCAL_FANTASY_ROSTERS_KEY, JSON.stringify([...otherUsers, ...cleaned]));
+    return cleaned;
+  }
+
+  if (!session.authUserId) {
+    throw new Error("Missing Supabase user.");
+  }
+
+  await ensureProfileBestEffort(session);
+
+  const { error: teamError } = await supabase.from("fantasy_teams").upsert(
+    {
+      user_id: session.authUserId,
+      name: `${session.displayName}'s Mini-Fantasy`
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (teamError) {
+    throw new Error(teamError.message);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("fantasy_rosters")
+    .delete()
+    .eq("user_id", session.authUserId)
+    .eq("round_id", FANTASY_ROUND_ID);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  if (cleaned.length === 0) {
+    return cleaned;
+  }
+
+  const { error } = await supabase.from("fantasy_rosters").insert(
+    cleaned.map((slot) => ({
+      user_id: session.authUserId,
+      round_id: slot.roundId,
+      player_id: slot.playerId,
+      slot_index: slot.slotIndex,
+      is_starter: slot.isStarter,
+      is_captain: slot.isCaptain,
+      is_vice_captain: slot.isViceCaptain
+    }))
+  );
+
+  if (error) {
+    if (error.message.toLowerCase().includes("fantasy_rosters")) {
+      throw new Error("Mini-Fantasy needs the updated Supabase schema. Run supabase/schema.sql once in Supabase SQL Editor.");
+    }
+    throw new Error(error.message);
+  }
+
+  return cleaned;
 }
 
 export async function syncLiveScores(force = true): Promise<ScoreSyncSummary> {

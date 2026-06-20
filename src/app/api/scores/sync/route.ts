@@ -1,9 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { buildFantasyScoresFromMatches } from "@/lib/fantasy";
 import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
-import type { Match, PlayerMatchStat, Team } from "@/lib/types";
+import type { FantasyPlayerMatchScore, Match, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,14 @@ function isMissingPlayerStatsTable(message: string) {
   const value = message.toLowerCase();
   return (
     value.includes("player_match_stats") &&
+    (value.includes("could not find") || value.includes("does not exist") || value.includes("schema cache"))
+  );
+}
+
+function isMissingFantasyScoresTable(message: string) {
+  const value = message.toLowerCase();
+  return (
+    value.includes("fantasy_player_match_scores") &&
     (value.includes("could not find") || value.includes("does not exist") || value.includes("schema cache"))
   );
 }
@@ -944,6 +953,27 @@ function playerStatToRow(stat: PlayerMatchStat) {
   };
 }
 
+function fantasyScoreToRow(score: FantasyPlayerMatchScore) {
+  return {
+    match_id: score.matchId,
+    player_id: score.playerId,
+    team_id: score.teamId,
+    points: score.points,
+    goals: score.goals,
+    assists: score.assists,
+    clean_sheet: score.cleanSheet,
+    yellow_cards: score.yellowCards,
+    red_cards: score.redCards,
+    own_goals: score.ownGoals,
+    penalty_saves: score.penaltySaves,
+    penalty_misses: score.penaltyMisses,
+    breakdown: score.breakdown,
+    status: score.status,
+    provider: "espn",
+    updated_at: score.updatedAt ?? new Date().toISOString()
+  };
+}
+
 function isScheduledZeroPlaceholder(match: Match) {
   return match.status === "scheduled" && match.homeScore === 0 && match.awayScore === 0 && !match.updatedBy;
 }
@@ -1089,6 +1119,7 @@ async function syncScores(request: NextRequest) {
     }
 
     let playerStatsUpdated = 0;
+    let fantasyScoresUpdated = 0;
     let warning: string | null = [...warnings, ...statWarnings].length > 0 ? [...warnings, ...statWarnings].join(" ") : null;
 
     if (playerStats.length > 0) {
@@ -1111,12 +1142,59 @@ async function syncScores(request: NextRequest) {
       }
     }
 
+    const { data: allStatRows, error: allStatsError } = await supabase.from("player_match_stats").select("*");
+    if (allStatsError) {
+      warning = [warning, `Fantasy stats skipped because player stats could not be read: ${allStatsError.message}`]
+        .filter(Boolean)
+        .join(" ");
+    } else {
+      const allPlayerStats: PlayerMatchStat[] = ((allStatRows || []) as Array<{
+        match_id: string;
+        player_id: string;
+        player_name: string;
+        team_id: string;
+        goals: number;
+        assists: number;
+        updated_at?: string | null;
+      }>).map((row) => ({
+        matchId: row.match_id,
+        playerId: row.player_id,
+        playerName: row.player_name,
+        teamId: row.team_id,
+        goals: row.goals,
+        assists: row.assists,
+        updatedAt: row.updated_at ?? null
+      }));
+      const fantasyScores = buildFantasyScoresFromMatches([...updatedMatchesById.values()], allPlayerStats);
+
+      if (fantasyScores.length > 0) {
+        const { error } = await supabase
+          .from("fantasy_player_match_scores")
+          .upsert(fantasyScores.map(fantasyScoreToRow), { onConflict: "match_id,player_id" });
+        if (error) {
+          if (isMissingFantasyScoresTable(error.message)) {
+            warning = [
+              warning,
+              "Mini-Fantasy tables are missing in Supabase. Run the updated supabase/schema.sql once, then press Sync again."
+            ]
+              .filter(Boolean)
+              .join(" ");
+          } else {
+            throw new Error(error.message);
+          }
+        } else {
+          fantasyScoresUpdated = fantasyScores.length;
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       provider,
       received: feedItems.length,
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
+      fantasyScoresUpdated,
       cleanedPlaceholders: placeholderCleanups.length,
       warning,
       updated: result.updates.map((match) => ({

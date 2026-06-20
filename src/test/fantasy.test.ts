@@ -1,0 +1,92 @@
+import { describe, expect, it } from "vitest";
+import {
+  FANTASY_ROUND_ID,
+  buildFantasyLeaderboard,
+  buildFantasyScoresFromMatches,
+  normalizeFantasyPosition,
+  scoreFantasyPlayerMatch,
+  validateFantasyRoster
+} from "@/lib/fantasy";
+import { INITIAL_MATCHES } from "@/lib/tournament-data";
+import type { FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
+
+describe("mini-fantasy scoring", () => {
+  it("scores goals by fantasy position and adds assists and clean sheets", () => {
+    expect(scoreFantasyPlayerMatch({ position: "FWD", goals: 1 }).points).toBe(4);
+    expect(scoreFantasyPlayerMatch({ position: "MID", goals: 1, assists: 1, cleanSheet: true }).points).toBe(9);
+    expect(scoreFantasyPlayerMatch({ position: "DEF", goals: 1, cleanSheet: true }).points).toBe(10);
+    expect(scoreFantasyPlayerMatch({ position: "GK", cleanSheet: true, penaltySaves: 1 }).points).toBe(9);
+  });
+
+  it("normalizes player positions into fantasy buckets", () => {
+    expect(normalizeFantasyPosition("GK")).toBe("GK");
+    expect(normalizeFantasyPosition("RB")).toBe("DEF");
+    expect(normalizeFantasyPosition("CM")).toBe("MID");
+    expect(normalizeFantasyPosition("LW")).toBe("FWD");
+  });
+
+  it("builds player match scores from final matches and captain leaderboard totals", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
+      status: "final" as const,
+      homeScore: 2,
+      awayScore: 0
+    };
+    const stats: PlayerMatchStat[] = [
+      {
+        matchId: match.id,
+        playerId: "spain-lamine-yamal",
+        playerName: "Lamine Yamal",
+        teamId: "spain",
+        goals: 1,
+        assists: 1
+      }
+    ];
+    const scores = buildFantasyScoresFromMatches([match], stats);
+    const yamal = scores.find((score) => score.playerId === "spain-lamine-yamal");
+    expect(yamal?.points).toBe(7);
+
+    const roster: FantasyRosterSlot[] = [
+      {
+        userKey: "tata",
+        playerId: "spain-lamine-yamal",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: true,
+        isViceCaptain: false
+      }
+    ];
+
+    expect(buildFantasyLeaderboard(roster, scores)[0]).toMatchObject({
+      userKey: "tata",
+      points: 14,
+      captainPoints: 7
+    });
+  });
+
+  it("rejects duplicate fantasy roster players", () => {
+    const slots: FantasyRosterSlot[] = [
+      {
+        userKey: "lucas",
+        playerId: "spain-lamine-yamal",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: true,
+        isViceCaptain: false
+      },
+      {
+        userKey: "lucas",
+        playerId: "spain-lamine-yamal",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 1,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: true
+      }
+    ];
+
+    expect(validateFantasyRoster(slots, INITIAL_MATCHES, new Date("2026-06-01T12:00:00.000Z"))).toContain("duplicate");
+  });
+});

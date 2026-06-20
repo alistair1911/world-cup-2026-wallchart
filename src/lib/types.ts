@@ -90,6 +90,37 @@ export type PlayerMatchStat = {
   updatedAt?: string | null;
 };
 
+export type FantasyPosition = "GK" | "DEF" | "MID" | "FWD";
+
+export type FantasyRosterSlot = {
+  userKey: UserKey;
+  playerId: string;
+  roundId: string;
+  slotIndex: number;
+  isStarter: boolean;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+  updatedAt?: string | null;
+};
+
+export type FantasyPlayerMatchScore = {
+  matchId: string;
+  playerId: string;
+  teamId: string;
+  points: number;
+  goals: number;
+  assists: number;
+  cleanSheet: boolean;
+  yellowCards: number;
+  redCards: number;
+  ownGoals: number;
+  penaltySaves: number;
+  penaltyMisses: number;
+  breakdown: Record<string, number>;
+  status: "confirmed" | "needs_review";
+  updatedAt?: string | null;
+};
+
 export type FamilySession = {
   userKey: UserKey;
   displayName: string;

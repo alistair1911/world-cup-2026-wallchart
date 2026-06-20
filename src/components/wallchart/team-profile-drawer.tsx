@@ -1,13 +1,13 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Plus, Star, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { LiveFormationBoard } from "@/app/teams/[teamId]/live-formation-board";
 import { LiveSquadPanel } from "@/app/teams/[teamId]/live-squad-panel";
 import { avatarUrl, getTeamProfile } from "@/lib/profile-data";
 import { getTeamLogo } from "@/lib/team-logo-map";
-import type { Team } from "@/lib/types";
+import type { FamilySession, FantasyRosterSlot, Team } from "@/lib/types";
 import { Badge } from "../ui/badge";
 import { Flag } from "./flag";
 
@@ -15,6 +15,9 @@ type TeamProfileDrawerProps = {
   teamId: string | null;
   onClose: () => void;
   onSelectPlayer: (playerId: string) => void;
+  onAddFantasyPlayer?: (playerId: string) => void;
+  fantasyRosters?: FantasyRosterSlot[];
+  session?: FamilySession;
 };
 
 function FederationMark({ team, logoUrl }: { team: Team; logoUrl?: string }) {
@@ -32,7 +35,14 @@ function FederationMark({ team, logoUrl }: { team: Team; logoUrl?: string }) {
   );
 }
 
-export function TeamProfileDrawer({ teamId, onClose, onSelectPlayer }: TeamProfileDrawerProps) {
+export function TeamProfileDrawer({
+  teamId,
+  onClose,
+  onSelectPlayer,
+  onAddFantasyPlayer,
+  fantasyRosters = [],
+  session
+}: TeamProfileDrawerProps) {
   const profile = teamId ? getTeamProfile(teamId) : null;
 
   if (!teamId || !profile) {
@@ -41,6 +51,9 @@ export function TeamProfileDrawer({ teamId, onClose, onSelectPlayer }: TeamProfi
 
   const federationLogo = getTeamLogo(profile.team.id);
   const featured = profile.players.slice(0, 5);
+  const selectedIds = new Set(
+    fantasyRosters.filter((slot) => slot.userKey === session?.userKey).map((slot) => slot.playerId)
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-cup-ink/35">
@@ -81,22 +94,34 @@ export function TeamProfileDrawer({ teamId, onClose, onSelectPlayer }: TeamProfi
                 </div>
                 <div className="grid grid-cols-5 items-end gap-2">
                   {featured.map((player, index) => (
-                    <button
+                    <div
                       key={player.id}
-                      type="button"
-                      onClick={() => onSelectPlayer(player.id)}
                       className={`interactive-pop min-w-0 text-center ${index === 0 ? "scale-105" : ""}`}
                     >
-                      <img
-                        src={player.photoUrl ?? avatarUrl(player.name)}
-                        alt={`${player.name} portrait`}
-                        className="mx-auto h-24 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
-                      />
+                      <button type="button" onClick={() => onSelectPlayer(player.id)} className="w-full">
+                        <img
+                          src={player.photoUrl ?? avatarUrl(player.name)}
+                          alt={`${player.name} portrait`}
+                          className="mx-auto h-24 w-full rounded-t-lg object-cover object-top shadow-lift ring-1 ring-white/25"
+                        />
+                      </button>
                       <div className="rounded-b-lg bg-white/92 px-1 py-2 text-cup-ink">
-                        <div className="truncate text-[10px] font-black">{player.name}</div>
-                        <div className="text-[9px] font-black text-cup-red">{player.position}</div>
+                        <button type="button" onClick={() => onSelectPlayer(player.id)} className="w-full min-w-0">
+                          <div className="truncate text-[10px] font-black">{player.name}</div>
+                          <div className="text-[9px] font-black text-cup-red">{player.position}</div>
+                        </button>
+                        {onAddFantasyPlayer ? (
+                          <button
+                            type="button"
+                            onClick={() => onAddFantasyPlayer(player.id)}
+                            className="mt-1 inline-flex h-6 items-center gap-1 rounded-full bg-cup-ink px-2 text-[9px] font-black text-white"
+                          >
+                            {selectedIds.has(player.id) ? <Star className="h-3 w-3 text-cup-gold" /> : <Plus className="h-3 w-3" />}
+                            Fantasy
+                          </button>
+                        ) : null}
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>

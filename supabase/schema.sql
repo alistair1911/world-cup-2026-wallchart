@@ -96,6 +96,83 @@ create table if not exists public.players (
   unique (team_id, provider, provider_player_id)
 );
 
+create table if not exists public.fantasy_teams (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id)
+);
+
+create table if not exists public.fantasy_rounds (
+  id text primary key,
+  name text not null,
+  starts_at timestamptz,
+  locks_at timestamptz,
+  ends_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+insert into public.fantasy_rounds (id, name)
+values ('global', 'Tournament Mini-Fantasy')
+on conflict (id) do nothing;
+
+create table if not exists public.fantasy_rosters (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  round_id text not null references public.fantasy_rounds(id) default 'global',
+  player_id text not null,
+  slot_index integer not null check (slot_index >= 0 and slot_index < 15),
+  is_starter boolean not null default true,
+  is_captain boolean not null default false,
+  is_vice_captain boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, round_id, player_id),
+  unique (user_id, round_id, slot_index)
+);
+
+create table if not exists public.fantasy_player_match_scores (
+  id uuid primary key default gen_random_uuid(),
+  match_id text not null,
+  player_id text not null,
+  team_id text not null,
+  points integer not null default 0,
+  goals integer not null default 0 check (goals >= 0 and goals <= 20),
+  assists integer not null default 0 check (assists >= 0 and assists <= 20),
+  clean_sheet boolean not null default false,
+  yellow_cards integer not null default 0 check (yellow_cards >= 0 and yellow_cards <= 2),
+  red_cards integer not null default 0 check (red_cards >= 0 and red_cards <= 1),
+  own_goals integer not null default 0 check (own_goals >= 0 and own_goals <= 5),
+  penalty_saves integer not null default 0 check (penalty_saves >= 0 and penalty_saves <= 5),
+  penalty_misses integer not null default 0 check (penalty_misses >= 0 and penalty_misses <= 5),
+  breakdown jsonb not null default '{}'::jsonb,
+  status text not null default 'confirmed' check (status in ('confirmed', 'needs_review')),
+  provider text not null default 'espn',
+  updated_at timestamptz not null default now(),
+  unique (match_id, player_id)
+);
+
+create table if not exists public.fantasy_score_overrides (
+  id uuid primary key default gen_random_uuid(),
+  match_id text not null,
+  player_id text not null,
+  points integer,
+  goals integer,
+  assists integer,
+  clean_sheet boolean,
+  yellow_cards integer,
+  red_cards integer,
+  own_goals integer,
+  penalty_saves integer,
+  penalty_misses integer,
+  note text,
+  updated_by uuid references auth.users(id),
+  updated_at timestamptz not null default now(),
+  unique (match_id, player_id)
+);
+
 create index if not exists comments_match_id_created_at_idx
   on public.comments (match_id, created_at);
 
@@ -114,6 +191,15 @@ create index if not exists players_team_id_idx
 create index if not exists players_provider_player_id_idx
   on public.players (provider_player_id);
 
+create index if not exists fantasy_rosters_user_round_idx
+  on public.fantasy_rosters (user_id, round_id);
+
+create index if not exists fantasy_scores_match_idx
+  on public.fantasy_player_match_scores (match_id);
+
+create index if not exists fantasy_scores_player_idx
+  on public.fantasy_player_match_scores (player_id);
+
 alter table public.profiles enable row level security;
 alter table public.teams enable row level security;
 alter table public.matches enable row level security;
@@ -122,12 +208,18 @@ alter table public.comments enable row level security;
 alter table public.player_match_stats enable row level security;
 alter table public.team_squads enable row level security;
 alter table public.players enable row level security;
+alter table public.fantasy_teams enable row level security;
+alter table public.fantasy_rounds enable row level security;
+alter table public.fantasy_rosters enable row level security;
+alter table public.fantasy_player_match_scores enable row level security;
+alter table public.fantasy_score_overrides enable row level security;
 
 grant usage on schema public to anon, authenticated, service_role;
 grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
-grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats, public.team_squads, public.players to authenticated;
-grant insert, update on public.profiles, public.matches, public.predictions, public.comments, public.player_match_stats to authenticated;
+grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats, public.team_squads, public.players, public.fantasy_teams, public.fantasy_rounds, public.fantasy_rosters, public.fantasy_player_match_scores, public.fantasy_score_overrides to authenticated;
+grant insert, update on public.profiles, public.matches, public.predictions, public.comments, public.player_match_stats, public.fantasy_teams, public.fantasy_rosters, public.fantasy_score_overrides to authenticated;
+grant delete on public.fantasy_rosters to authenticated;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 create policy "Authenticated users can read profiles"
@@ -235,6 +327,81 @@ create policy "Authenticated users can read players"
   to authenticated
   using (true);
 
+drop policy if exists "Users can read fantasy teams" on public.fantasy_teams;
+create policy "Users can read fantasy teams"
+  on public.fantasy_teams for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Users can create their own fantasy team" on public.fantasy_teams;
+create policy "Users can create their own fantasy team"
+  on public.fantasy_teams for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+drop policy if exists "Users can update their own fantasy team" on public.fantasy_teams;
+create policy "Users can update their own fantasy team"
+  on public.fantasy_teams for update
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+drop policy if exists "Authenticated users can read fantasy rounds" on public.fantasy_rounds;
+create policy "Authenticated users can read fantasy rounds"
+  on public.fantasy_rounds for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Authenticated users can read fantasy rosters" on public.fantasy_rosters;
+create policy "Authenticated users can read fantasy rosters"
+  on public.fantasy_rosters for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Users can create their own fantasy roster" on public.fantasy_rosters;
+create policy "Users can create their own fantasy roster"
+  on public.fantasy_rosters for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+drop policy if exists "Users can update their own fantasy roster" on public.fantasy_rosters;
+create policy "Users can update their own fantasy roster"
+  on public.fantasy_rosters for update
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+drop policy if exists "Users can delete their own fantasy roster" on public.fantasy_rosters;
+create policy "Users can delete their own fantasy roster"
+  on public.fantasy_rosters for delete
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists "Authenticated users can read fantasy scores" on public.fantasy_player_match_scores;
+create policy "Authenticated users can read fantasy scores"
+  on public.fantasy_player_match_scores for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Authenticated users can read fantasy score overrides" on public.fantasy_score_overrides;
+create policy "Authenticated users can read fantasy score overrides"
+  on public.fantasy_score_overrides for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Authenticated users can create fantasy score overrides" on public.fantasy_score_overrides;
+create policy "Authenticated users can create fantasy score overrides"
+  on public.fantasy_score_overrides for insert
+  to authenticated
+  with check (updated_by = auth.uid());
+
+drop policy if exists "Authenticated users can update fantasy score overrides" on public.fantasy_score_overrides;
+create policy "Authenticated users can update fantasy score overrides"
+  on public.fantasy_score_overrides for update
+  to authenticated
+  using (updated_by = auth.uid())
+  with check (updated_by = auth.uid());
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -268,6 +435,26 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_players_updated_at on public.players;
 create trigger set_players_updated_at
 before update on public.players
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_fantasy_teams_updated_at on public.fantasy_teams;
+create trigger set_fantasy_teams_updated_at
+before update on public.fantasy_teams
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_fantasy_rosters_updated_at on public.fantasy_rosters;
+create trigger set_fantasy_rosters_updated_at
+before update on public.fantasy_rosters
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_fantasy_scores_updated_at on public.fantasy_player_match_scores;
+create trigger set_fantasy_scores_updated_at
+before update on public.fantasy_player_match_scores
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_fantasy_score_overrides_updated_at on public.fantasy_score_overrides;
+create trigger set_fantasy_score_overrides_updated_at
+before update on public.fantasy_score_overrides
 for each row execute function public.set_updated_at();
 
 -- After creating the two Auth users, replace the UUIDs below and run:
