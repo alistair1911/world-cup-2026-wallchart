@@ -259,7 +259,19 @@ export function mergePlayerCatalog(
       }
 
       const nameKey = comparableName(row.name);
-      if (byId.has(row.id) || byName.has(nameKey)) {
+      const existingByName = byName.get(nameKey);
+      if (existingByName) {
+        byName.set(nameKey, {
+          ...existingByName,
+          age: existingByName.age ?? row.age ?? null,
+          shirtNumber: existingByName.shirtNumber ?? row.shirtNumber ?? null,
+          position: existingByName.position || row.position,
+          photoUrl: existingByName.photoUrl ?? row.photoUrl ?? null
+        });
+        continue;
+      }
+
+      if (byId.has(row.id)) {
         continue;
       }
 

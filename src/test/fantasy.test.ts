@@ -3,6 +3,7 @@ import {
   FANTASY_ROUND_ID,
   buildFantasyLeaderboard,
   buildFantasyScoresFromMatches,
+  fantasyOptionMap,
   fantasyPlayerOptions,
   normalizeFantasyPosition,
   scoreFantasyPlayerMatch,
@@ -55,7 +56,19 @@ describe("mini-fantasy scoring", () => {
 
     expect(yamalOptions).toHaveLength(1);
     expect(yamalOptions[0].id).toBe("spain-362150");
+    expect(yamalOptions[0].aliasIds).toContain("spain-lamine-yamal");
     expect(yamalOptions[0].photoUrl).toBe("/players/lamine-yamal.jpg");
+
+    const optionMap = fantasyOptionMap([
+      {
+        id: "spain-362150",
+        teamId: "spain",
+        name: "Lamine Yamal",
+        position: "Forward",
+        shirtNumber: 19
+      }
+    ]);
+    expect(optionMap.get("spain-lamine-yamal")?.id).toBe("spain-362150");
   });
 
   it("keeps every team fantasy-eligible and replaces bad Czechia rows with ESPN rows", () => {
@@ -82,6 +95,21 @@ describe("mini-fantasy scoring", () => {
     expect(czechiaPlayers.length).toBeGreaterThanOrEqual(COMPLETE_SQUAD_MINIMUM);
     expect(czechiaPlayers.some((player) => player.name === "Wrong Czechia Player")).toBe(false);
     expect(canadaPlayers.length).toBeGreaterThanOrEqual(COMPLETE_SQUAD_MINIMUM);
+  });
+
+  it("fills duplicate catalog photos from curated team profile photos", () => {
+    const merged = mergePlayerCatalog([
+      {
+        id: "spain-362150",
+        teamId: "spain",
+        name: "Lamine Yamal",
+        position: "Forward",
+        photoUrl: null
+      }
+    ]);
+    const yamal = merged.find((player) => player.id === "spain-362150");
+
+    expect(yamal?.photoUrl).toBe("/players/lamine-yamal.jpg");
   });
 
   it("builds player match scores from final matches and captain leaderboard totals", () => {
@@ -118,6 +146,34 @@ describe("mini-fantasy scoring", () => {
     ];
 
     expect(buildFantasyLeaderboard(roster, scores)[0]).toMatchObject({
+      userKey: "tata",
+      points: 14,
+      captainPoints: 7
+    });
+
+    const legacyRoster: FantasyRosterSlot[] = [
+      {
+        userKey: "tata",
+        playerId: "spain-lamine-yamal",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: true,
+        isViceCaptain: false
+      }
+    ];
+    const espnScores = [{ ...scores[0]!, playerId: "spain-362150" }];
+    expect(
+      buildFantasyLeaderboard(legacyRoster, espnScores, [
+        {
+          id: "spain-362150",
+          teamId: "spain",
+          name: "Lamine Yamal",
+          position: "Forward",
+          shirtNumber: 19
+        }
+      ])[0]
+    ).toMatchObject({
       userKey: "tata",
       points: 14,
       captainPoints: 7

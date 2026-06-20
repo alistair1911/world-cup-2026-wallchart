@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Crown, GripVertical, Move, Plus, Save, Search, ShieldCheck, Star, Trash2, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import {
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
   buildFantasyLeaderboard,
+  fantasyOptionMap,
   fantasyPlayerOptions,
   isFantasyPlayerLocked,
   type FantasyPlayerOption
@@ -86,6 +88,10 @@ function familyName(userKey: UserKey) {
   return userKey === "tata" ? "Tata" : "Lucas";
 }
 
+function validFormation(value: string | null | undefined) {
+  return value && FORMATION_LINES[value] ? value : "4-3-3";
+}
+
 function normalizeDraftSlots(
   slots: FantasyRosterSlot[],
   optionMap: Map<string, FantasyPlayerOption>,
@@ -93,12 +99,12 @@ function normalizeDraftSlots(
 ) {
   const seen = new Set<string>();
   const validSlots = slots
-    .filter((slot) => optionMap.has(slot.playerId))
     .filter((slot) => {
-      if (seen.has(slot.playerId)) {
+      const canonicalId = optionMap.get(slot.playerId)?.id ?? slot.playerId;
+      if (seen.has(canonicalId)) {
         return false;
       }
-      seen.add(slot.playerId);
+      seen.add(canonicalId);
       return true;
     })
     .slice(0, FANTASY_SQUAD_SIZE);
@@ -109,7 +115,8 @@ function normalizeDraftSlots(
   }
 
   for (const slot of validSlots.sort((a, b) => a.slotIndex - b.slotIndex)) {
-    const normalized = { ...slot, userKey: userKey ?? slot.userKey };
+    const canonicalId = optionMap.get(slot.playerId)?.id ?? slot.playerId;
+    const normalized = { ...slot, playerId: canonicalId, userKey: userKey ?? slot.userKey };
     if (slot.isStarter) {
       const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
       const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
@@ -162,10 +169,10 @@ export function FantasyProfileDrawer({
   onSelectTeam
 }: FantasyProfileDrawerProps) {
   const options = useMemo(() => fantasyPlayerOptions(playerCatalog), [playerCatalog]);
-  const optionMap = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
+  const optionMap = useMemo(() => fantasyOptionMap(playerCatalog), [playerCatalog]);
   const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
   const setting = userKey ? teamSettings.find((team) => team.userKey === userKey) : null;
-  const savedFormation = setting?.formation ?? "4-3-3";
+  const savedFormation = validFormation(setting?.formation);
   const savedSlots = useMemo(
     () =>
       userKey
@@ -187,6 +194,7 @@ export function FantasyProfileDrawer({
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const lastSavedKeyRef = useRef("");
   const countryOptions = useMemo(() => {
     const teams = new Map<string, FantasyPlayerOption["team"]>();
@@ -206,6 +214,22 @@ export function FantasyProfileDrawer({
   const canEdit = Boolean(userKey && userKey === session.userKey);
   const normalizedDraft = useMemo(() => normalizeDraftSlots(draft, optionMap, userKey), [draft, optionMap, userKey]);
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!userKey || !mounted) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mounted, userKey]);
 
   useEffect(() => {
     setDraft(savedSlots);
@@ -252,6 +276,7 @@ export function FantasyProfileDrawer({
   const row = leaderboard.find((item) => item.userKey === userKey);
   const boardSlots = Array.from({ length: FANTASY_STARTERS }, (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null);
   const starterSlots = boardSlots.filter((slot): slot is FantasyRosterSlot => Boolean(slot));
+  const formationLines = FORMATION_LINES[formation] ?? FORMATION_LINES["4-3-3"];
   const benchSlots = normalizedDraft.filter((slot) => !slot.isStarter);
   const selectedPlayerIds = new Set(normalizedDraft.map((slot) => slot.playerId));
   const selectedTeams = new Set(
@@ -453,24 +478,25 @@ export function FantasyProfileDrawer({
 
   let boardIndex = 0;
 
-  return (
-    <div className="fixed inset-0 z-[65] flex justify-end bg-cup-ink/45">
+  const drawer = (
+    <div className="fixed inset-0 z-[999] flex justify-end overflow-hidden bg-cup-ink/55 backdrop-blur-sm">
       <button type="button" aria-label="Close fantasy profile backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <aside className="saved-pop relative flex h-full w-full max-w-4xl flex-col overflow-y-auto bg-slate-50 shadow-2xl">
-        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
+      <aside className="saved-pop relative flex h-dvh max-h-dvh w-full max-w-5xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:rounded-l-2xl">
+        <div className="shrink-0 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
               <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                {normalizedDraft.length} players - {formation} - {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
+                {normalizedDraft.length}/{FANTASY_SQUAD_SIZE} players - {starterSlots.length}/{FANTASY_STARTERS} starters - {formation} -{" "}
+                {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {canEdit ? (
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   {saving ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  {dirty ? "Autosaving" : "Saved"}
+                  {saving ? "Saving" : dirty ? "Autosaving" : "Saved"}
                 </Button>
               ) : null}
               <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close fantasy profile drawer">
@@ -480,7 +506,7 @@ export function FantasyProfileDrawer({
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="space-y-4">
             <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -528,7 +554,7 @@ export function FantasyProfileDrawer({
                   <div className="absolute inset-x-10 bottom-3 h-16 rounded-t-2xl border-x-2 border-t-2 border-white" />
                 </div>
                 <div className="relative space-y-3">
-                  {FORMATION_LINES[formation].map((line) => {
+                  {formationLines.map((line) => {
                     const slots = Array.from({ length: line.count }, () => {
                       const slot = boardSlots[boardIndex] ?? null;
                       const index = boardIndex;
@@ -768,6 +794,8 @@ export function FantasyProfileDrawer({
       </aside>
     </div>
   );
+
+  return mounted ? createPortal(drawer, document.body) : null;
 }
 
 function MiniStat({ label, value }: { label: string; value: number }) {

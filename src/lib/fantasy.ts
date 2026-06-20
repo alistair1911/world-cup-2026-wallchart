@@ -17,6 +17,7 @@ export const FANTASY_STARTERS = 11;
 
 export type FantasyPlayerOption = {
   id: string;
+  aliasIds?: string[];
   name: string;
   team: Team;
   position: string;
@@ -86,21 +87,25 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
     const existing = byName.get(key);
 
     if (existing) {
+      const aliasIds = Array.from(
+        new Set([...(existing.aliasIds ?? []), ...(option.aliasIds ?? []), option.id].filter((id) => id !== existing.id))
+      );
       const merged = {
         ...existing,
         id: existing.id,
+        aliasIds,
         position: existing.position || option.position,
         fantasyPosition: existing.fantasyPosition || option.fantasyPosition,
         photoUrl: existing.photoUrl || option.photoUrl
       };
       byName.set(key, merged);
       byId.set(existing.id, merged);
-      byId.delete(option.id);
       return;
     }
 
-    byName.set(key, option);
-    byId.set(option.id, option);
+    const normalized = { ...option, aliasIds: option.aliasIds ?? [] };
+    byName.set(key, normalized);
+    byId.set(normalized.id, normalized);
   }
 
   for (const row of playerCatalog) {
@@ -133,15 +138,27 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
   return sortFantasyOptions([...byId.values()]);
 }
 
+export function fantasyOptionMap(playerCatalog: PlayerCatalogItem[] = []) {
+  const map = new Map<string, FantasyPlayerOption>();
+  for (const option of fantasyPlayerOptions(playerCatalog)) {
+    map.set(option.id, option);
+    for (const aliasId of option.aliasIds ?? []) {
+      map.set(aliasId, option);
+    }
+  }
+  return map;
+}
+
 export function isFantasyPlayerLocked(
   playerId: string,
   matches: Match[],
   now = new Date(),
   playerCatalog: PlayerCatalogItem[] = []
 ) {
+  const option = fantasyOptionMap(playerCatalog).get(playerId);
   const profile = getPlayerProfile(playerId);
   const catalogPlayer = playerCatalog.find((player) => player.id === playerId);
-  const teamId = profile?.team.id ?? catalogPlayer?.teamId;
+  const teamId = option?.team.id ?? profile?.team.id ?? catalogPlayer?.teamId;
   if (!teamId) {
     return false;
   }
@@ -297,7 +314,7 @@ export function buildFantasyLeaderboard(
   scores: FantasyPlayerMatchScore[],
   playerCatalog: PlayerCatalogItem[] = []
 ): FantasyLeaderboardRow[] {
-  const options = new Map(fantasyPlayerOptions(playerCatalog).map((option) => [option.id, option]));
+  const options = fantasyOptionMap(playerCatalog);
   const scoresByPlayer = new Map<string, number>();
   for (const score of scores) {
     scoresByPlayer.set(score.playerId, (scoresByPlayer.get(score.playerId) ?? 0) + score.points);
@@ -311,14 +328,15 @@ export function buildFantasyLeaderboard(
       let bestPlayer: FantasyLeaderboardRow["bestPlayer"];
 
       for (const slot of userSlots) {
-        const playerPoints = scoresByPlayer.get(slot.playerId) ?? 0;
+        const option = options.get(slot.playerId);
+        const scoreId = option?.id ?? slot.playerId;
+        const playerPoints = scoresByPlayer.get(slot.playerId) ?? scoresByPlayer.get(scoreId) ?? 0;
         const total = slot.isCaptain ? playerPoints * 2 : playerPoints;
         points += total;
         if (slot.isCaptain) {
           captainPoints = playerPoints;
         }
 
-        const option = options.get(slot.playerId);
         if (option && (!bestPlayer || total > bestPlayer.points)) {
           bestPlayer = { ...option, points: total };
         }
