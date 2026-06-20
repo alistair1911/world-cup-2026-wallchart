@@ -24,7 +24,7 @@ type CachedSquad = {
   players: LiveSquadPlayer[];
 };
 
-const COMPLETE_SQUAD_MINIMUM = 11;
+const COMPLETE_SQUAD_MINIMUM = 15;
 const SQUAD_CACHE_DAYS = 7;
 const SQUAD_CACHE_MS = SQUAD_CACHE_DAYS * 24 * 60 * 60 * 1000;
 
@@ -142,7 +142,7 @@ export function useLiveSquad(teamId: string, curatedPlayers: PlayerProfile[]) {
 
         setPlayers([]);
         if (nextPlayers.length > 0) {
-          setError(`API-Football only returned ${nextPlayers.length} players, so the saved watchlist is shown.`);
+          setError(`The provider only returned ${nextPlayers.length} players, so the saved watchlist is shown.`);
         }
       } catch {
         if (isMounted) {

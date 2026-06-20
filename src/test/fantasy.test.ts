@@ -8,6 +8,7 @@ import {
   scoreFantasyPlayerMatch,
   validateFantasyRoster
 } from "@/lib/fantasy";
+import { COMPLETE_SQUAD_MINIMUM, mergePlayerCatalog } from "@/lib/player-catalog";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
 import type { FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
 
@@ -38,6 +39,32 @@ describe("mini-fantasy scoring", () => {
     ]);
 
     expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ id: "spain-test-goalkeeper", fantasyPosition: "GK" })]));
+  });
+
+  it("keeps every team fantasy-eligible and replaces bad Czechia rows with ESPN rows", () => {
+    const merged = mergePlayerCatalog(
+      [
+        {
+          id: "czechia-wrong-player",
+          teamId: "czechia",
+          name: "Wrong Czechia Player",
+          position: "Forward"
+        }
+      ],
+      Array.from({ length: COMPLETE_SQUAD_MINIMUM }, (_item, index) => ({
+        id: `czechia-espn-${index}`,
+        teamId: "czechia",
+        name: `Czechia ESPN Player ${index + 1}`,
+        position: index === 0 ? "Goalkeeper" : index < 6 ? "Defender" : index < 11 ? "Midfielder" : "Forward"
+      }))
+    );
+
+    const czechiaPlayers = merged.filter((player) => player.teamId === "czechia");
+    const canadaPlayers = merged.filter((player) => player.teamId === "canada");
+
+    expect(czechiaPlayers.length).toBeGreaterThanOrEqual(COMPLETE_SQUAD_MINIMUM);
+    expect(czechiaPlayers.some((player) => player.name === "Wrong Czechia Player")).toBe(false);
+    expect(canadaPlayers.length).toBeGreaterThanOrEqual(COMPLETE_SQUAD_MINIMUM);
   });
 
   it("builds player match scores from final matches and captain leaderboard totals", () => {

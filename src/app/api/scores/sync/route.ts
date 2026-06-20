@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { buildFantasyScoresFromMatches } from "@/lib/fantasy";
+import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
@@ -1169,7 +1170,7 @@ async function syncScores(request: NextRequest) {
       const { data: playerRows, error: playerRowsError } = await supabase
         .from("players")
         .select("id, team_id, name, age, shirt_number, position, photo_url");
-      const playerCatalog: PlayerCatalogItem[] = playerRowsError
+      const rawPlayerCatalog: PlayerCatalogItem[] = playerRowsError
         ? []
         : ((playerRows || []) as Array<{
             id: string;
@@ -1188,6 +1189,7 @@ async function syncScores(request: NextRequest) {
             position: row.position,
             photoUrl: row.photo_url ?? null
           }));
+      const playerCatalog = mergePlayerCatalog(rawPlayerCatalog);
       if (playerRowsError) {
         warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
       }

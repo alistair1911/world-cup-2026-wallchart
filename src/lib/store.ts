@@ -114,6 +114,13 @@ type StoredProfileRow = {
   user_key: UserKey;
 };
 
+type PlayerCatalogPayload = {
+  ok?: boolean;
+  players?: PlayerCatalogItem[];
+  error?: string;
+  warning?: string | null;
+};
+
 export type TournamentState = {
   matches: Match[];
   predictions: Prediction[];
@@ -191,6 +198,37 @@ function readLocalFantasyScores() {
     return JSON.parse(window.localStorage.getItem(LOCAL_FANTASY_SCORES_KEY) || "[]") as FantasyPlayerMatchScore[];
   } catch {
     return [];
+  }
+}
+
+async function fetchPlayerCatalogRows() {
+  try {
+    const response = await fetch("/api/fantasy/players", { cache: "no-store" });
+    const payload = (await response.json().catch(() => ({}))) as PlayerCatalogPayload;
+    if (!response.ok || payload.ok === false) {
+      return {
+        data: [] as StoredPlayerRow[],
+        error: { message: payload.error || "Could not load Fantasy player catalog." }
+      };
+    }
+
+    return {
+      data: (payload.players ?? []).map((player) => ({
+        id: player.id,
+        team_id: player.teamId,
+        name: player.name,
+        age: player.age ?? null,
+        shirt_number: player.shirtNumber ?? null,
+        position: player.position,
+        photo_url: player.photoUrl ?? null
+      })),
+      error: payload.warning ? { message: payload.warning } : null
+    };
+  } catch (error) {
+    return {
+      data: [] as StoredPlayerRow[],
+      error: { message: error instanceof Error ? error.message : "Could not load Fantasy player catalog." }
+    };
   }
 }
 
@@ -369,7 +407,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       supabase.from("profiles").select("id, user_key, display_name"),
       supabase.from("comments").select("*").order("created_at", { ascending: true }),
       supabase.from("player_match_stats").select("*"),
-      supabase.from("players").select("id, team_id, name, age, shirt_number, position, photo_url").order("team_id", { ascending: true }),
+      fetchPlayerCatalogRows(),
       supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
       supabase.from("fantasy_player_match_scores").select("*")
     ]);

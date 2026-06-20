@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  COMPLETE_SQUAD_MINIMUM,
+  fetchEspnRoster,
+  playerCatalogId
+} from "@/lib/player-catalog";
 import { getTeam } from "@/lib/tournament-data";
+import type { PlayerCatalogItem } from "@/lib/types";
 
 type ApiFootballTeamSearch = {
   response?: Array<{
@@ -66,7 +72,6 @@ type PlayerRow = {
   source: string;
 };
 
-const COMPLETE_SQUAD_MINIMUM = 11;
 const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" };
 const PARTIAL_HEADERS = { "Cache-Control": "no-store" };
 
@@ -142,17 +147,6 @@ function isCompleteSquad(players: SquadPlayer[] | null | undefined) {
   return Array.isArray(players) && players.length >= COMPLETE_SQUAD_MINIMUM;
 }
 
-function playerDbId(teamId: string, player: { id: string; name: string }) {
-  const safeId = player.id
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-
-  return `${teamId}-${safeId || "player"}`;
-}
-
 function playerRowsToSquadPlayers(rows: PlayerRow[]): SquadPlayer[] {
   return rows.map((row) => ({
     id: row.id,
@@ -201,6 +195,8 @@ async function saveSquad(
   supabase: SupabaseClient | null,
   input: {
     teamId: string;
+    provider: string;
+    source: string;
     providerTeamId: number | null;
     providerTeamName: string | null;
     providerLogoUrl: string | null;
@@ -215,41 +211,58 @@ async function saveSquad(
   await supabase.from("team_squads").upsert(
     {
       team_id: input.teamId,
-      provider: "api-football",
+      provider: input.provider,
       provider_team_id: input.providerTeamId,
       provider_team_name: input.providerTeamName,
       provider_logo_url: input.providerLogoUrl,
       formation: input.formation,
       players: input.players,
-      source: "api-football-squad",
+      source: input.source,
       fetched_at: new Date().toISOString()
     },
     { onConflict: "team_id" }
   );
 }
 
-async function savePlayers(supabase: SupabaseClient | null, teamId: string, players: SquadPlayer[]) {
+async function savePlayers(
+  supabase: SupabaseClient | null,
+  teamId: string,
+  players: SquadPlayer[],
+  provider = "api-football",
+  source = "api-football-squad"
+) {
   if (!supabase || players.length === 0) {
     return;
   }
 
   await supabase.from("players").upsert(
     players.map((player) => ({
-      id: playerDbId(teamId, player),
+      id: player.id.startsWith(`${teamId}-`) ? player.id : playerCatalogId(teamId, player.id),
       team_id: teamId,
       name: player.name,
       age: player.age,
       shirt_number: player.number,
       position: player.position,
       photo_url: player.photoUrl,
-      provider: "api-football",
+      provider,
       provider_player_id: player.id,
-      source: "api-football-squad",
+      source,
       raw: player,
       fetched_at: new Date().toISOString()
     })),
     { onConflict: "id" }
   );
+}
+
+function catalogToSquadPlayers(players: PlayerCatalogItem[]): SquadPlayer[] {
+  return players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    age: player.age ?? null,
+    number: player.shirtNumber ?? null,
+    position: player.position,
+    photoUrl: player.photoUrl ?? null
+  }));
 }
 
 function preferredTeamResult(payload: ApiFootballTeamSearch, teamName: string) {
@@ -271,7 +284,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
   const supabase = getServiceSupabase();
   const formation = formationForTeam(team);
   const savedSquad = await readSavedSquad(supabase, team.id);
-  if (savedSquad) {
+  if (savedSquad && (team.id !== "czechia" || savedSquad.provider === "espn")) {
     return NextResponse.json(
       {
         ok: true,
@@ -291,7 +304,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
   }
 
   const savedPlayers = await readSavedPlayers(supabase, team.id);
-  if (isCompleteSquad(savedPlayers)) {
+  if (isCompleteSquad(savedPlayers) && team.id !== "czechia") {
     return NextResponse.json(
       {
         ok: true,
@@ -305,6 +318,39 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
           logoUrl: null
         },
         players: savedPlayers
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
+  const espnRoster = await fetchEspnRoster(team);
+  if (espnRoster && espnRoster.players.length >= COMPLETE_SQUAD_MINIMUM) {
+    const players = catalogToSquadPlayers(espnRoster.players);
+    await saveSquad(supabase, {
+      teamId: team.id,
+      provider: "espn",
+      source: "espn-roster",
+      providerTeamId: Number(espnRoster.providerTeamId),
+      providerTeamName: espnRoster.providerTeamName,
+      providerLogoUrl: espnRoster.providerLogoUrl,
+      formation,
+      players
+    });
+    await savePlayers(supabase, team.id, players, "espn", "espn-roster");
+
+    return NextResponse.json(
+      {
+        ok: true,
+        provider: "espn",
+        source: "espn-roster",
+        cached: false,
+        formation,
+        team: {
+          id: Number(espnRoster.providerTeamId),
+          name: espnRoster.providerTeamName,
+          logoUrl: espnRoster.providerLogoUrl
+        },
+        players
       },
       { headers: CACHE_HEADERS }
     );
@@ -339,6 +385,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ te
 
     await saveSquad(supabase, {
       teamId: team.id,
+      provider: "api-football",
+      source: "api-football-squad",
       providerTeamId,
       providerTeamName: result?.team?.name ?? team.name,
       providerLogoUrl: result?.team?.logo ?? null,
