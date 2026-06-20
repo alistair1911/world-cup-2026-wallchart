@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Crown, GripVertical, Move, Save, ShieldCheck, Star, Trophy, X } from "lucide-react";
+import { Check, Crown, GripVertical, Move, Plus, Save, Search, ShieldCheck, Star, Trash2, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  FANTASY_ROUND_ID,
+  FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
   buildFantasyLeaderboard,
   fantasyPlayerOptions,
@@ -125,6 +127,9 @@ export function FantasyProfileDrawer({
   const [formation, setFormation] = useState(savedFormation);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [activeMoveId, setActiveMoveId] = useState<string | null>(null);
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [positionFilter, setPositionFilter] = useState("all");
+  const [playerSearch, setPlayerSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -144,6 +149,22 @@ export function FantasyProfileDrawer({
   const row = leaderboard.find((item) => item.userKey === userKey);
   const starterSlots = draft.filter((slot) => slot.isStarter).slice(0, FANTASY_STARTERS);
   const benchSlots = draft.filter((slot) => !slot.isStarter);
+  const selectedPlayerIds = new Set(draft.map((slot) => slot.playerId));
+  const countryOptions = useMemo(() => {
+    const teams = new Map<string, FantasyPlayerOption["team"]>();
+    for (const option of options) {
+      teams.set(option.team.id, option.team);
+    }
+    return [...teams.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [options]);
+  const playerPool = useMemo(() => {
+    const search = playerSearch.trim().toLowerCase();
+    return options
+      .filter((option) => countryFilter === "all" || option.team.id === countryFilter)
+      .filter((option) => positionFilter === "all" || option.fantasyPosition === positionFilter)
+      .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
+      .slice(0, 80);
+  }, [countryFilter, options, playerSearch, positionFilter]);
   const selectedTeams = new Set(
     draft
       .map((slot) => optionMap.get(slot.playerId)?.team)
@@ -180,14 +201,23 @@ export function FantasyProfileDrawer({
       return;
     }
 
-    const starters = draft.filter((slot) => slot.isStarter && slot.playerId !== playerId);
+    const starters = draft.filter((slot) => slot.isStarter);
     const bench = draft.filter((slot) => !slot.isStarter && slot.playerId !== playerId);
-    const replaced = starters[targetIndex];
-    const nextStarters = [...starters];
-    if (replaced) {
-      nextStarters.splice(targetIndex, 1, { ...playerSlot, isStarter: true });
-      bench.unshift({ ...replaced, isStarter: false, isCaptain: false });
+    const sourceStarterIndex = starters.findIndex((slot) => slot.playerId === playerId);
+    const targetSlot = starters[targetIndex];
+    let nextStarters = [...starters];
+
+    if (sourceStarterIndex >= 0) {
+      const safeTargetIndex = Math.min(targetIndex, nextStarters.length - 1);
+      if (safeTargetIndex >= 0 && safeTargetIndex !== sourceStarterIndex) {
+        nextStarters[sourceStarterIndex] = nextStarters[safeTargetIndex];
+        nextStarters[safeTargetIndex] = { ...playerSlot, isStarter: true };
+      }
+    } else if (targetSlot) {
+      nextStarters[targetIndex] = { ...playerSlot, isStarter: true };
+      bench.unshift({ ...targetSlot, isStarter: false, isCaptain: false, isViceCaptain: false });
     } else {
+      nextStarters = nextStarters.filter((slot) => slot.playerId !== playerId);
       nextStarters.splice(Math.min(targetIndex, nextStarters.length), 0, { ...playerSlot, isStarter: true });
     }
 
@@ -225,6 +255,58 @@ export function FantasyProfileDrawer({
     setActiveMoveId((current) => (current === playerId ? null : playerId));
     const player = optionMap.get(playerId);
     setMessage(`Moving ${player?.name ?? "player"}. Tap a pitch slot or the bench to snap them into place.`);
+  }
+
+  function addPlayer(playerId: string) {
+    if (!canEdit) {
+      return;
+    }
+    if (selectedPlayerIds.has(playerId)) {
+      setMessage("That player is already in this Mini-Fantasy squad.");
+      return;
+    }
+    if (draft.length >= FANTASY_SQUAD_SIZE) {
+      setMessage(`Mini-Fantasy squad is full at ${FANTASY_SQUAD_SIZE} players.`);
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+
+    const nextSlot: FantasyRosterSlot = {
+      userKey,
+      playerId,
+      roundId: FANTASY_ROUND_ID,
+      slotIndex: draft.length,
+      isStarter: draft.filter((slot) => slot.isStarter).length < FANTASY_STARTERS,
+      isCaptain: draft.length === 0,
+      isViceCaptain: draft.length === 1,
+      updatedAt: new Date().toISOString()
+    };
+
+    setDraft(reindex([...draft, nextSlot]));
+    setMessage("Player added. Save when the squad looks right.");
+  }
+
+  function removePlayer(playerId: string) {
+    if (!canEdit) {
+      return;
+    }
+    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
+      lockedMessage(playerId);
+      return;
+    }
+
+    const removed = draft.find((slot) => slot.playerId === playerId);
+    const next = draft.filter((slot) => slot.playerId !== playerId);
+    if (removed?.isCaptain && next.length > 0) {
+      next[0] = { ...next[0], isCaptain: true, isViceCaptain: false };
+    }
+    setDraft(reindex(next));
+    setActiveMoveId(null);
+    setDraggingId(null);
+    setMessage("Player removed. Save to publish the squad.");
   }
 
   function setCaptain(playerId: string) {
@@ -360,6 +442,7 @@ export function FantasyProfileDrawer({
                               onDragStart={setDraggingId}
                               onDrop={(playerId) => moveToStarter(playerId, index)}
                               onPickUp={pickUpPlayer}
+                              onRemove={removePlayer}
                               onSelectPlayer={onSelectPlayer}
                               onSetCaptain={setCaptain}
                             />
@@ -416,10 +499,103 @@ export function FantasyProfileDrawer({
                       activeMoveId={activeMoveId}
                       onDragStart={setDraggingId}
                       onPickUp={pickUpPlayer}
+                      onRemove={removePlayer}
                       onSelectPlayer={onSelectPlayer}
                     />
                   ))
                 )}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-600">Add Players</h3>
+                  <p className="text-xs font-bold text-slate-500">
+                    {draft.length}/{FANTASY_SQUAD_SIZE} selected - filter by country or position.
+                  </p>
+                </div>
+                <Badge tone={draft.length >= FANTASY_SQUAD_SIZE ? "red" : "green"}>{FANTASY_SQUAD_SIZE - draft.length} spots</Badge>
+              </div>
+              <div className="grid gap-2">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={playerSearch}
+                    onChange={(event) => setPlayerSearch(event.target.value)}
+                    placeholder="Search player or team"
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-xs font-bold text-cup-ink outline-none focus:ring-2 focus:ring-cup-gold"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={countryFilter}
+                    onChange={(event) => setCountryFilter(event.target.value)}
+                    className="h-10 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink"
+                    aria-label="Filter fantasy players by country"
+                  >
+                    <option value="all">All countries</option>
+                    {countryOptions.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.flag} {team.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={positionFilter}
+                    onChange={(event) => setPositionFilter(event.target.value)}
+                    className="h-10 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink"
+                    aria-label="Filter fantasy players by position"
+                  >
+                    <option value="all">All roles</option>
+                    <option value="GK">GK</option>
+                    <option value="DEF">DEF</option>
+                    <option value="MID">MID</option>
+                    <option value="FWD">FWD</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                {playerPool.map((player) => {
+                  const selected = selectedPlayerIds.has(player.id);
+                  const locked = isFantasyPlayerLocked(player.id, matches, new Date(), playerCatalog);
+                  return (
+                    <div
+                      key={player.id}
+                      className={`grid grid-cols-[1fr_auto] items-center gap-2 rounded-md p-2 ring-1 transition ${
+                        selected ? "bg-emerald-50 ring-emerald-200" : "bg-slate-50 ring-slate-200 hover:bg-white"
+                      }`}
+                    >
+                      <button type="button" onClick={() => onSelectPlayer(player.id)} className="min-w-0 text-left">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <img
+                            src={player.photoUrl ?? avatarUrl(player.name)}
+                            alt={`${player.name} portrait`}
+                            className="h-9 w-9 rounded-full object-cover object-top"
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-black text-cup-ink">{player.name}</div>
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                              <Flag team={player.team} />
+                              <span>{player.team.code}</span>
+                              <Badge tone="green">{player.fantasyPosition}</Badge>
+                              {locked ? <span className="text-cup-red">Locked</span> : null}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                      <Button
+                        size="sm"
+                        variant={selected ? "secondary" : "ghost"}
+                        onClick={() => (selected ? removePlayer(player.id) : addPlayer(player.id))}
+                        disabled={!selected && (locked || draft.length >= FANTASY_SQUAD_SIZE)}
+                        aria-label={selected ? `Remove ${player.name}` : `Add ${player.name}`}
+                      >
+                        {selected ? <Trash2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -495,6 +671,7 @@ function PitchSlot({
   onDragStart,
   onDrop,
   onPickUp,
+  onRemove,
   onSelectPlayer,
   onSetCaptain
 }: {
@@ -507,11 +684,13 @@ function PitchSlot({
   onDragStart: (playerId: string | null) => void;
   onDrop: (playerId: string) => void;
   onPickUp: (playerId: string) => void;
+  onRemove: (playerId: string) => void;
   onSelectPlayer: (playerId: string) => void;
   onSetCaptain: (playerId: string) => void;
 }) {
   const isTarget = Boolean(activeMoveId || draggingId);
   const isMovingThis = Boolean(slot && slot.playerId === activeMoveId);
+  const canPlaceHere = Boolean(activeMoveId && activeMoveId !== slot?.playerId);
 
   return (
     <div
@@ -550,6 +729,10 @@ function PitchSlot({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
+              if (activeMoveId && activeMoveId !== slot.playerId) {
+                onDrop(activeMoveId);
+                return;
+              }
               onSelectPlayer(slot.playerId);
             }}
             className="w-full"
@@ -563,7 +746,22 @@ function PitchSlot({
             <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
           </button>
           {canEdit ? (
-            <div className="mt-1 flex items-center justify-center gap-1">
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-1">
+              {canPlaceHere ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (activeMoveId) {
+                      onDrop(activeMoveId);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full bg-cup-gold px-2 py-0.5 text-[9px] font-black text-cup-ink"
+                >
+                  <Check className="h-3 w-3" />
+                  Place here
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={(event) => {
@@ -577,19 +775,30 @@ function PitchSlot({
                 <Move className="h-3 w-3" />
                 Move
               </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSetCaptain(slot.playerId);
-              }}
-              className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
-                slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
-              }`}
-            >
-              {slot.isCaptain ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
-              {slot.isCaptain ? "Captain" : "Set C"}
-            </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSetCaptain(slot.playerId);
+                }}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                  slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
+                }`}
+              >
+                {slot.isCaptain ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
+                {slot.isCaptain ? "Captain" : "Set C"}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(slot.playerId);
+                }}
+                className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-black text-white"
+              >
+                <Trash2 className="h-3 w-3" />
+                Remove
+              </button>
             </div>
           ) : null}
         </div>
@@ -610,6 +819,7 @@ function BenchRow({
   activeMoveId,
   onDragStart,
   onPickUp,
+  onRemove,
   onSelectPlayer
 }: {
   slot: FantasyRosterSlot;
@@ -619,6 +829,7 @@ function BenchRow({
   activeMoveId: string | null;
   onDragStart: (playerId: string | null) => void;
   onPickUp: (playerId: string) => void;
+  onRemove: (playerId: string) => void;
   onSelectPlayer: (playerId: string) => void;
 }) {
   if (!player) {
@@ -662,17 +873,30 @@ function BenchRow({
           <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
         </div>
         {canEdit ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onPickUp(slot.playerId);
-            }}
-            className="grid h-8 w-8 place-items-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 transition hover:text-cup-red"
-            aria-label={`Move ${player.name}`}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPickUp(slot.playerId);
+              }}
+              className="grid h-8 w-8 place-items-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 transition hover:text-cup-red"
+              aria-label={`Move ${player.name}`}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove(slot.playerId);
+              }}
+              className="grid h-8 w-8 place-items-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 transition hover:text-cup-red"
+              aria-label={`Remove ${player.name}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </>
         ) : null}
       </div>
     </div>
