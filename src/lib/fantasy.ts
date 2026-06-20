@@ -14,6 +14,14 @@ import type {
 export const FANTASY_ROUND_ID = "global";
 export const FANTASY_SQUAD_SIZE = 15;
 export const FANTASY_STARTERS = 11;
+export const FANTASY_SCORING_RULES = [
+  { label: "Goal", detail: "GK/DEF +6, MID +5, FWD +4" },
+  { label: "Assist", detail: "+3" },
+  { label: "Clean sheet", detail: "GK/DEF +4, MID +1" },
+  { label: "Yellow / red", detail: "-1 / -3" },
+  { label: "Own goal", detail: "-2" },
+  { label: "Penalty", detail: "Save +5, miss -2" }
+] as const;
 
 export type FantasyPlayerOption = {
   id: string;
@@ -271,28 +279,30 @@ export function buildFantasyScoresFromMatches(
         continue;
       }
 
-      const stat = statsByKey.get(`${match.id}:${option.id}`);
+      const stat = [option.id, ...(option.aliasIds ?? [])]
+        .map((playerId) => statsByKey.get(`${match.id}:${playerId}`))
+        .find((row): row is PlayerMatchStat => Boolean(row));
+      if (!stat) {
+        continue;
+      }
+
       const conceded =
         option.team.id === match.homeTeamId ? match.awayScore ?? null : option.team.id === match.awayTeamId ? match.homeScore ?? null : null;
       const cleanSheet = conceded === 0;
       const { points, breakdown } = scoreFantasyPlayerMatch({
         position: option.fantasyPosition,
-        goals: stat?.goals ?? 0,
-        assists: stat?.assists ?? 0,
+        goals: stat.goals,
+        assists: stat.assists,
         cleanSheet
       });
-
-      if (points === 0 && !stat) {
-        continue;
-      }
 
       scores.push({
         matchId: match.id,
         playerId: option.id,
         teamId: option.team.id,
         points,
-        goals: stat?.goals ?? 0,
-        assists: stat?.assists ?? 0,
+        goals: stat.goals,
+        assists: stat.assists,
         cleanSheet,
         yellowCards: 0,
         redCards: 0,
@@ -300,7 +310,7 @@ export function buildFantasyScoresFromMatches(
         penaltySaves: 0,
         penaltyMisses: 0,
         breakdown,
-        status: stat?.assists ? "confirmed" : cleanSheet ? "needs_review" : "confirmed",
+        status: stat.assists ? "confirmed" : cleanSheet ? "needs_review" : "confirmed",
         updatedAt: new Date().toISOString()
       });
     }

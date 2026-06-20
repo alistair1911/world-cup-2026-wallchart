@@ -1194,12 +1194,30 @@ async function syncScores(request: NextRequest) {
         warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
       }
 
-      const fantasyScores = buildFantasyScoresFromMatches([...updatedMatchesById.values()], allPlayerStats, playerCatalog);
+      const fantasyScoreMatches = [...updatedMatchesById.values()].filter(
+        (match) => match.status === "final" && match.homeScore !== null && match.awayScore !== null
+      );
+      const fantasyScores = buildFantasyScoresFromMatches(fantasyScoreMatches, allPlayerStats, playerCatalog);
+
+      if (fantasyScoreMatches.length > 0) {
+        const matchIds = fantasyScoreMatches.map((match) => match.id);
+        const { error: deleteFantasyError } = await supabase.from("fantasy_player_match_scores").delete().in("match_id", matchIds);
+        if (deleteFantasyError) {
+          if (isMissingFantasyScoresTable(deleteFantasyError.message)) {
+            warning = [
+              warning,
+              "Mini-Fantasy tables are missing in Supabase. Run the updated supabase/schema.sql once, then press Sync again."
+            ]
+              .filter(Boolean)
+              .join(" ");
+          } else {
+            throw new Error(deleteFantasyError.message);
+          }
+        }
+      }
 
       if (fantasyScores.length > 0) {
-        const { error } = await supabase
-          .from("fantasy_player_match_scores")
-          .upsert(fantasyScores.map(fantasyScoreToRow), { onConflict: "match_id,player_id" });
+        const { error } = await supabase.from("fantasy_player_match_scores").insert(fantasyScores.map(fantasyScoreToRow));
         if (error) {
           if (isMissingFantasyScoresTable(error.message)) {
             warning = [

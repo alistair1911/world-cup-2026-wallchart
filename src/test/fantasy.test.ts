@@ -19,6 +19,7 @@ describe("mini-fantasy scoring", () => {
     expect(scoreFantasyPlayerMatch({ position: "MID", goals: 1, assists: 1, cleanSheet: true }).points).toBe(9);
     expect(scoreFantasyPlayerMatch({ position: "DEF", goals: 1, cleanSheet: true }).points).toBe(10);
     expect(scoreFantasyPlayerMatch({ position: "GK", cleanSheet: true, penaltySaves: 1 }).points).toBe(9);
+    expect(scoreFantasyPlayerMatch({ position: "FWD", goals: 1, yellowCards: 1, penaltyMisses: 1 }).points).toBe(1);
   });
 
   it("normalizes player positions into fantasy buckets", () => {
@@ -177,6 +178,36 @@ describe("mini-fantasy scoring", () => {
       userKey: "tata",
       points: 14,
       captainPoints: 7
+    });
+  });
+
+  it("does not award fallback clean-sheet points to untracked squad players", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
+      status: "final" as const,
+      homeScore: 2,
+      awayScore: 0
+    };
+
+    expect(buildFantasyScoresFromMatches([match], []).find((score) => score.playerId === "spain-unai-simon")).toBeUndefined();
+
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "spain-unai-simon",
+          playerName: "Unai Simon",
+          teamId: "spain",
+          goals: 0,
+          assists: 0
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "spain-unai-simon")).toMatchObject({
+      points: 4,
+      cleanSheet: true
     });
   });
 

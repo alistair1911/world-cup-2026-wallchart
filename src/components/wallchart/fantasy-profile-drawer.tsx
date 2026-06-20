@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Crown, GripVertical, Move, Plus, Save, Search, ShieldCheck, Star, Trash2, Trophy, X } from "lucide-react";
+import { Check, Crown, Gauge, GripVertical, Move, Plus, Save, Search, ShieldCheck, Sparkles, Star, Trash2, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   FANTASY_ROUND_ID,
+  FANTASY_SCORING_RULES,
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
   buildFantasyLeaderboard,
@@ -481,7 +482,7 @@ export function FantasyProfileDrawer({
   const drawer = (
     <div className="fixed inset-0 z-[999] flex justify-end overflow-hidden bg-cup-ink/55 backdrop-blur-sm">
       <button type="button" aria-label="Close fantasy profile backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <aside className="saved-pop relative flex h-dvh max-h-dvh w-full max-w-5xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:rounded-l-2xl">
+      <aside className="saved-pop relative flex h-dvh max-h-dvh w-full max-w-7xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:rounded-l-2xl">
         <div className="shrink-0 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -506,12 +507,15 @@ export function FantasyProfileDrawer({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(760px,1fr)_320px]">
           <section className="space-y-4">
-            <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
+            <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-cup-gold" />
+                    <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
+                  </div>
                   <p className="text-xs font-bold text-slate-500">
                     {canEdit
                       ? activeMoveId
@@ -540,12 +544,15 @@ export function FantasyProfileDrawer({
               </div>
 
               <div
-                className="relative overflow-hidden rounded-lg p-3 text-white shadow-inner ring-1 ring-pitch-950 sm:p-4"
+                className="relative overflow-hidden rounded-xl p-3 text-white shadow-inner ring-1 ring-pitch-950 sm:p-5"
                 style={{
                   background:
                     "linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px), repeating-linear-gradient(90deg, #0c5f3e 0 54px, #0f7149 54px 108px)"
                 }}
               >
+                <div className="absolute right-3 top-3 z-[1] rounded-full bg-cup-ink/75 px-3 py-1 text-[10px] font-black uppercase text-cup-gold ring-1 ring-white/20">
+                  {starterSlots.length}/{FANTASY_STARTERS} on pitch
+                </div>
                 <div className="pointer-events-none absolute inset-3 rounded-md border-2 border-white/35" />
                 <div className="pointer-events-none absolute inset-0 opacity-45">
                   <div className="absolute left-1/2 top-0 h-full w-0.5 -translate-x-1/2 bg-white" />
@@ -553,7 +560,7 @@ export function FantasyProfileDrawer({
                   <div className="absolute inset-x-10 top-3 h-16 rounded-b-2xl border-x-2 border-b-2 border-white" />
                   <div className="absolute inset-x-10 bottom-3 h-16 rounded-t-2xl border-x-2 border-t-2 border-white" />
                 </div>
-                <div className="relative space-y-3">
+                <div className="relative flex min-h-[540px] flex-col justify-between gap-2 pt-7 sm:min-h-[600px]">
                   {formationLines.map((line) => {
                     const slots = Array.from({ length: line.count }, () => {
                       const slot = boardSlots[boardIndex] ?? null;
@@ -563,15 +570,24 @@ export function FantasyProfileDrawer({
                     });
 
                     return (
-                      <div key={line.id}>
-                        <div className="mb-1 text-center text-[10px] font-black uppercase text-white/60">{line.label}</div>
-                        <div className="mx-auto grid max-w-3xl gap-2" style={{ gridTemplateColumns: `repeat(${line.count}, minmax(0, 1fr))` }}>
+                      <div
+                        key={line.id}
+                        className={`grid items-center gap-2 ${line.count === 1 ? "grid-cols-[52px_minmax(8rem,13rem)_52px]" : "grid-cols-[52px_minmax(0,1fr)_52px]"} sm:grid-cols-[72px_minmax(0,1fr)_72px]`}
+                      >
+                        <div className="rounded-full bg-white/15 px-2 py-1 text-center text-[9px] font-black uppercase text-white/75 ring-1 ring-white/20">
+                          {line.id}
+                        </div>
+                        <div
+                          className={`mx-auto grid w-full gap-2 ${line.count === 1 ? "max-w-52" : "max-w-none"}`}
+                          style={{ gridTemplateColumns: `repeat(${line.count}, minmax(0, 1fr))` }}
+                        >
                           {slots.map(({ slot, index }) => (
                             <PitchSlot
                               key={`${line.id}-${index}`}
                               slot={slot}
                               player={slot ? optionMap.get(slot.playerId) : undefined}
                               stats={slot ? playerTotals(slot.playerId, scores) : null}
+                              compact={line.count === 1}
                               canEdit={canEdit}
                               draggingId={draggingId}
                               activeMoveId={activeMoveId}
@@ -584,6 +600,7 @@ export function FantasyProfileDrawer({
                             />
                           ))}
                         </div>
+                        <div className="hidden text-right text-[9px] font-black uppercase text-white/45 sm:block">{line.label}</div>
                       </div>
                     );
                   })}
@@ -595,7 +612,7 @@ export function FantasyProfileDrawer({
 
           </section>
 
-          <aside className="space-y-4">
+          <aside className="space-y-3">
             <div
               className={`rounded-lg bg-white p-4 ring-1 transition ${
                 activeMoveId ? "ring-2 ring-cup-gold shadow-lift" : "ring-slate-200"
@@ -643,6 +660,8 @@ export function FantasyProfileDrawer({
                 )}
               </div>
             </div>
+
+            <ScoringRulesPanel />
 
             <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -741,7 +760,7 @@ export function FantasyProfileDrawer({
                 <Trophy className="h-4 w-4 text-cup-gold" />
                 <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
               </div>
-              <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {normalizedDraft.map((slot) => {
                   const player = optionMap.get(slot.playerId);
                   if (!player) {
@@ -770,6 +789,13 @@ export function FantasyProfileDrawer({
                             <Flag team={player.team} />
                             <span>{player.fantasyPosition}</span>
                             <span>{slot.isStarter ? "Starter" : "Bench"}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-black uppercase text-slate-500">
+                            <span className="rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200">G {stats.goals}</span>
+                            <span className="rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200">A {stats.assists}</span>
+                            {stats.cleanSheets > 0 ? (
+                              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700 ring-1 ring-emerald-100">CS {stats.cleanSheets}</span>
+                            ) : null}
                           </div>
                         </div>
                         <div className="text-right">
@@ -800,9 +826,28 @@ export function FantasyProfileDrawer({
 
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
+    <div className="rounded-lg bg-gradient-to-br from-white to-cup-sky p-3 shadow-sm ring-1 ring-slate-200">
       <div className="text-[10px] font-black uppercase text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-black text-cup-red">{value}</div>
+    </div>
+  );
+}
+
+function ScoringRulesPanel() {
+  return (
+    <div className="rounded-lg bg-gradient-to-br from-cup-ink via-pitch-900 to-pitch-700 p-4 text-white shadow-sm ring-1 ring-cup-gold/30">
+      <div className="mb-3 flex items-center gap-2">
+        <Gauge className="h-4 w-4 text-cup-gold" />
+        <h3 className="text-sm font-black uppercase">Scoring</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {FANTASY_SCORING_RULES.map((rule) => (
+          <div key={rule.label} className="rounded-md bg-white/10 p-2 ring-1 ring-white/10">
+            <div className="text-[9px] font-black uppercase text-white/55">{rule.label}</div>
+            <div className="mt-1 text-[11px] font-black leading-tight text-white">{rule.detail}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -811,6 +856,7 @@ function PitchSlot({
   slot,
   player,
   stats,
+  compact,
   canEdit,
   draggingId,
   activeMoveId,
@@ -824,6 +870,7 @@ function PitchSlot({
   slot: FantasyRosterSlot | null;
   player?: FantasyPlayerOption;
   stats: ReturnType<typeof playerTotals> | null;
+  compact?: boolean;
   canEdit: boolean;
   draggingId: string | null;
   activeMoveId: string | null;
@@ -840,7 +887,7 @@ function PitchSlot({
 
   return (
     <div
-      className={`min-h-[96px] rounded-lg border p-2 text-center backdrop-blur transition ${
+      className={`${compact ? "min-h-[82px]" : "min-h-[96px]"} rounded-lg border p-2 text-center backdrop-blur transition ${
         isTarget
           ? "border-cup-gold bg-cup-gold/20 shadow-[inset_0_0_0_2px_rgba(214,166,71,.45)]"
           : "border-white/25 bg-white/10"
@@ -886,7 +933,7 @@ function PitchSlot({
             <img
               src={player.photoUrl ?? avatarUrl(player.name)}
               alt={`${player.name} portrait`}
-              className="mx-auto h-11 w-11 rounded-full object-cover object-top shadow-lift ring-2 ring-white"
+              className={`${compact ? "h-10 w-10" : "h-11 w-11"} mx-auto rounded-full object-cover object-top shadow-lift ring-2 ring-white`}
             />
             <div className="mt-1 truncate text-[11px] font-black text-white">{player.name}</div>
             <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
@@ -949,7 +996,9 @@ function PitchSlot({
           ) : null}
         </div>
       ) : (
-        <div className="grid h-full min-h-[78px] place-items-center rounded-md border border-dashed border-white/35 bg-black/5 px-2 text-[10px] font-black uppercase text-white/70">
+        <div
+          className={`${compact ? "min-h-[60px]" : "min-h-[78px]"} grid h-full place-items-center rounded-md border border-dashed border-white/35 bg-black/5 px-2 text-[10px] font-black uppercase text-white/70`}
+        >
           {isTarget ? "Tap to place" : "Open slot"}
         </div>
       )}
