@@ -507,7 +507,7 @@ export function FantasyProfileDrawer({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(760px,1fr)_320px]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
           <section className="space-y-4">
             <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -560,7 +560,7 @@ export function FantasyProfileDrawer({
                   <div className="absolute inset-x-10 top-3 h-16 rounded-b-2xl border-x-2 border-b-2 border-white" />
                   <div className="absolute inset-x-10 bottom-3 h-16 rounded-t-2xl border-x-2 border-t-2 border-white" />
                 </div>
-                <div className="relative flex min-h-[540px] flex-col justify-between gap-2 pt-7 sm:min-h-[600px]">
+                <div className="relative flex min-h-[620px] flex-col justify-between gap-3 pt-7 sm:min-h-[660px]">
                   {formationLines.map((line) => {
                     const slots = Array.from({ length: line.count }, () => {
                       const slot = boardSlots[boardIndex] ?? null;
@@ -570,15 +570,15 @@ export function FantasyProfileDrawer({
                     });
 
                     return (
-                      <div
-                        key={line.id}
-                        className={`grid items-center gap-2 ${line.count === 1 ? "grid-cols-[52px_minmax(8rem,13rem)_52px]" : "grid-cols-[52px_minmax(0,1fr)_52px]"} sm:grid-cols-[72px_minmax(0,1fr)_72px]`}
-                      >
-                        <div className="rounded-full bg-white/15 px-2 py-1 text-center text-[9px] font-black uppercase text-white/75 ring-1 ring-white/20">
-                          {line.id}
+                      <div key={line.id} className="w-full">
+                        <div className="mb-1 flex items-center gap-2">
+                          <div className="rounded-full bg-white/15 px-2 py-1 text-[9px] font-black uppercase text-white/75 ring-1 ring-white/20">
+                            {line.id}
+                          </div>
+                          <div className="text-[9px] font-black uppercase text-white/45">{line.label}</div>
                         </div>
                         <div
-                          className={`mx-auto grid w-full gap-2 ${line.count === 1 ? "max-w-52" : "max-w-none"}`}
+                          className={`mx-auto grid w-full gap-2 sm:gap-3 ${line.count === 1 ? "max-w-60" : "max-w-none"}`}
                           style={{ gridTemplateColumns: `repeat(${line.count}, minmax(0, 1fr))` }}
                         >
                           {slots.map(({ slot, index }) => (
@@ -600,7 +600,6 @@ export function FantasyProfileDrawer({
                             />
                           ))}
                         </div>
-                        <div className="hidden text-right text-[9px] font-black uppercase text-white/45 sm:block">{line.label}</div>
                       </div>
                     );
                   })}
@@ -887,7 +886,7 @@ function PitchSlot({
 
   return (
     <div
-      className={`${compact ? "min-h-[82px]" : "min-h-[96px]"} rounded-lg border p-2 text-center backdrop-blur transition ${
+      className={`${compact ? "min-h-[100px]" : "min-h-[124px]"} rounded-lg border p-2 text-center backdrop-blur transition ${
         isTarget
           ? "border-cup-gold bg-cup-gold/20 shadow-[inset_0_0_0_2px_rgba(214,166,71,.45)]"
           : "border-white/25 bg-white/10"
@@ -935,11 +934,11 @@ function PitchSlot({
               alt={`${player.name} portrait`}
               className={`${compact ? "h-10 w-10" : "h-11 w-11"} mx-auto rounded-full object-cover object-top shadow-lift ring-2 ring-white`}
             />
-            <div className="mt-1 truncate text-[11px] font-black text-white">{player.name}</div>
+            <div className="mt-1 truncate text-[11px] font-black leading-tight text-white">{player.name}</div>
             <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
           </button>
           {canEdit ? (
-            <div className="mt-1 flex flex-wrap items-center justify-center gap-1">
+            <div className="mt-2 grid grid-cols-3 gap-1">
               {canPlaceHere ? (
                 <button
                   type="button"
@@ -949,10 +948,11 @@ function PitchSlot({
                       onDrop(activeMoveId);
                     }
                   }}
-                  className="inline-flex items-center gap-1 rounded-full bg-cup-gold px-2 py-0.5 text-[9px] font-black text-cup-ink"
+                  className="col-span-3 inline-flex h-8 items-center justify-center gap-1 rounded-md bg-cup-gold px-2 text-[10px] font-black uppercase text-cup-ink shadow-sm"
+                  title="Place player here"
                 >
                   <Check className="h-3 w-3" />
-                  Place here
+                  Place
                 </button>
               ) : null}
               <button
@@ -961,12 +961,13 @@ function PitchSlot({
                   event.stopPropagation();
                   onPickUp(slot.playerId);
                 }}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                className={`grid h-8 min-w-0 place-items-center rounded-md text-[9px] font-black ${
                   isMovingThis ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
                 }`}
+                title="Move player"
+                aria-label={`Move ${player.name}`}
               >
-                <Move className="h-3 w-3" />
-                Move
+                <Move className="h-4 w-4" />
               </button>
               <button
                 type="button"
@@ -974,12 +975,13 @@ function PitchSlot({
                   event.stopPropagation();
                   onSetCaptain(slot.playerId);
                 }}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                className={`grid h-8 min-w-0 place-items-center rounded-md text-[9px] font-black ${
                   slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
                 }`}
+                title={slot.isCaptain ? "Captain selected" : "Set captain"}
+                aria-label={slot.isCaptain ? `${player.name} is captain` : `Set ${player.name} as captain`}
               >
-                {slot.isCaptain ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
-                {slot.isCaptain ? "Captain" : "Set C"}
+                {slot.isCaptain ? <Crown className="h-4 w-4" /> : <Star className="h-4 w-4" />}
               </button>
               <button
                 type="button"
@@ -987,10 +989,11 @@ function PitchSlot({
                   event.stopPropagation();
                   onRemove(slot.playerId);
                 }}
-                className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-black text-white"
+                className="grid h-8 min-w-0 place-items-center rounded-md bg-white/15 text-[9px] font-black text-white"
+                title="Move to bench"
+                aria-label={`Move ${player.name} to bench`}
               >
-                <Trash2 className="h-3 w-3" />
-                Bench
+                <ShieldCheck className="h-4 w-4" />
               </button>
             </div>
           ) : null}
