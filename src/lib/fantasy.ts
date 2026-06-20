@@ -157,6 +157,11 @@ export function fantasyOptionMap(playerCatalog: PlayerCatalogItem[] = []) {
   return map;
 }
 
+export function fantasyScoreIdsForPlayer(playerId: string, playerCatalog: PlayerCatalogItem[] = []) {
+  const option = fantasyOptionMap(playerCatalog).get(playerId);
+  return Array.from(new Set([playerId, option?.id, ...(option?.aliasIds ?? [])].filter((id): id is string => Boolean(id))));
+}
+
 export function isFantasyPlayerLocked(
   playerId: string,
   matches: Match[],
@@ -400,7 +405,9 @@ export function buildFantasyLeaderboard(
   const options = fantasyOptionMap(playerCatalog);
   const scoresByPlayer = new Map<string, number>();
   for (const score of scores) {
-    scoresByPlayer.set(score.playerId, (scoresByPlayer.get(score.playerId) ?? 0) + score.points);
+    for (const playerId of fantasyScoreIdsForPlayer(score.playerId, playerCatalog)) {
+      scoresByPlayer.set(playerId, (scoresByPlayer.get(playerId) ?? 0) + score.points);
+    }
   }
 
   return (["tata", "lucas"] as UserKey[])

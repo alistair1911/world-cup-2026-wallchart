@@ -3,8 +3,9 @@
 import { Plus, Star, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
+import { fantasyScoreIdsForPlayer } from "@/lib/fantasy";
 import { avatarUrl, getPlayerProfile } from "@/lib/profile-data";
-import type { FantasyPlayerMatchScore, FantasyRosterSlot } from "@/lib/types";
+import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerCatalogItem } from "@/lib/types";
 import { Badge } from "../ui/badge";
 import { Flag } from "./flag";
 
@@ -15,6 +16,7 @@ type PlayerProfileDrawerProps = {
   onAddFantasyPlayer?: (playerId: string) => void;
   fantasyRosters?: FantasyRosterSlot[];
   fantasyScores?: FantasyPlayerMatchScore[];
+  playerCatalog?: PlayerCatalogItem[];
 };
 
 function MiniFact({ label, value }: { label: string; value: string }) {
@@ -68,7 +70,8 @@ export function PlayerProfileDrawer({
   onSelectTeam,
   onAddFantasyPlayer,
   fantasyRosters = [],
-  fantasyScores = []
+  fantasyScores = [],
+  playerCatalog = []
 }: PlayerProfileDrawerProps) {
   const profile = playerId ? getPlayerProfile(playerId) : null;
 
@@ -77,8 +80,9 @@ export function PlayerProfileDrawer({
   }
 
   const portrait = profile.player.photoUrl ?? avatarUrl(profile.player.name);
-  const selectedBy = fantasyRosters.filter((slot) => slot.playerId === profile.player.id).map((slot) => slot.userKey);
-  const fantasyRows = fantasyScores.filter((score) => score.playerId === profile.player.id);
+  const fantasyIds = new Set(fantasyScoreIdsForPlayer(profile.player.id, playerCatalog));
+  const selectedBy = fantasyRosters.filter((slot) => fantasyIds.has(slot.playerId)).map((slot) => slot.userKey);
+  const fantasyRows = fantasyScores.filter((score) => fantasyIds.has(score.playerId));
   const fantasyTotal = fantasyRows.reduce((total, score) => total + score.points, 0);
   const fantasyGoals = fantasyRows.reduce((total, score) => total + score.goals, 0);
   const fantasyAssists = fantasyRows.reduce((total, score) => total + score.assists, 0);

@@ -589,6 +589,7 @@ export function WallchartApp() {
         onAddFantasyPlayer={handleAddFantasyPlayer}
         fantasyRosters={fantasyRosters}
         fantasyScores={effectiveFantasyScores}
+        playerCatalog={playerCatalog}
       />
       <UserProfileDrawer userKey={selectedUserKey} matches={matches} predictions={predictions} onClose={() => setSelectedUserKey(null)} />
     </main>

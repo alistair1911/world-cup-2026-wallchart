@@ -13,6 +13,7 @@ import {
   buildFantasyLeaderboard,
   fantasyOptionMap,
   fantasyPlayerOptions,
+  fantasyScoreIdsForPlayer,
   isFantasyPlayerLocked,
   normalizeFantasyRosterSlots,
   type FantasyPlayerOption
@@ -127,8 +128,9 @@ function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
     .join("|")}`;
 }
 
-function playerTotals(playerId: string, scores: FantasyPlayerMatchScore[]) {
-  const rows = scores.filter((score) => score.playerId === playerId);
+function playerTotals(playerId: string, scores: FantasyPlayerMatchScore[], playerCatalog: PlayerCatalogItem[]) {
+  const scoreIds = new Set(fantasyScoreIdsForPlayer(playerId, playerCatalog));
+  const rows = scores.filter((score) => scoreIds.has(score.playerId));
   return {
     points: rows.reduce((total, score) => total + score.points, 0),
     goals: rows.reduce((total, score) => total + score.goals, 0),
@@ -270,7 +272,7 @@ export function FantasyProfileDrawer({
   );
   const totals = normalizedDraft.reduce(
     (total, slot) => {
-      const output = playerTotals(slot.playerId, scores);
+      const output = playerTotals(slot.playerId, scores, playerCatalog);
       total.points += slot.isCaptain ? output.points * 2 : output.points;
       total.goals += output.goals;
       total.assists += output.assists;
@@ -568,7 +570,7 @@ export function FantasyProfileDrawer({
                               key={`${line.id}-${index}`}
                               slot={slot}
                               player={slot ? optionMap.get(slot.playerId) : undefined}
-                              stats={slot ? playerTotals(slot.playerId, scores) : null}
+                              stats={slot ? playerTotals(slot.playerId, scores, playerCatalog) : null}
                               compact={line.count === 1}
                               canEdit={canEdit}
                               draggingId={draggingId}
@@ -629,7 +631,7 @@ export function FantasyProfileDrawer({
                       key={slot.playerId}
                       slot={slot}
                       player={optionMap.get(slot.playerId)}
-                      stats={playerTotals(slot.playerId, scores)}
+                      stats={playerTotals(slot.playerId, scores, playerCatalog)}
                       canEdit={canEdit}
                       activeMoveId={activeMoveId}
                       onDragStart={setDraggingId}
@@ -747,7 +749,7 @@ export function FantasyProfileDrawer({
                   if (!player) {
                     return null;
                   }
-                  const stats = playerTotals(slot.playerId, scores);
+                  const stats = playerTotals(slot.playerId, scores, playerCatalog);
                   return (
                     <button
                       key={slot.playerId}

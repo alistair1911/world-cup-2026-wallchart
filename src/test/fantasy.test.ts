@@ -181,6 +181,33 @@ describe("mini-fantasy scoring", () => {
       points: 14,
       captainPoints: 7
     });
+
+    const espnRoster: FantasyRosterSlot[] = [
+      {
+        userKey: "tata",
+        playerId: "spain-362150",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: true,
+        isViceCaptain: false
+      }
+    ];
+    expect(
+      buildFantasyLeaderboard(espnRoster, scores, [
+        {
+          id: "spain-362150",
+          teamId: "spain",
+          name: "Lamine Yamal",
+          position: "Forward",
+          shirtNumber: 19
+        }
+      ])[0]
+    ).toMatchObject({
+      userKey: "tata",
+      points: 14,
+      captainPoints: 7
+    });
   });
 
   it("does not award fallback clean-sheet points to untracked squad players", () => {
