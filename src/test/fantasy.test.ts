@@ -5,6 +5,7 @@ import {
   buildFantasyScoresFromMatches,
   fantasyOptionMap,
   fantasyPlayerOptions,
+  normalizeFantasyRosterSlots,
   normalizeFantasyPosition,
   scoreFantasyPlayerMatch,
   validateFantasyRoster
@@ -234,5 +235,37 @@ describe("mini-fantasy scoring", () => {
     ];
 
     expect(validateFantasyRoster(slots, INITIAL_MATCHES, new Date("2026-06-01T12:00:00.000Z"))).toContain("duplicate");
+  });
+
+  it("keeps all 15 players when a starter is moved to a fifth bench spot", () => {
+    const slots: FantasyRosterSlot[] = [
+      ...Array.from({ length: 10 }, (_item, index) => ({
+        userKey: "tata" as const,
+        playerId: `starter-${index}`,
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: index,
+        isStarter: true,
+        isCaptain: index === 0,
+        isViceCaptain: false
+      })),
+      ...Array.from({ length: 5 }, (_item, index) => ({
+        userKey: "tata" as const,
+        playerId: index === 4 ? "usa-christian-pulisic" : `bench-${index}`,
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 11 + index,
+        isStarter: false,
+        isCaptain: false,
+        isViceCaptain: false
+      }))
+    ];
+
+    const normalized = normalizeFantasyRosterSlots(slots, "tata");
+    const slotIndexes = new Set(normalized.map((slot) => slot.slotIndex));
+
+    expect(normalized).toHaveLength(15);
+    expect(slotIndexes).toHaveLength(15);
+    expect(normalized.filter((slot) => !slot.isStarter)).toHaveLength(5);
+    expect(normalized.some((slot) => slot.playerId === "usa-christian-pulisic")).toBe(true);
+    expect(normalized.every((slot) => slot.slotIndex >= 0 && slot.slotIndex < 15)).toBe(true);
   });
 });

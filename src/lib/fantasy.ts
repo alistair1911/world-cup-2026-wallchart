@@ -208,6 +208,58 @@ export function validateFantasyRoster(
   return null;
 }
 
+export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?: UserKey): FantasyRosterSlot[] {
+  const seenPlayers = new Set<string>();
+  const board: Array<FantasyRosterSlot | null> = Array.from({ length: FANTASY_STARTERS }, () => null);
+  const bench: FantasyRosterSlot[] = [];
+
+  function nextOpenStarterIndex() {
+    return board.findIndex((slot) => !slot);
+  }
+
+  for (const slot of [...slots].sort((a, b) => a.slotIndex - b.slotIndex)) {
+    if (seenPlayers.has(slot.playerId)) {
+      continue;
+    }
+    seenPlayers.add(slot.playerId);
+
+    const normalized = {
+      ...slot,
+      userKey: userKey ?? slot.userKey,
+      roundId: slot.roundId || FANTASY_ROUND_ID
+    };
+
+    if (slot.isStarter) {
+      const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
+      const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
+      if (targetIndex >= 0) {
+        board[targetIndex] = { ...normalized, slotIndex: targetIndex, isStarter: true };
+        continue;
+      }
+    }
+
+    bench.push({ ...normalized, isStarter: false });
+  }
+
+  const usedIndexes = new Set(board.map((slot, index) => (slot ? index : null)).filter((index): index is number => index !== null));
+  const benchIndexOrder = [
+    ...Array.from({ length: FANTASY_SQUAD_SIZE - FANTASY_STARTERS }, (_item, index) => FANTASY_STARTERS + index),
+    ...Array.from({ length: FANTASY_STARTERS }, (_item, index) => index)
+  ];
+  const normalizedBench: FantasyRosterSlot[] = [];
+
+  for (const slot of bench) {
+    const slotIndex = benchIndexOrder.find((index) => !usedIndexes.has(index));
+    if (slotIndex === undefined) {
+      break;
+    }
+    usedIndexes.add(slotIndex);
+    normalizedBench.push({ ...slot, slotIndex, isStarter: false });
+  }
+
+  return [...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...normalizedBench].slice(0, FANTASY_SQUAD_SIZE);
+}
+
 function goalPoints(position: FantasyPosition) {
   if (position === "GK" || position === "DEF") {
     return 6;

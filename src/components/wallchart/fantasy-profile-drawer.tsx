@@ -14,6 +14,7 @@ import {
   fantasyOptionMap,
   fantasyPlayerOptions,
   isFantasyPlayerLocked,
+  normalizeFantasyRosterSlots,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
@@ -99,7 +100,7 @@ function normalizeDraftSlots(
   userKey: UserKey | null
 ) {
   const seen = new Set<string>();
-  const validSlots = slots
+  const canonicalSlots = slots
     .filter((slot) => {
       const canonicalId = optionMap.get(slot.playerId)?.id ?? slot.playerId;
       if (seen.has(canonicalId)) {
@@ -108,35 +109,16 @@ function normalizeDraftSlots(
       seen.add(canonicalId);
       return true;
     })
-    .slice(0, FANTASY_SQUAD_SIZE);
-  const board: Array<FantasyRosterSlot | null> = Array.from({ length: FANTASY_STARTERS }, () => null);
-  const bench: FantasyRosterSlot[] = [];
-  function nextOpenStarterIndex() {
-    return board.findIndex((slot) => !slot);
-  }
-
-  for (const slot of validSlots.sort((a, b) => a.slotIndex - b.slotIndex)) {
-    const canonicalId = optionMap.get(slot.playerId)?.id ?? slot.playerId;
-    const normalized = { ...slot, playerId: canonicalId, userKey: userKey ?? slot.userKey };
-    if (slot.isStarter) {
-      const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
-      const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
-      if (targetIndex >= 0) {
-        board[targetIndex] = { ...normalized, slotIndex: targetIndex, isStarter: true };
-        continue;
-      }
-    }
-    bench.push({ ...normalized, isStarter: false, isCaptain: false });
-  }
-
-  return [
-    ...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)),
-    ...bench.slice(0, FANTASY_SQUAD_SIZE - board.filter(Boolean).length).map((slot, index) => ({
+    .slice(0, FANTASY_SQUAD_SIZE)
+    .map((slot) => ({
       ...slot,
-      slotIndex: FANTASY_STARTERS + index,
-      isStarter: false
-    }))
-  ];
+      playerId: optionMap.get(slot.playerId)?.id ?? slot.playerId,
+      userKey: userKey ?? slot.userKey,
+      isCaptain: slot.isStarter ? slot.isCaptain : false,
+      isViceCaptain: slot.isStarter ? slot.isViceCaptain : false
+    }));
+
+  return normalizeFantasyRosterSlots(canonicalSlots, userKey ?? undefined);
 }
 
 function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
