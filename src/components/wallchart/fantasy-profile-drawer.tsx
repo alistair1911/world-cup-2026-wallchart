@@ -132,6 +132,21 @@ export function FantasyProfileDrawer({
   const [playerSearch, setPlayerSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const countryOptions = useMemo(() => {
+    const teams = new Map<string, FantasyPlayerOption["team"]>();
+    for (const option of options) {
+      teams.set(option.team.id, option.team);
+    }
+    return [...teams.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [options]);
+  const playerPool = useMemo(() => {
+    const search = playerSearch.trim().toLowerCase();
+    return options
+      .filter((option) => countryFilter === "all" || option.team.id === countryFilter)
+      .filter((option) => positionFilter === "all" || option.fantasyPosition === positionFilter)
+      .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
+      .slice(0, 80);
+  }, [countryFilter, options, playerSearch, positionFilter]);
 
   useEffect(() => {
     setDraft(savedSlots);
@@ -150,21 +165,6 @@ export function FantasyProfileDrawer({
   const starterSlots = draft.filter((slot) => slot.isStarter).slice(0, FANTASY_STARTERS);
   const benchSlots = draft.filter((slot) => !slot.isStarter);
   const selectedPlayerIds = new Set(draft.map((slot) => slot.playerId));
-  const countryOptions = useMemo(() => {
-    const teams = new Map<string, FantasyPlayerOption["team"]>();
-    for (const option of options) {
-      teams.set(option.team.id, option.team);
-    }
-    return [...teams.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [options]);
-  const playerPool = useMemo(() => {
-    const search = playerSearch.trim().toLowerCase();
-    return options
-      .filter((option) => countryFilter === "all" || option.team.id === countryFilter)
-      .filter((option) => positionFilter === "all" || option.fantasyPosition === positionFilter)
-      .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
-      .slice(0, 80);
-  }, [countryFilter, options, playerSearch, positionFilter]);
   const selectedTeams = new Set(
     draft
       .map((slot) => optionMap.get(slot.playerId)?.team)
