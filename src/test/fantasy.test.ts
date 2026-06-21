@@ -523,6 +523,51 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("scores fantasy rosters saved with provider ids when catalog rows are unavailable", () => {
+    const scores = [
+      {
+        matchId: "m-provider",
+        playerId: "argentina-lionel-messi",
+        teamId: "argentina",
+        points: 15,
+        goals: 3,
+        assists: 0,
+        cleanSheet: false,
+        yellowCards: 0,
+        redCards: 0,
+        ownGoals: 0,
+        penaltySaves: 0,
+        penaltyMisses: 0,
+        breakdown: { goals: 15 },
+        status: "confirmed" as const
+      }
+    ];
+
+    expect(resolveFantasyPlayerOption({ playerId: "argentina-45843" })?.id).toBe("argentina-lionel-messi");
+    expect(fantasyPlayerTotals("argentina-45843", scores)).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(
+      buildFantasyLeaderboard(
+        [
+          {
+            userKey: "tata",
+            playerId: "argentina-45843",
+            roundId: FANTASY_ROUND_ID,
+            slotIndex: 0,
+            isStarter: true,
+            isCaptain: false,
+            isViceCaptain: false
+          }
+        ],
+        scores
+      ).find((row) => row.userKey === "tata")
+    ).toMatchObject({
+      points: 15
+    });
+  });
+
   it("scores stat rows even when the match id is provider-shaped", () => {
     const scores = buildFantasyScoresFromMatches(
       INITIAL_MATCHES,

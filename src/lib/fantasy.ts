@@ -56,6 +56,10 @@ const familyDisplayName: Record<UserKey, string> = {
 };
 const lookupCache = new WeakMap<PlayerCatalogItem[], FantasyPlayerLookup>();
 let emptyLookupCache: FantasyPlayerLookup | null = null;
+const CURATED_PROVIDER_ALIASES: Record<string, string[]> = {
+  "argentina-lionel-messi": ["argentina-45843", "45843"],
+  "england-harry-kane": ["england-39836", "39836"]
+};
 
 export function normalizeFantasyPosition(position: string): FantasyPosition {
   const compact = position.toUpperCase();
@@ -216,6 +220,7 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
   for (const { player, team } of getAllPlayerProfiles()) {
     addOrMerge({
       id: player.id,
+      aliasIds: CURATED_PROVIDER_ALIASES[player.id],
       name: player.name,
       team,
       position: player.position,
