@@ -29,16 +29,6 @@ const USER_CONFIRMED_STAT_CORRECTIONS: KnownPlayerStatCorrection[] = [
   }
 ];
 
-function teamScoreForMatch(match: Match, teamId: string) {
-  if (match.homeTeamId === teamId) {
-    return match.homeScore;
-  }
-  if (match.awayTeamId === teamId) {
-    return match.awayScore;
-  }
-  return null;
-}
-
 function shouldApplyCorrection(correction: KnownPlayerStatCorrection, matches: Match[], now: Date) {
   const match = matches.find((item) => item.id === correction.matchId);
   if (!match) {
@@ -49,8 +39,7 @@ function shouldApplyCorrection(correction: KnownPlayerStatCorrection, matches: M
     return false;
   }
 
-  const teamScore = teamScoreForMatch(match, correction.teamId);
-  return typeof teamScore === "number" ? teamScore >= correction.goals : true;
+  return true;
 }
 
 function matchesCorrection(stat: PlayerMatchStat, correction: KnownPlayerStatCorrection, playerCatalog: PlayerCatalogItem[]) {
