@@ -2,6 +2,7 @@
 
 import { INITIAL_MATCHES } from "./tournament-data";
 import { FANTASY_ROUND_ID, normalizeFantasyRosterSlots } from "./fantasy";
+import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
 import type {
@@ -398,11 +399,12 @@ export async function loadTournamentState(): Promise<TournamentState> {
   const supabase = getSupabaseClient();
 
   if (!supabase) {
+    const matches = mergeMatches(readLocalMatches());
     return {
-      matches: mergeMatches(readLocalMatches()),
+      matches,
       predictions: readLocalPredictions(),
       comments: readLocalComments(),
-      playerStats: readLocalPlayerStats(),
+      playerStats: applyKnownPlayerStatCorrections(matches, readLocalPlayerStats()),
       playerCatalog: [],
       fantasyTeams: readLocalFantasyTeams(),
       fantasyRosters: readLocalFantasyRosters(),
@@ -568,11 +570,14 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
+    const matches = mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride));
+    const correctedPlayerStats = applyKnownPlayerStatCorrections(matches, playerStats, playerCatalog);
+
     return {
-      matches: mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)),
+      matches,
       predictions,
       comments,
-      playerStats,
+      playerStats: correctedPlayerStats,
       playerCatalog,
       fantasyTeams,
       fantasyRosters,

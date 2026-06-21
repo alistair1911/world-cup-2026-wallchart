@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { buildFantasyScoresFromMatches } from "@/lib/fantasy";
+import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
@@ -805,6 +806,51 @@ Aggregate duplicate player rows. Use team names from the listed matches. Only in
   }
 }
 
+function scoredGoalTotal(match: Match) {
+  return (match.homeScore ?? 0) + (match.awayScore ?? 0);
+}
+
+function statGoalTotalsByMatch(stats: PlayerMatchStat[]) {
+  const totals = new Map<string, number>();
+  for (const stat of stats) {
+    totals.set(stat.matchId, (totals.get(stat.matchId) ?? 0) + stat.goals);
+  }
+  return totals;
+}
+
+function playerStatRepairTargets(matches: Match[], stats: PlayerMatchStat[], force: boolean) {
+  const knownGoalsByMatch = statGoalTotalsByMatch(stats);
+
+  return matches
+    .filter((match) => {
+      if (!match.homeTeamId || !match.awayTeamId || match.status === "scheduled") {
+        return false;
+      }
+
+      if (!force && !isActiveSyncWindow(match)) {
+        return false;
+      }
+
+      const matchGoals = scoredGoalTotal(match);
+      return matchGoals > 0 && (knownGoalsByMatch.get(match.id) ?? 0) < matchGoals;
+    })
+    .map((match) => {
+      const home = getTeam(match.homeTeamId);
+      const away = getTeam(match.awayTeamId);
+      if (!home || !away) {
+        return null;
+      }
+
+      return {
+        match,
+        homeName: home.name,
+        awayName: away.name
+      };
+    })
+    .filter((target): target is LlmPlayerStatTarget => Boolean(target))
+    .slice(0, force ? 16 : 4);
+}
+
 async function fetchApiFootballFixtureEvents(fixtureId: string) {
   const key = process.env.API_FOOTBALL_KEY;
   if (!key) {
@@ -1194,8 +1240,53 @@ async function syncScores(request: NextRequest) {
         warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
       }
 
+      const currentMatchList = [...updatedMatchesById.values()];
+      const knownCorrections = missingKnownPlayerStatCorrections(currentMatchList, allPlayerStats, playerCatalog);
+      if (knownCorrections.length > 0) {
+        const { error } = await supabase
+          .from("player_match_stats")
+          .upsert(knownCorrections.map(playerStatToRow), { onConflict: "match_id,player_id" });
+        if (error) {
+          warning = [warning, `Known scorer corrections could not be saved: ${error.message}`].filter(Boolean).join(" ");
+        } else {
+          allPlayerStats.push(...knownCorrections);
+          playerStatsUpdated += knownCorrections.length;
+        }
+      }
+
+      const repairTargets = playerStatRepairTargets(currentMatchList, allPlayerStats, force);
+      if (repairTargets.length > 0) {
+        if (!process.env.OPENROUTER_API_KEY) {
+          warning = [warning, "Player scorer repair skipped because OPENROUTER_API_KEY is not configured."]
+            .filter(Boolean)
+            .join(" ");
+        } else {
+          try {
+            const repairedStats = await fetchOpenRouterPlayerStats(repairTargets);
+            if (repairedStats.length > 0) {
+              const { error } = await supabase
+                .from("player_match_stats")
+                .upsert(repairedStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
+              if (error) {
+                warning = [warning, `Player scorer repair could not be saved: ${error.message}`].filter(Boolean).join(" ");
+              } else {
+                allPlayerStats.push(...repairedStats);
+                playerStatsUpdated += repairedStats.length;
+              }
+            }
+          } catch (error) {
+            warning = [
+              warning,
+              error instanceof Error ? `Player scorer repair skipped: ${error.message}` : "Player scorer repair skipped."
+            ]
+              .filter(Boolean)
+              .join(" ");
+          }
+        }
+      }
+
       const matchIdsWithStats = new Set(allPlayerStats.map((stat) => stat.matchId));
-      const fantasyScoreMatches = [...updatedMatchesById.values()].filter(
+      const fantasyScoreMatches = currentMatchList.filter(
         (match) =>
           matchIdsWithStats.has(match.id) ||
           (match.status === "final" && match.homeScore !== null && match.awayScore !== null)

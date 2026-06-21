@@ -14,6 +14,7 @@ import {
   scoreFantasyPlayerMatch,
   validateFantasyRoster
 } from "@/lib/fantasy";
+import { applyKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { COMPLETE_SQUAD_MINIMUM, mergePlayerCatalog } from "@/lib/player-catalog";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
 import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
@@ -561,6 +562,7 @@ describe("mini-fantasy scoring", () => {
 
     expect(resolveFantasyPlayerOption({ playerId: "argentina-45843" })?.id).toBe("argentina-lionel-messi");
     expect(resolveFantasyPlayerOption({ playerId: "argentina-154" })?.id).toBe("argentina-lionel-messi");
+    expect(resolveFantasyPlayerOption({ playerId: "canada-8489" })?.id).toBe("canada-jonathan-david");
     expect(resolveFantasyPlayerOption({ playerId: "england-184" })?.id).toBe("england-harry-kane");
     expect(resolveFantasyPlayerOption({ playerId: "usa-225607" })?.id).toBe("usa-christian-pulisic");
     expect(fantasyPlayerTotals("argentina-45843", scores)).toMatchObject({
@@ -574,6 +576,29 @@ describe("mini-fantasy scoring", () => {
     expect(fantasyPlayerTotals("usa-225607", scores)).toMatchObject({
       points: 3,
       assists: 1
+    });
+    expect(
+      fantasyPlayerTotals("canada-8489", [
+        {
+          matchId: "m-provider-canada",
+          playerId: "canada-jonathan-david",
+          teamId: "canada",
+          points: 12,
+          goals: 3,
+          assists: 0,
+          cleanSheet: false,
+          yellowCards: 0,
+          redCards: 0,
+          ownGoals: 0,
+          penaltySaves: 0,
+          penaltyMisses: 0,
+          breakdown: { goals: 12 },
+          status: "confirmed" as const
+        }
+      ])
+    ).toMatchObject({
+      points: 12,
+      goals: 3
     });
     expect(
       buildFantasyLeaderboard(
@@ -738,6 +763,43 @@ describe("mini-fantasy scoring", () => {
     expect(buildFantasyLeaderboard(roster, scores).find((row) => row.userKey === "lucas")).toMatchObject({
       points: 33,
       captainPoints: 3
+    });
+  });
+
+  it("applies user-confirmed scorer corrections when production stats are missing", () => {
+    const matches = INITIAL_MATCHES.map((match) =>
+      match.id === "M19"
+        ? {
+            ...match,
+            status: "final" as const,
+            homeScore: 3,
+            awayScore: 1
+          }
+        : match.id === "M3"
+          ? {
+              ...match,
+              status: "final" as const,
+              homeScore: 3,
+              awayScore: 0
+            }
+          : match
+    );
+    const stats = applyKnownPlayerStatCorrections(matches, [], [], new Date("2026-06-21T12:00:00.000Z"));
+    const scores = buildFantasyScoresFromMatches(matches, stats);
+
+    expect(stats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ playerId: "argentina-lionel-messi", goals: 3 }),
+        expect.objectContaining({ playerId: "canada-jonathan-david", goals: 3 })
+      ])
+    );
+    expect(fantasyPlayerTotals("argentina-lionel-messi", scores)).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(fantasyPlayerTotals("canada-8489", scores)).toMatchObject({
+      points: 12,
+      goals: 3
     });
   });
 
