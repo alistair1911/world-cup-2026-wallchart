@@ -375,6 +375,69 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("merges provider middle-name catalog rows with curated fantasy stars", () => {
+    const playerCatalog = [
+      {
+        id: "argentina-45843",
+        teamId: "argentina",
+        name: "Lionel Andres Messi",
+        position: "Forward"
+      },
+      {
+        id: "england-39836",
+        teamId: "england",
+        name: "Harry Edward Kane",
+        position: "Forward"
+      }
+    ];
+    const messiMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const kaneMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "england" && item.awayTeamId === "croatia")!,
+      status: "live" as const,
+      homeScore: 2,
+      awayScore: 0
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [messiMatch, kaneMatch],
+      [
+        {
+          matchId: messiMatch.id,
+          playerId: "argentina-45843",
+          playerName: "Lionel Andres Messi",
+          teamId: "argentina",
+          goals: 3,
+          assists: 0
+        },
+        {
+          matchId: kaneMatch.id,
+          playerId: "england-kane",
+          playerName: "Kane",
+          teamId: "england",
+          goals: 2,
+          assists: 0
+        }
+      ],
+      playerCatalog
+    );
+
+    expect(fantasyScoreIdsForPlayer("argentina-lionel-messi", playerCatalog)).toEqual(
+      expect.arrayContaining(["argentina-45843", "argentina-lionel-messi", "argentina-messi"])
+    );
+    expect(scores.find((score) => fantasyScoreIdsForPlayer("argentina-lionel-messi", playerCatalog).includes(score.playerId))).toMatchObject({
+      points: 12,
+      goals: 3
+    });
+    expect(scores.find((score) => fantasyScoreIdsForPlayer("england-harry-kane", playerCatalog).includes(score.playerId))).toMatchObject({
+      points: 8,
+      goals: 2
+    });
+  });
+
   it("scores Lucas roster players from shortened stat names", () => {
     const messiMatch = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,

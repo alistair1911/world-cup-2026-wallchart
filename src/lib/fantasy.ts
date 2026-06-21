@@ -54,6 +54,8 @@ const familyDisplayName: Record<UserKey, string> = {
   tata: "Tata",
   lucas: "Lucas"
 };
+const lookupCache = new WeakMap<PlayerCatalogItem[], FantasyPlayerLookup>();
+let emptyLookupCache: FantasyPlayerLookup | null = null;
 
 export function normalizeFantasyPosition(position: string): FantasyPosition {
   const compact = position.toUpperCase();
@@ -89,8 +91,12 @@ function comparablePlayerName(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+function comparableIdentityName(value: string) {
+  return value.replace(/\b(andres|andres|edward|james|charles|philip|lewis|maria|de|da|dos|del|van|von|bin|al)\b/gi, " ");
+}
+
 function playerNameParts(value: string) {
-  return comparablePlayerName(value).split("-").filter(Boolean);
+  return comparablePlayerName(comparableIdentityName(value)).split("-").filter(Boolean);
 }
 
 function playerFullNameKeys(value: string) {
@@ -120,9 +126,17 @@ function teamNameKey(teamId: string, nameKey: string) {
   return `${teamId}:${nameKey}`;
 }
 
+function playerIdentityKey(teamId: string, name: string) {
+  const parts = playerNameParts(name);
+  const first = parts[0];
+  const last = parts.at(-1);
+  return first && last ? `${teamId}:${first[0]}-${last}` : `${teamId}:${comparablePlayerName(name)}`;
+}
+
 export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerOption[] {
   const byId = new Map<string, FantasyPlayerOption>();
   const byName = new Map<string, FantasyPlayerOption>();
+  const byIdentity = new Map<string, FantasyPlayerOption>();
 
   function playerKey(teamId: string, name: string) {
     return `${teamId}:${comparablePlayerName(name)}`;
@@ -130,7 +144,8 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
 
   function addOrMerge(option: FantasyPlayerOption) {
     const key = playerKey(option.team.id, option.name);
-    const existing = byName.get(key);
+    const identityKey = playerIdentityKey(option.team.id, option.name);
+    const existing = byName.get(key) ?? byIdentity.get(identityKey);
 
     if (existing) {
       const aliasIds = Array.from(
@@ -145,12 +160,16 @@ export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): F
         photoUrl: existing.photoUrl || option.photoUrl
       };
       byName.set(key, merged);
+      byName.set(playerKey(existing.team.id, existing.name), merged);
+      byIdentity.set(identityKey, merged);
+      byIdentity.set(playerIdentityKey(existing.team.id, existing.name), merged);
       byId.set(existing.id, merged);
       return;
     }
 
     const normalized = { ...option, aliasIds: option.aliasIds ?? [] };
     byName.set(key, normalized);
+    byIdentity.set(identityKey, normalized);
     byId.set(normalized.id, normalized);
   }
 
@@ -194,6 +213,15 @@ export function fantasyOptionMap(playerCatalog: PlayerCatalogItem[] = []) {
 }
 
 function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerLookup {
+  if (playerCatalog.length === 0 && emptyLookupCache) {
+    return emptyLookupCache;
+  }
+
+  const cached = lookupCache.get(playerCatalog);
+  if (cached) {
+    return cached;
+  }
+
   const options = fantasyPlayerOptions(playerCatalog);
   const nameKeyCounts = new Map<string, number>();
 
@@ -239,12 +267,20 @@ function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): Fant
     idsByOptionId.set(option.id, [...generatedIds]);
   }
 
-  return {
+  const lookup = {
     options,
     byId,
     byName,
     idsByOptionId
   };
+
+  if (playerCatalog.length === 0) {
+    emptyLookupCache = lookup;
+  } else {
+    lookupCache.set(playerCatalog, lookup);
+  }
+
+  return lookup;
 }
 
 export function resolveFantasyPlayerOption(
