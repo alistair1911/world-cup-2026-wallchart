@@ -8,10 +8,21 @@ import { Panel } from "@/components/ui/panel";
 import {
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
-  buildFantasyLeaderboard
+  buildFantasyLeaderboard,
+  buildFantasyScoresFromMatches,
+  mergeFantasyScores
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
-import type { FamilySession, FantasyPlayerMatchScore, FantasyRosterSlot, FantasyTeamSetting, Match, PlayerCatalogItem, UserKey } from "@/lib/types";
+import type {
+  FamilySession,
+  FantasyPlayerMatchScore,
+  FantasyRosterSlot,
+  FantasyTeamSetting,
+  Match,
+  PlayerCatalogItem,
+  PlayerMatchStat,
+  UserKey
+} from "@/lib/types";
 import { FantasyProfileDrawer } from "./fantasy-profile-drawer";
 
 type FantasyPanelProps = {
@@ -19,6 +30,7 @@ type FantasyPanelProps = {
   matches: Match[];
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
+  playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
   teamSettings: FantasyTeamSetting[];
   onSaveRoster: (slots: FantasyRosterSlot[]) => Promise<void>;
@@ -32,6 +44,7 @@ export function FantasyPanel({
   matches,
   rosters,
   scores,
+  playerStats,
   playerCatalog,
   teamSettings,
   onSaveRoster,
@@ -39,7 +52,11 @@ export function FantasyPanel({
   onSelectPlayer,
   onSelectTeam
 }: FantasyPanelProps) {
-  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
+  const displayScores = useMemo(() => {
+    const statScores = buildFantasyScoresFromMatches(matches, playerStats, playerCatalog);
+    return mergeFantasyScores(scores, statScores, playerCatalog);
+  }, [matches, playerCatalog, playerStats, scores]);
+  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, displayScores, playerCatalog), [displayScores, rosters, playerCatalog]);
   const ownRoster = useMemo(
     () => rosters.filter((slot) => slot.userKey === session.userKey).sort((a, b) => a.slotIndex - b.slotIndex),
     [rosters, session.userKey]
@@ -134,7 +151,7 @@ export function FantasyPanel({
         session={session}
         matches={matches}
         rosters={rosters}
-        scores={scores}
+        scores={displayScores}
         playerCatalog={playerCatalog}
         teamSettings={teamSettings}
         onClose={() => setSelectedFantasyUser(null)}

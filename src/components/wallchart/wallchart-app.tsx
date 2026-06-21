@@ -481,6 +481,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            playerStats={playerStats}
             playerCatalog={playerCatalog}
             teamSettings={fantasyTeams}
             onSaveRoster={handleSaveFantasyRoster}
@@ -563,6 +564,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            playerStats={playerStats}
             playerCatalog={playerCatalog}
             teamSettings={fantasyTeams}
             onSaveRoster={handleSaveFantasyRoster}
