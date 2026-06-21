@@ -82,6 +82,25 @@ function comparablePlayerName(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+function playerNameParts(value: string) {
+  return comparablePlayerName(value).split("-").filter(Boolean);
+}
+
+function playerFullNameKeys(value: string) {
+  const full = comparablePlayerName(value);
+  const parts = playerNameParts(value);
+  const last = parts.at(-1);
+  const initialLast = parts.length > 1 && last ? `${parts[0][0]}-${last}` : null;
+
+  return Array.from(new Set([full, initialLast].filter((key): key is string => Boolean(key))));
+}
+
+function playerLooseNameKeys(value: string) {
+  const parts = playerNameParts(value);
+  const last = parts.at(-1);
+  return last ? [last] : [];
+}
+
 export function fantasyPlayerOptions(playerCatalog: PlayerCatalogItem[] = []): FantasyPlayerOption[] {
   const byId = new Map<string, FantasyPlayerOption>();
   const byName = new Map<string, FantasyPlayerOption>();
@@ -342,11 +361,28 @@ export function buildFantasyScoresFromMatches(
     const idKey = `${stat.matchId}:${stat.playerId}`;
     statsById.set(idKey, mergeStat(statsById.get(idKey), stat));
 
-    const nameKey = `${stat.matchId}:${stat.teamId}:${comparablePlayerName(stat.playerName)}`;
-    statsByName.set(nameKey, [...(statsByName.get(nameKey) ?? []), stat]);
+    const playerIdSuffix = stat.playerId.startsWith(`${stat.teamId}-`) ? stat.playerId.slice(stat.teamId.length + 1) : "";
+    const statNameKeys = new Set([
+      ...playerFullNameKeys(stat.playerName),
+      ...playerLooseNameKeys(stat.playerName),
+      ...playerFullNameKeys(playerIdSuffix),
+      ...playerLooseNameKeys(playerIdSuffix)
+    ]);
+
+    for (const nameKey of statNameKeys) {
+      const key = `${stat.matchId}:${stat.teamId}:${nameKey}`;
+      statsByName.set(key, [...(statsByName.get(key) ?? []), stat]);
+    }
   }
 
   const profiles = fantasyPlayerOptions(playerCatalog);
+  const looseKeyCounts = profiles.reduce<Map<string, number>>((counts, option) => {
+    for (const looseNameKey of playerLooseNameKeys(option.name)) {
+      const key = `${option.team.id}:${looseNameKey}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, new Map());
   const scores: FantasyPlayerMatchScore[] = [];
 
   for (const match of matches) {
@@ -363,8 +399,17 @@ export function buildFantasyScoresFromMatches(
         }
       }
 
-      for (const stat of statsByName.get(`${match.id}:${option.team.id}:${comparablePlayerName(option.name)}`) ?? []) {
-        candidateStats.set(stat.playerId, stat);
+      const optionNameKeys = new Set(playerFullNameKeys(option.name));
+      for (const looseNameKey of playerLooseNameKeys(option.name)) {
+        if ((looseKeyCounts.get(`${option.team.id}:${looseNameKey}`) ?? 0) === 1) {
+          optionNameKeys.add(looseNameKey);
+        }
+      }
+
+      for (const optionNameKey of optionNameKeys) {
+        for (const stat of statsByName.get(`${match.id}:${option.team.id}:${optionNameKey}`) ?? []) {
+          candidateStats.set(stat.playerId, stat);
+        }
       }
 
       const stat = [...candidateStats.values()].reduce<PlayerMatchStat | null>(

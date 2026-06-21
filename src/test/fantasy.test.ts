@@ -315,6 +315,99 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("scores Lucas roster players from shortened stat names", () => {
+    const messiMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const davidMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "canada")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 0
+    };
+    const pulisicMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "usa" && item.awayTeamId === "paraguay")!,
+      status: "live" as const,
+      homeScore: 1,
+      awayScore: 0
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [messiMatch, davidMatch, pulisicMatch],
+      [
+        {
+          matchId: messiMatch.id,
+          playerId: "argentina-messi",
+          playerName: "Messi",
+          teamId: "argentina",
+          goals: 3,
+          assists: 0
+        },
+        {
+          matchId: davidMatch.id,
+          playerId: "canada-j-david",
+          playerName: "J. David",
+          teamId: "canada",
+          goals: 3,
+          assists: 0
+        },
+        {
+          matchId: pulisicMatch.id,
+          playerId: "usa-pulisic",
+          playerName: "Pulisic",
+          teamId: "usa",
+          goals: 0,
+          assists: 1
+        }
+      ]
+    );
+
+    const roster: FantasyRosterSlot[] = [
+      {
+        userKey: "lucas",
+        playerId: "argentina-lionel-messi",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: false
+      },
+      {
+        userKey: "lucas",
+        playerId: "canada-jonathan-david",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 1,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: false
+      },
+      {
+        userKey: "lucas",
+        playerId: "usa-christian-pulisic",
+        roundId: FANTASY_ROUND_ID,
+        slotIndex: 2,
+        isStarter: true,
+        isCaptain: true,
+        isViceCaptain: false
+      }
+    ];
+
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(scores.find((score) => score.playerId === "canada-jonathan-david")).toMatchObject({
+      points: 12,
+      goals: 3
+    });
+    expect(buildFantasyLeaderboard(roster, scores).find((row) => row.userKey === "lucas")).toMatchObject({
+      points: 33,
+      captainPoints: 3
+    });
+  });
+
   it("lets current stat-derived fantasy scores replace stale stored rows", () => {
     const match = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
