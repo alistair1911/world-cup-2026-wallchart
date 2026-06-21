@@ -465,6 +465,28 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("scores stat rows even when the match id is provider-shaped", () => {
+    const scores = buildFantasyScoresFromMatches(
+      INITIAL_MATCHES,
+      [
+        {
+          matchId: "provider-argentina-messi-legacy",
+          playerId: "Lionel Messi",
+          playerName: "Messi, Lionel",
+          teamId: "Argentina",
+          goals: 3,
+          assists: 0
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      matchId: "provider-argentina-messi-legacy",
+      points: 15,
+      goals: 3
+    });
+  });
+
   it("scores Lucas roster players from shortened stat names", () => {
     const messiMatch = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,

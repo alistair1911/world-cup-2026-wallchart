@@ -557,48 +557,55 @@ export function buildFantasyScoresFromMatches(
     );
   }
 
-  const profiles = fantasyPlayerOptions(playerCatalog);
+  const matchesById = new Map(matches.map((match) => [match.id, match]));
   const scores: FantasyPlayerMatchScore[] = [];
 
-  for (const match of matches) {
-    for (const option of profiles) {
-      if (option.team.id !== match.homeTeamId && option.team.id !== match.awayTeamId) {
-        continue;
-      }
+  for (const stat of statsByPlayer.values()) {
+    const option = resolveFantasyPlayerOption(
+      { playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId },
+      playerCatalog
+    );
+    if (!option) {
+      continue;
+    }
 
-      const stat = statsByPlayer.get(`${match.id}:${option.id}`);
-      if (!stat) {
-        continue;
-      }
+    const match = matchesById.get(stat.matchId);
+    const isMatchParticipant = match ? option.team.id === match.homeTeamId || option.team.id === match.awayTeamId : true;
+    if (!isMatchParticipant) {
+      continue;
+    }
 
+    let cleanSheet = false;
+    if (match) {
       const conceded =
         option.team.id === match.homeTeamId ? match.awayScore ?? null : option.team.id === match.awayTeamId ? match.homeScore ?? null : null;
-      const cleanSheet = match.status === "final" && conceded === 0;
-      const { points, breakdown } = scoreFantasyPlayerMatch({
-        position: option.fantasyPosition,
-        goals: stat.goals,
-        assists: stat.assists,
-        cleanSheet
-      });
-
-      scores.push({
-        matchId: match.id,
-        playerId: option.id,
-        teamId: option.team.id,
-        points,
-        goals: stat.goals,
-        assists: stat.assists,
-        cleanSheet,
-        yellowCards: 0,
-        redCards: 0,
-        ownGoals: 0,
-        penaltySaves: 0,
-        penaltyMisses: 0,
-        breakdown,
-        status: stat.assists ? "confirmed" : cleanSheet ? "needs_review" : "confirmed",
-        updatedAt: new Date().toISOString()
-      });
+      cleanSheet = match.status === "final" && conceded === 0;
     }
+
+    const { points, breakdown } = scoreFantasyPlayerMatch({
+      position: option.fantasyPosition,
+      goals: stat.goals,
+      assists: stat.assists,
+      cleanSheet
+    });
+
+    scores.push({
+      matchId: stat.matchId,
+      playerId: option.id,
+      teamId: option.team.id,
+      points,
+      goals: stat.goals,
+      assists: stat.assists,
+      cleanSheet,
+      yellowCards: 0,
+      redCards: 0,
+      ownGoals: 0,
+      penaltySaves: 0,
+      penaltyMisses: 0,
+      breakdown,
+      status: stat.assists ? "confirmed" : cleanSheet ? "needs_review" : "confirmed",
+      updatedAt: new Date().toISOString()
+    });
   }
 
   return scores;
