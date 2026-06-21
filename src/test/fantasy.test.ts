@@ -269,6 +269,52 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("matches player stats by team and player name when provider ids differ", () => {
+    const messiMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const pulisicMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "usa" && item.awayTeamId === "paraguay")!,
+      status: "live" as const,
+      homeScore: 1,
+      awayScore: 0
+    };
+
+    const scores = buildFantasyScoresFromMatches(
+      [messiMatch, pulisicMatch],
+      [
+        {
+          matchId: messiMatch.id,
+          playerId: "argentina-messi",
+          playerName: "Lionel Messi",
+          teamId: "argentina",
+          goals: 3,
+          assists: 0
+        },
+        {
+          matchId: pulisicMatch.id,
+          playerId: "usa-pulisic",
+          playerName: "Christian Pulisic",
+          teamId: "usa",
+          goals: 0,
+          assists: 1
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(scores.find((score) => score.playerId === "usa-christian-pulisic")).toMatchObject({
+      points: 3,
+      assists: 1
+    });
+  });
+
   it("lets current stat-derived fantasy scores replace stale stored rows", () => {
     const match = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,

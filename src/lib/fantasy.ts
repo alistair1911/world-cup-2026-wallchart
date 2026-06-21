@@ -322,9 +322,28 @@ export function buildFantasyScoresFromMatches(
   playerStats: PlayerMatchStat[],
   playerCatalog: PlayerCatalogItem[] = []
 ): FantasyPlayerMatchScore[] {
-  const statsByKey = new Map<string, PlayerMatchStat>();
+  const statsById = new Map<string, PlayerMatchStat>();
+  const statsByName = new Map<string, PlayerMatchStat[]>();
+
+  function mergeStat(existing: PlayerMatchStat | undefined, incoming: PlayerMatchStat): PlayerMatchStat {
+    if (!existing) {
+      return incoming;
+    }
+
+    return {
+      ...existing,
+      goals: Math.max(existing.goals, incoming.goals),
+      assists: Math.max(existing.assists, incoming.assists),
+      updatedAt: incoming.updatedAt ?? existing.updatedAt
+    };
+  }
+
   for (const stat of playerStats) {
-    statsByKey.set(`${stat.matchId}:${stat.playerId}`, stat);
+    const idKey = `${stat.matchId}:${stat.playerId}`;
+    statsById.set(idKey, mergeStat(statsById.get(idKey), stat));
+
+    const nameKey = `${stat.matchId}:${stat.teamId}:${comparablePlayerName(stat.playerName)}`;
+    statsByName.set(nameKey, [...(statsByName.get(nameKey) ?? []), stat]);
   }
 
   const profiles = fantasyPlayerOptions(playerCatalog);
@@ -336,9 +355,22 @@ export function buildFantasyScoresFromMatches(
         continue;
       }
 
-      const stat = [option.id, ...(option.aliasIds ?? [])]
-        .map((playerId) => statsByKey.get(`${match.id}:${playerId}`))
-        .find((row): row is PlayerMatchStat => Boolean(row));
+      const candidateStats = new Map<string, PlayerMatchStat>();
+      for (const playerId of [option.id, ...(option.aliasIds ?? [])]) {
+        const stat = statsById.get(`${match.id}:${playerId}`);
+        if (stat) {
+          candidateStats.set(stat.playerId, stat);
+        }
+      }
+
+      for (const stat of statsByName.get(`${match.id}:${option.team.id}:${comparablePlayerName(option.name)}`) ?? []) {
+        candidateStats.set(stat.playerId, stat);
+      }
+
+      const stat = [...candidateStats.values()].reduce<PlayerMatchStat | null>(
+        (current, candidate) => (current ? mergeStat(current, candidate) : candidate),
+        null
+      );
       if (!stat) {
         continue;
       }

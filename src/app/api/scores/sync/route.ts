@@ -1194,8 +1194,11 @@ async function syncScores(request: NextRequest) {
         warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
       }
 
+      const matchIdsWithStats = new Set(allPlayerStats.map((stat) => stat.matchId));
       const fantasyScoreMatches = [...updatedMatchesById.values()].filter(
-        (match) => match.status === "final" && match.homeScore !== null && match.awayScore !== null
+        (match) =>
+          matchIdsWithStats.has(match.id) ||
+          (match.status === "final" && match.homeScore !== null && match.awayScore !== null)
       );
       const fantasyScores = buildFantasyScoresFromMatches(fantasyScoreMatches, allPlayerStats, playerCatalog);
 
