@@ -1,5 +1,5 @@
 import { getAllPlayerProfiles, getPlayerProfile } from "./profile-data";
-import { getTeam } from "./tournament-data";
+import { TEAMS, getTeam } from "./tournament-data";
 import type {
   FantasyPlayerMatchScore,
   FantasyPosition,
@@ -84,6 +84,7 @@ function sortFantasyOptions(options: FantasyPlayerOption[]) {
 
 function comparablePlayerName(value: string) {
   return value
+    .replace(/\([^)]*\)/g, " ")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -92,7 +93,9 @@ function comparablePlayerName(value: string) {
 }
 
 function comparableIdentityName(value: string) {
-  return value.replace(/\b(andres|andres|edward|james|charles|philip|lewis|maria|de|da|dos|del|van|von|bin|al)\b/gi, " ");
+  const withoutMiddleNames = value.replace(/\b(andres|edward|james|charles|philip|lewis|maria|de|da|dos|del|van|von|bin|al)\b/gi, " ");
+  const commaParts = withoutMiddleNames.split(",").map((part) => part.trim()).filter(Boolean);
+  return commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : withoutMiddleNames;
 }
 
 function playerNameParts(value: string) {
@@ -124,6 +127,27 @@ function playerIdSuffix(teamId: string, playerId: string) {
 
 function teamNameKey(teamId: string, nameKey: string) {
   return `${teamId}:${nameKey}`;
+}
+
+function normalizeTeamId(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const direct = getTeam(value);
+  if (direct) {
+    return direct.id;
+  }
+
+  const normalized = comparablePlayerName(value);
+  return (
+    TEAMS.find(
+      (team) =>
+        comparablePlayerName(team.id) === normalized ||
+        comparablePlayerName(team.name) === normalized ||
+        comparablePlayerName(team.code) === normalized
+    )?.id ?? null
+  );
 }
 
 function playerIdentityKey(teamId: string, name: string) {
@@ -297,8 +321,9 @@ export function resolveFantasyPlayerOption(
   }
 
   const teamIds = new Set<string>();
-  if (input.teamId) {
-    teamIds.add(input.teamId);
+  const normalizedInputTeamId = normalizeTeamId(input.teamId);
+  if (normalizedInputTeamId) {
+    teamIds.add(normalizedInputTeamId);
   }
   if (input.playerId) {
     for (const option of lookup.options) {
@@ -310,6 +335,7 @@ export function resolveFantasyPlayerOption(
 
   const nameValues = [
     input.playerName ?? "",
+    input.playerId ?? "",
     ...[...teamIds].map((teamId) => (input.playerId ? playerIdSuffix(teamId, input.playerId) : "")).filter(Boolean)
   ].filter(Boolean);
 
@@ -583,6 +609,34 @@ export function mergeFantasyScores(
   derivedScores: FantasyPlayerMatchScore[],
   playerCatalog: PlayerCatalogItem[] = []
 ): FantasyPlayerMatchScore[] {
+  function normalizeScore(score: FantasyPlayerMatchScore): FantasyPlayerMatchScore {
+    const option = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
+    const { points, breakdown } = scoreFantasyPlayerMatch({
+      position: option?.fantasyPosition ?? normalizeFantasyPosition("Forward"),
+      goals: score.goals,
+      assists: score.assists,
+      cleanSheet: score.cleanSheet,
+      yellowCards: score.yellowCards,
+      redCards: score.redCards,
+      ownGoals: score.ownGoals,
+      penaltySaves: score.penaltySaves,
+      penaltyMisses: score.penaltyMisses
+    });
+    const hasStatValue =
+      score.goals > 0 ||
+      score.assists > 0 ||
+      score.cleanSheet ||
+      score.yellowCards > 0 ||
+      score.redCards > 0 ||
+      score.ownGoals > 0 ||
+      score.penaltySaves > 0 ||
+      score.penaltyMisses > 0;
+
+    const normalizedScore = option ? { ...score, playerId: option.id, teamId: option.team.id } : score;
+
+    return hasStatValue && normalizedScore.points !== points ? { ...normalizedScore, points, breakdown } : normalizedScore;
+  }
+
   const keyFor = (score: FantasyPlayerMatchScore) => {
     const option = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
     return `${score.matchId}:${option?.id ?? score.playerId}`;
@@ -590,10 +644,12 @@ export function mergeFantasyScores(
 
   const merged = new Map<string, FantasyPlayerMatchScore>();
   for (const score of storedScores) {
-    merged.set(keyFor(score), score);
+    const normalized = normalizeScore(score);
+    merged.set(keyFor(normalized), normalized);
   }
   for (const score of derivedScores) {
-    merged.set(keyFor(score), score);
+    const normalized = normalizeScore(score);
+    merged.set(keyFor(normalized), normalized);
   }
   return [...merged.values()];
 }

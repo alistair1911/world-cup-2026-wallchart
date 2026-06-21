@@ -438,6 +438,33 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("scores legacy manual stat rows with team names and player-name ids", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "Lionel Messi",
+          playerName: "Messi, Lionel",
+          teamId: "Argentina",
+          goals: 3,
+          assists: 0
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+  });
+
   it("scores Lucas roster players from shortened stat names", () => {
     const messiMatch = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
@@ -556,6 +583,38 @@ describe("mini-fantasy scoring", () => {
     expect(mergeFantasyScores(staleStored, derived).find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
       points: 15,
       goals: 3
+    });
+  });
+
+  it("repairs stored fantasy score rows that have goals but stale zero points", () => {
+    const repaired = mergeFantasyScores(
+      [
+        {
+          matchId: "m19",
+          playerId: "Lionel Messi",
+          teamId: "Argentina",
+          points: 0,
+          goals: 3,
+          assists: 0,
+          cleanSheet: false,
+          yellowCards: 0,
+          redCards: 0,
+          ownGoals: 0,
+          penaltySaves: 0,
+          penaltyMisses: 0,
+          breakdown: {},
+          status: "confirmed"
+        }
+      ],
+      []
+    );
+
+    expect(repaired[0]).toMatchObject({
+      playerId: "argentina-lionel-messi",
+      teamId: "argentina",
+      points: 15,
+      goals: 3,
+      breakdown: expect.objectContaining({ goals: 15 })
     });
   });
 
