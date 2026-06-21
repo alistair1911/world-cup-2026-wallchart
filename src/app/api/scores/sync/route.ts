@@ -689,7 +689,56 @@ function readOpenRouterContent(data: unknown) {
 function parseJsonContent(content: string) {
   const trimmed = content.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(fenced ? fenced[1] : trimmed);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const jsonObject = firstJsonObject(candidate);
+    if (jsonObject) {
+      return JSON.parse(jsonObject);
+    }
+    throw new Error("No valid JSON object found.");
+  }
+}
+
+function firstJsonObject(value: string) {
+  const start = value.indexOf("{");
+  if (start < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseLlmPlayerStats(payload: unknown, targets: LlmPlayerStatTarget[]) {
