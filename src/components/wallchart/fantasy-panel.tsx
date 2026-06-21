@@ -52,10 +52,8 @@ export function FantasyPanel({
   onSelectPlayer,
   onSelectTeam
 }: FantasyPanelProps) {
-  const displayScores = useMemo(() => {
-    const statScores = buildFantasyScoresFromMatches(matches, playerStats, playerCatalog);
-    return mergeFantasyScores(scores, statScores, playerCatalog);
-  }, [matches, playerCatalog, playerStats, scores]);
+  const statScores = useMemo(() => buildFantasyScoresFromMatches(matches, playerStats, playerCatalog), [matches, playerCatalog, playerStats]);
+  const displayScores = useMemo(() => mergeFantasyScores(scores, statScores, playerCatalog), [playerCatalog, scores, statScores]);
   const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, displayScores, playerCatalog), [displayScores, rosters, playerCatalog]);
   const ownRoster = useMemo(
     () => rosters.filter((slot) => slot.userKey === session.userKey).sort((a, b) => a.slotIndex - b.slotIndex),
@@ -152,6 +150,9 @@ export function FantasyPanel({
         matches={matches}
         rosters={rosters}
         scores={displayScores}
+        storedScores={scores}
+        statScores={statScores}
+        playerStats={playerStats}
         playerCatalog={playerCatalog}
         teamSettings={teamSettings}
         onClose={() => setSelectedFantasyUser(null)}

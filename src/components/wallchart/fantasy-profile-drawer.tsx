@@ -13,9 +13,11 @@ import {
   buildFantasyLeaderboard,
   fantasyOptionMap,
   fantasyPlayerOptions,
+  fantasyScoreIdsForPlayer,
   fantasyPlayerTotals,
   isFantasyPlayerLocked,
   normalizeFantasyRosterSlots,
+  resolveFantasyPlayerOption,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
@@ -26,6 +28,7 @@ import type {
   FantasyTeamSetting,
   Match,
   PlayerCatalogItem,
+  PlayerMatchStat,
   UserKey
 } from "@/lib/types";
 import { Flag } from "./flag";
@@ -36,6 +39,9 @@ type FantasyProfileDrawerProps = {
   matches: Match[];
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
+  storedScores: FantasyPlayerMatchScore[];
+  statScores: FantasyPlayerMatchScore[];
+  playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
   teamSettings: FantasyTeamSetting[];
   onClose: () => void;
@@ -46,6 +52,12 @@ type FantasyProfileDrawerProps = {
 };
 
 const FORMATIONS = ["4-3-3", "4-2-3-1", "3-4-3", "3-5-2", "4-4-2", "5-3-2"] as const;
+const TRACE_TARGETS = [
+  { id: "argentina-lionel-messi", label: "Messi", terms: ["messi", "lionel", "154", "45843"] },
+  { id: "england-harry-kane", label: "Kane", terms: ["kane", "harry", "184", "39836"] },
+  { id: "usa-christian-pulisic", label: "Pulisic", terms: ["pulisic", "christian", "225607"] },
+  { id: "canada-jonathan-david", label: "David", terms: ["jonathan", "david"] }
+] as const;
 
 const FORMATION_LINES: Record<string, Array<{ id: string; label: string; count: number }>> = {
   "4-3-3": [
@@ -128,12 +140,116 @@ function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
     .join("|")}`;
 }
 
+function scoreSummary(rows: FantasyPlayerMatchScore[]) {
+  return rows.reduce(
+    (total, row) => ({
+      points: total.points + row.points,
+      goals: total.goals + row.goals,
+      assists: total.assists + row.assists
+    }),
+    { points: 0, goals: 0, assists: 0 }
+  );
+}
+
+function matchesTraceTerms(value: string, terms: readonly string[]) {
+  const lower = value.toLowerCase();
+  return terms.some((term) => lower.includes(term));
+}
+
+function resolveTraceScoreRows(playerId: string, rows: FantasyPlayerMatchScore[], playerCatalog: PlayerCatalogItem[]) {
+  const ids = new Set(fantasyScoreIdsForPlayer(playerId, playerCatalog));
+  const targetId = resolveFantasyPlayerOption({ playerId }, playerCatalog)?.id ?? playerId;
+  return rows.filter((row) => {
+    const option = resolveFantasyPlayerOption({ playerId: row.playerId, teamId: row.teamId }, playerCatalog);
+    return (option?.id ?? row.playerId) === targetId || ids.has(row.playerId);
+  });
+}
+
+function FantasyPointTrace({
+  slots,
+  playerStats,
+  storedScores,
+  statScores,
+  scores,
+  playerCatalog
+}: {
+  slots: FantasyRosterSlot[];
+  playerStats: PlayerMatchStat[];
+  storedScores: FantasyPlayerMatchScore[];
+  statScores: FantasyPlayerMatchScore[];
+  scores: FantasyPlayerMatchScore[];
+  playerCatalog: PlayerCatalogItem[];
+}) {
+  const rows = TRACE_TARGETS.map((target) => {
+    const ids = new Set(fantasyScoreIdsForPlayer(target.id, playerCatalog));
+    const rosterRows = slots.filter((slot) => {
+      const option = resolveFantasyPlayerOption({ playerId: slot.playerId }, playerCatalog);
+      return (option?.id ?? slot.playerId) === target.id || ids.has(slot.playerId) || matchesTraceTerms(slot.playerId, target.terms);
+    });
+    const statRows = playerStats.filter((stat) => {
+      const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId }, playerCatalog);
+      return (
+        (option?.id ?? stat.playerId) === target.id ||
+        ids.has(stat.playerId) ||
+        matchesTraceTerms(`${stat.playerId} ${stat.playerName} ${stat.teamId}`, target.terms)
+      );
+    });
+    const storedRows = resolveTraceScoreRows(target.id, storedScores, playerCatalog);
+    const derivedRows = resolveTraceScoreRows(target.id, statScores, playerCatalog);
+    const mergedRows = resolveTraceScoreRows(target.id, scores, playerCatalog);
+
+    return {
+      target,
+      rosterRows,
+      statRows,
+      stored: scoreSummary(storedRows),
+      derived: scoreSummary(derivedRows),
+      merged: scoreSummary(mergedRows),
+      storedRows,
+      derivedRows,
+      mergedRows
+    };
+  }).filter((row) => row.rosterRows.length > 0 || row.statRows.length > 0 || row.storedRows.length > 0 || row.derivedRows.length > 0 || row.mergedRows.length > 0);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="rounded-lg bg-white p-4 ring-1 ring-amber-200">
+      <summary className="cursor-pointer text-sm font-black uppercase text-amber-800">Fantasy Data Trace</summary>
+      <div className="mt-3 space-y-3">
+        {rows.map((row) => (
+          <div key={row.target.id} className="rounded-md bg-amber-50 p-3 text-[11px] font-bold text-amber-950 ring-1 ring-amber-100">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-black uppercase">{row.target.label}</span>
+              <span>Merged {row.merged.points} pts / G {row.merged.goals} / A {row.merged.assists}</span>
+            </div>
+            <div className="mt-2 grid gap-1">
+              <div>Roster: {row.rosterRows.map((slot) => slot.playerId).join(", ") || "none"}</div>
+              <div>
+                Stats:{" "}
+                {row.statRows.map((stat) => `${stat.playerId} ${stat.playerName} ${stat.teamId} G${stat.goals} A${stat.assists}`).join(" | ") || "none"}
+              </div>
+              <div>Stored: {row.stored.points} pts / G {row.stored.goals} / A {row.stored.assists}</div>
+              <div>Derived: {row.derived.points} pts / G {row.derived.goals} / A {row.derived.assists}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function FantasyProfileDrawer({
   userKey,
   session,
   matches,
   rosters,
   scores,
+  storedScores,
+  statScores,
+  playerStats,
   playerCatalog,
   teamSettings,
   onClose,
@@ -632,6 +748,15 @@ export function FantasyProfileDrawer({
                 )}
               </div>
             </div>
+
+            <FantasyPointTrace
+              slots={normalizedDraft}
+              playerStats={playerStats}
+              storedScores={storedScores}
+              statScores={statScores}
+              scores={scores}
+              playerCatalog={playerCatalog}
+            />
 
             <ScoringRulesPanel />
 
