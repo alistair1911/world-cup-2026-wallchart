@@ -16,7 +16,7 @@ import {
 } from "@/lib/fantasy";
 import { COMPLETE_SQUAD_MINIMUM, mergePlayerCatalog } from "@/lib/player-catalog";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
-import type { FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
+import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
 
 describe("mini-fantasy scoring", () => {
   it("scores goals by fantasy position and adds assists and clean sheets", () => {
@@ -524,7 +524,7 @@ describe("mini-fantasy scoring", () => {
   });
 
   it("scores fantasy rosters saved with provider ids when catalog rows are unavailable", () => {
-    const scores = [
+    const scores: FantasyPlayerMatchScore[] = [
       {
         matchId: "m-provider",
         playerId: "argentina-lionel-messi",
@@ -540,20 +540,47 @@ describe("mini-fantasy scoring", () => {
         penaltyMisses: 0,
         breakdown: { goals: 15 },
         status: "confirmed" as const
+      },
+      {
+        matchId: "m-provider-usa",
+        playerId: "usa-christian-pulisic",
+        teamId: "usa",
+        points: 3,
+        goals: 0,
+        assists: 1,
+        cleanSheet: false,
+        yellowCards: 0,
+        redCards: 0,
+        ownGoals: 0,
+        penaltySaves: 0,
+        penaltyMisses: 0,
+        breakdown: { assists: 3 },
+        status: "confirmed" as const
       }
     ];
 
     expect(resolveFantasyPlayerOption({ playerId: "argentina-45843" })?.id).toBe("argentina-lionel-messi");
+    expect(resolveFantasyPlayerOption({ playerId: "argentina-154" })?.id).toBe("argentina-lionel-messi");
+    expect(resolveFantasyPlayerOption({ playerId: "england-184" })?.id).toBe("england-harry-kane");
+    expect(resolveFantasyPlayerOption({ playerId: "usa-225607" })?.id).toBe("usa-christian-pulisic");
     expect(fantasyPlayerTotals("argentina-45843", scores)).toMatchObject({
       points: 15,
       goals: 3
+    });
+    expect(fantasyPlayerTotals("argentina-154", scores)).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(fantasyPlayerTotals("usa-225607", scores)).toMatchObject({
+      points: 3,
+      assists: 1
     });
     expect(
       buildFantasyLeaderboard(
         [
           {
             userKey: "tata",
-            playerId: "argentina-45843",
+            playerId: "argentina-154",
             roundId: FANTASY_ROUND_ID,
             slotIndex: 0,
             isStarter: true,
