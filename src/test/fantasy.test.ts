@@ -489,6 +489,40 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("scores provider-shaped stat rows when names uniquely identify the player", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "45843",
+          playerName: "Lionel Messi",
+          teamId: "202",
+          goals: 3,
+          assists: 0
+        }
+      ]
+    );
+
+    expect(resolveFantasyPlayerOption({ playerId: "45843", playerName: "Lionel Messi", teamId: "202" })?.id).toBe(
+      "argentina-lionel-messi"
+    );
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(fantasyPlayerTotals("argentina-lionel-messi", scores)).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+  });
+
   it("scores stat rows even when the match id is provider-shaped", () => {
     const scores = buildFantasyScoresFromMatches(
       INITIAL_MATCHES,

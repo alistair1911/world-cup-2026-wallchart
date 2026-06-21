@@ -307,6 +307,32 @@ function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): Fant
   return lookup;
 }
 
+function optionNameValues(option: FantasyPlayerOption) {
+  const ids = [option.id, ...(option.aliasIds ?? [])];
+  return [option.name, ...ids.map((id) => playerIdSuffix(option.team.id, id)).filter(Boolean)];
+}
+
+function resolveUniqueOptionByName(nameValues: string[], lookup: FantasyPlayerLookup) {
+  function findUnique(keysFor: (value: string) => string[]) {
+    const targetKeys = new Set(nameValues.flatMap(keysFor));
+    if (targetKeys.size === 0) {
+      return null;
+    }
+
+    const matches = new Map<string, FantasyPlayerOption>();
+    for (const option of lookup.options) {
+      const optionKeys = new Set(optionNameValues(option).flatMap(keysFor));
+      if ([...targetKeys].some((key) => optionKeys.has(key))) {
+        matches.set(option.id, option);
+      }
+    }
+
+    return matches.size === 1 ? [...matches.values()][0] : null;
+  }
+
+  return findUnique(playerFullNameKeys) ?? findUnique(playerLooseNameKeys);
+}
+
 export function resolveFantasyPlayerOption(
   input: { playerId?: string | null; playerName?: string | null; teamId?: string | null },
   playerCatalog: PlayerCatalogItem[] = []
@@ -350,7 +376,7 @@ export function resolveFantasyPlayerOption(
     }
   }
 
-  return null;
+  return resolveUniqueOptionByName(nameValues, lookup);
 }
 
 export function fantasyScoreIdsForPlayer(playerId: string, playerCatalog: PlayerCatalogItem[] = []) {
