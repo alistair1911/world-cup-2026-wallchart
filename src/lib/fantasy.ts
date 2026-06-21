@@ -636,13 +636,10 @@ export function buildFantasyScoresFromMatches(
     }
 
     const match = matchesById.get(stat.matchId);
-    const isMatchParticipant = match ? option.team.id === match.homeTeamId || option.team.id === match.awayTeamId : true;
-    if (!isMatchParticipant) {
-      continue;
-    }
+    const isMatchParticipant = match ? option.team.id === match.homeTeamId || option.team.id === match.awayTeamId : false;
 
     let cleanSheet = false;
-    if (match) {
+    if (match && isMatchParticipant) {
       const conceded =
         option.team.id === match.homeTeamId ? match.awayScore ?? null : option.team.id === match.awayTeamId ? match.homeScore ?? null : null;
       cleanSheet = match.status === "final" && conceded === 0;
