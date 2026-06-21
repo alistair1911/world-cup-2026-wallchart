@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, MessageCircle, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
+import { Check, MessageCircle, Plus, Send, Sparkles, Lock, Save, Trash2, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
+import { fantasyPlayerOptions, resolveFantasyPlayerOption } from "@/lib/fantasy";
 import { getTeamProfile } from "@/lib/profile-data";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
@@ -16,6 +17,8 @@ import type {
   GroupLetter,
   Match,
   MatchComment,
+  PlayerCatalogItem,
+  PlayerMatchStat,
   Prediction,
   StandingRow,
   Team,
@@ -36,7 +39,18 @@ type MatchDrawerProps = {
   onSaveResult: (match: Match) => Promise<void>;
   onSavePrediction: (prediction: Prediction) => Promise<void>;
   onSaveComment: (matchId: string, body: string) => Promise<void>;
+  onSavePlayerStats: (matchId: string, stats: PlayerMatchStat[]) => Promise<void>;
   onSelectTeam: (teamId: string) => void;
+  playerStats: PlayerMatchStat[];
+  playerCatalog: PlayerCatalogItem[];
+};
+
+type PlayerStatDraft = {
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  goals: string;
+  assists: string;
 };
 
 function scoreToText(value: number | null) {
@@ -66,7 +80,10 @@ export function MatchDrawer({
   onSaveResult,
   onSavePrediction,
   onSaveComment,
-  onSelectTeam
+  onSavePlayerStats,
+  onSelectTeam,
+  playerStats,
+  playerCatalog
 }: MatchDrawerProps) {
   const teams = useMemo(() => (match ? getMatchTeams(match, standings) : { home: null, away: null }), [match, standings]);
   const [homeScore, setHomeScore] = useState("");
@@ -77,6 +94,7 @@ export function MatchDrawer({
   const [predictionAway, setPredictionAway] = useState("");
   const [predictionWinnerId, setPredictionWinnerId] = useState("");
   const [commentBody, setCommentBody] = useState("");
+  const [statDrafts, setStatDrafts] = useState<PlayerStatDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -94,6 +112,14 @@ export function MatchDrawer({
     () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
     [match, resolvedHome, resolvedAway]
   );
+  const statPlayerOptions = useMemo(
+    () =>
+      fantasyPlayerOptions(playerCatalog).filter(
+        (option) => option.team.id === resolvedHome?.id || option.team.id === resolvedAway?.id
+      ),
+    [playerCatalog, resolvedAway?.id, resolvedHome?.id]
+  );
+  const statPlayerOptionMap = useMemo(() => new Map(statPlayerOptions.map((option) => [option.id, option])), [statPlayerOptions]);
 
   useEffect(() => {
     if (!match) {
@@ -110,6 +136,31 @@ export function MatchDrawer({
     setCommentBody("");
     setMessage(null);
   }, [match, ownPrediction?.homeScore, ownPrediction?.awayScore, ownPrediction?.predictedWinnerTeamId]);
+
+  useEffect(() => {
+    if (!match) {
+      return;
+    }
+
+    setStatDrafts(
+      playerStats
+        .filter((stat) => stat.matchId === match.id && (stat.goals > 0 || stat.assists > 0))
+        .map((stat) => {
+          const option = resolveFantasyPlayerOption(
+            { playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId },
+            playerCatalog
+          );
+
+          return {
+            playerId: option?.id ?? stat.playerId,
+            playerName: option?.name ?? stat.playerName,
+            teamId: option?.team.id ?? stat.teamId,
+            goals: stat.goals ? String(stat.goals) : "",
+            assists: stat.assists ? String(stat.assists) : ""
+          };
+        })
+    );
+  }, [match, playerCatalog, playerStats]);
 
   if (!match) {
     return null;
@@ -182,6 +233,95 @@ export function MatchDrawer({
       setMessage("Comment added.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save comment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function statNumber(value: string) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(20, parsed)) : 0;
+  }
+
+  function addStatDraft() {
+    const next = statPlayerOptions.find((option) => !statDrafts.some((draft) => draft.playerId === option.id));
+    if (!next) {
+      return;
+    }
+
+    setStatDrafts((current) => [
+      ...current,
+      {
+        playerId: next.id,
+        playerName: next.name,
+        teamId: next.team.id,
+        goals: "",
+        assists: ""
+      }
+    ]);
+  }
+
+  function updateStatDraft(index: number, updates: Partial<PlayerStatDraft>) {
+    setStatDrafts((current) => current.map((draft, draftIndex) => (draftIndex === index ? { ...draft, ...updates } : draft)));
+  }
+
+  function selectStatPlayer(index: number, playerId: string) {
+    const option = statPlayerOptionMap.get(playerId);
+    if (!option) {
+      return;
+    }
+
+    updateStatDraft(index, {
+      playerId: option.id,
+      playerName: option.name,
+      teamId: option.team.id
+    });
+  }
+
+  async function handlePlayerStatsSave() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const statsByPlayer = new Map<string, PlayerMatchStat>();
+      for (const draft of statDrafts) {
+        const next = {
+          matchId: activeMatch.id,
+          playerId: draft.playerId,
+          playerName: draft.playerName,
+          teamId: draft.teamId,
+          goals: statNumber(draft.goals),
+          assists: statNumber(draft.assists),
+          updatedBy: session.userKey,
+          updatedAt: new Date().toISOString()
+        } satisfies PlayerMatchStat;
+
+        if (next.goals <= 0 && next.assists <= 0) {
+          continue;
+        }
+
+        const existing = statsByPlayer.get(next.playerId);
+        statsByPlayer.set(next.playerId, {
+          ...next,
+          goals: Math.max(existing?.goals ?? 0, next.goals),
+          assists: Math.max(existing?.assists ?? 0, next.assists)
+        });
+      }
+
+      const stats = [...statsByPlayer.values()];
+
+      await onSavePlayerStats(activeMatch.id, stats);
+      setStatDrafts(
+        stats.map((stat) => ({
+          playerId: stat.playerId,
+          playerName: stat.playerName,
+          teamId: stat.teamId,
+          goals: stat.goals ? String(stat.goals) : "",
+          assists: stat.assists ? String(stat.assists) : ""
+        }))
+      );
+      setMessage("Player stats saved. Fantasy points updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save player stats.");
     } finally {
       setSaving(false);
     }
@@ -358,10 +498,66 @@ export function MatchDrawer({
               <div>
                 <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
                 <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                  Goals and assists sync automatically from fixture events after the score provider confirms the match.
+                  Goals and assists feed Mini-Fantasy points. Provider sync can fill this, and you can correct it here.
                 </p>
               </div>
-              <Badge tone="slate">Auto</Badge>
+              <Badge tone="green">Fantasy source</Badge>
+            </div>
+            <div className="mt-3 space-y-2">
+              {statDrafts.length === 0 ? (
+                <div className="rounded-md border border-dashed border-slate-300 bg-white/70 p-3 text-center text-xs font-bold text-slate-500">
+                  No player stats recorded yet.
+                </div>
+              ) : null}
+              {statDrafts.map((draft, index) => (
+                <div key={`${draft.playerId}-${index}`} className="grid grid-cols-[1fr_58px_58px_36px] items-center gap-2 rounded-md bg-white p-2 ring-1 ring-slate-200">
+                  <select
+                    value={draft.playerId}
+                    onChange={(event) => selectStatPlayer(index, event.target.value)}
+                    className="h-10 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink outline-none focus:border-cup-gold"
+                  >
+                    {statPlayerOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.team.code} - {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    aria-label={`${draft.playerName} goals`}
+                    className="h-10 text-center text-sm font-black"
+                    inputMode="numeric"
+                    placeholder="G"
+                    value={draft.goals}
+                    onChange={(event) => updateStatDraft(index, { goals: event.target.value.replace(/\D/g, "").slice(0, 2) })}
+                  />
+                  <Input
+                    aria-label={`${draft.playerName} assists`}
+                    className="h-10 text-center text-sm font-black"
+                    inputMode="numeric"
+                    placeholder="A"
+                    value={draft.assists}
+                    onChange={(event) => updateStatDraft(index, { assists: event.target.value.replace(/\D/g, "").slice(0, 2) })}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setStatDrafts((current) => current.filter((_draft, draftIndex) => draftIndex !== index))}
+                    aria-label={`Remove ${draft.playerName} stats`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="secondary" onClick={addStatDraft} disabled={statPlayerOptions.length === 0}>
+                <Plus className="h-4 w-4" />
+                Add Player
+              </Button>
+              <Button onClick={handlePlayerStatsSave} disabled={saving}>
+                <Save className="h-4 w-4" />
+                Save Stats
+              </Button>
             </div>
           </section>
 

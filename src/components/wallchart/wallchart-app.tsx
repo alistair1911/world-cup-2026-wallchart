@@ -25,6 +25,7 @@ import {
   saveFantasyRoster,
   saveFantasyTeamSettings,
   saveMatchResult,
+  savePlayerStats,
   savePrediction,
   syncLiveScores
 } from "@/lib/store";
@@ -247,6 +248,16 @@ export function WallchartApp() {
 
     const saved = await saveFantasyTeamSettings(session, settings);
     setFantasyTeams((current) => [...current.filter((team) => team.userKey !== session.userKey), saved]);
+  }
+
+  async function handleSavePlayerStats(matchId: string, stats: PlayerMatchStat[]) {
+    if (!session) {
+      return;
+    }
+
+    const cleaned = stats.filter((stat) => stat.goals > 0 || stat.assists > 0);
+    await savePlayerStats(session, matchId, cleaned);
+    setPlayerStats((current) => [...current.filter((stat) => stat.matchId !== matchId), ...cleaned]);
   }
 
   async function handleAddFantasyPlayer(playerId: string) {
@@ -572,7 +583,10 @@ export function WallchartApp() {
         onSaveResult={handleSaveResult}
         onSavePrediction={handleSavePrediction}
         onSaveComment={handleSaveComment}
+        onSavePlayerStats={handleSavePlayerStats}
         onSelectTeam={setSelectedTeamId}
+        playerStats={playerStats}
+        playerCatalog={playerCatalog}
       />
       <TeamProfileDrawer
         teamId={selectedTeamId}

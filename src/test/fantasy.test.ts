@@ -5,9 +5,11 @@ import {
   buildFantasyScoresFromMatches,
   fantasyOptionMap,
   fantasyPlayerOptions,
+  fantasyScoreIdsForPlayer,
   mergeFantasyScores,
   normalizeFantasyRosterSlots,
   normalizeFantasyPosition,
+  resolveFantasyPlayerOption,
   scoreFantasyPlayerMatch,
   validateFantasyRoster
 } from "@/lib/fantasy";
@@ -312,6 +314,64 @@ describe("mini-fantasy scoring", () => {
     expect(scores.find((score) => score.playerId === "usa-christian-pulisic")).toMatchObject({
       points: 3,
       assists: 1
+    });
+  });
+
+  it("generates unique canonical player aliases across teams", () => {
+    expect(resolveFantasyPlayerOption({ teamId: "argentina", playerName: "L. Messi" })?.id).toBe("argentina-lionel-messi");
+    expect(resolveFantasyPlayerOption({ teamId: "england", playerName: "Kane" })?.id).toBe("england-harry-kane");
+    expect(resolveFantasyPlayerOption({ teamId: "canada", playerName: "J. David" })?.id).toBe("canada-jonathan-david");
+
+    expect(fantasyScoreIdsForPlayer("argentina-lionel-messi")).toEqual(
+      expect.arrayContaining(["argentina-lionel-messi", "argentina-l-messi", "argentina-messi"])
+    );
+    expect(fantasyScoreIdsForPlayer("england-harry-kane")).toEqual(
+      expect.arrayContaining(["england-harry-kane", "england-h-kane", "england-kane"])
+    );
+  });
+
+  it("scores star players from reliable canonical aliases for any team", () => {
+    const messiMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "argentina" && item.awayTeamId === "algeria")!,
+      status: "live" as const,
+      homeScore: 3,
+      awayScore: 1
+    };
+    const kaneMatch = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "england" && item.awayTeamId === "croatia")!,
+      status: "live" as const,
+      homeScore: 2,
+      awayScore: 0
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [messiMatch, kaneMatch],
+      [
+        {
+          matchId: messiMatch.id,
+          playerId: "argentina-l-messi",
+          playerName: "L. Messi",
+          teamId: "argentina",
+          goals: 3,
+          assists: 0
+        },
+        {
+          matchId: kaneMatch.id,
+          playerId: "england-kane",
+          playerName: "Kane",
+          teamId: "england",
+          goals: 2,
+          assists: 0
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
+      points: 15,
+      goals: 3
+    });
+    expect(scores.find((score) => score.playerId === "england-harry-kane")).toMatchObject({
+      points: 8,
+      goals: 2
     });
   });
 

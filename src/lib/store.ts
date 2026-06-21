@@ -714,21 +714,21 @@ export async function saveComment(session: FamilySession, matchId: string, body:
 }
 
 export async function savePlayerStats(session: FamilySession, matchId: string, stats: PlayerMatchStat[]) {
-  const cleaned = stats.map((stat) => ({
-    ...stat,
-    matchId,
-    goals: Math.max(0, Math.min(20, Math.trunc(stat.goals || 0))),
-    assists: Math.max(0, Math.min(20, Math.trunc(stat.assists || 0))),
-    updatedBy: session.userKey,
-    updatedAt: new Date().toISOString()
-  }));
+  const cleaned = stats
+    .map((stat) => ({
+      ...stat,
+      matchId,
+      goals: Math.max(0, Math.min(20, Math.trunc(stat.goals || 0))),
+      assists: Math.max(0, Math.min(20, Math.trunc(stat.assists || 0))),
+      updatedBy: session.userKey,
+      updatedAt: new Date().toISOString()
+    }))
+    .filter((stat) => stat.goals > 0 || stat.assists > 0);
 
   const supabase = getSupabaseClient();
 
   if (!supabase) {
-    const existing = readLocalPlayerStats().filter(
-      (item) => item.matchId !== matchId || !cleaned.some((stat) => stat.playerId === item.playerId)
-    );
+    const existing = readLocalPlayerStats().filter((item) => item.matchId !== matchId);
     window.localStorage.setItem(LOCAL_PLAYER_STATS_KEY, JSON.stringify([...existing, ...cleaned]));
     return;
   }
@@ -739,19 +739,30 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
 
   await ensureProfileBestEffort(session);
 
-  const { error } = await supabase.from("player_match_stats").upsert(
-    cleaned.map((stat) => ({
-      match_id: stat.matchId,
-      player_id: stat.playerId,
-      player_name: stat.playerName,
-      team_id: stat.teamId,
-      goals: stat.goals,
-      assists: stat.assists,
-      updated_by: session.authUserId,
-      updated_at: new Date().toISOString()
-    })),
-    { onConflict: "match_id,player_id" }
-  );
+  const { error: deleteError } = await supabase.from("player_match_stats").delete().eq("match_id", matchId);
+  if (deleteError) {
+    if (deleteError.message.toLowerCase().includes("player_match_stats")) {
+      throw new Error("Player stats need the updated Supabase schema. Run supabase/schema.sql once in Supabase SQL Editor.");
+    }
+  }
+
+  if (cleaned.length === 0) {
+    return;
+  }
+
+  const rows = cleaned.map((stat) => ({
+    match_id: stat.matchId,
+    player_id: stat.playerId,
+    player_name: stat.playerName,
+    team_id: stat.teamId,
+    goals: stat.goals,
+    assists: stat.assists,
+    updated_by: session.authUserId,
+    updated_at: new Date().toISOString()
+  }));
+  const { error } = deleteError
+    ? await supabase.from("player_match_stats").upsert(rows, { onConflict: "match_id,player_id" })
+    : await supabase.from("player_match_stats").insert(rows);
 
   if (error) {
     if (error.message.toLowerCase().includes("player_match_stats")) {

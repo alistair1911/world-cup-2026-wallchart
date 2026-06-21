@@ -223,6 +223,7 @@ grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
 grant select on public.profiles, public.teams, public.matches, public.predictions, public.comments, public.player_match_stats, public.team_squads, public.players, public.fantasy_teams, public.fantasy_rounds, public.fantasy_rosters, public.fantasy_player_match_scores, public.fantasy_score_overrides to authenticated;
 grant insert, update on public.profiles, public.matches, public.predictions, public.comments, public.player_match_stats, public.fantasy_teams, public.fantasy_rosters, public.fantasy_score_overrides to authenticated;
+grant delete on public.player_match_stats to authenticated;
 grant delete on public.fantasy_rosters to authenticated;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
@@ -318,6 +319,12 @@ create policy "Authenticated users can update player stats"
   to authenticated
   using (true)
   with check (true);
+
+drop policy if exists "Authenticated users can delete player stats" on public.player_match_stats;
+create policy "Authenticated users can delete player stats"
+  on public.player_match_stats for delete
+  to authenticated
+  using (true);
 
 drop policy if exists "Authenticated users can read team squads" on public.team_squads;
 create policy "Authenticated users can read team squads"
