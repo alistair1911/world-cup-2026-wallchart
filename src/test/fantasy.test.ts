@@ -4,6 +4,7 @@ import {
   buildFantasyLeaderboard,
   buildFantasyScoresFromMatches,
   fantasyOptionMap,
+  fantasyPlayerTotals,
   fantasyPlayerOptions,
   fantasyScoreIdsForPlayer,
   mergeFantasyScores,
@@ -435,6 +436,29 @@ describe("mini-fantasy scoring", () => {
     expect(scores.find((score) => fantasyScoreIdsForPlayer("england-harry-kane", playerCatalog).includes(score.playerId))).toMatchObject({
       points: 8,
       goals: 2
+    });
+    expect(fantasyPlayerTotals("argentina-lionel-messi", scores, playerCatalog)).toMatchObject({
+      points: 12,
+      goals: 3
+    });
+    expect(
+      buildFantasyLeaderboard(
+        [
+          {
+            userKey: "tata",
+            playerId: "argentina-lionel-messi",
+            roundId: FANTASY_ROUND_ID,
+            slotIndex: 0,
+            isStarter: true,
+            isCaptain: false,
+            isViceCaptain: false
+          }
+        ],
+        scores,
+        playerCatalog
+      ).find((row) => row.userKey === "tata")
+    ).toMatchObject({
+      points: 12
     });
   });
 

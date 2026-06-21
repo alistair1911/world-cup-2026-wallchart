@@ -3,7 +3,7 @@
 import { Plus, Star, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
-import { fantasyScoreIdsForPlayer } from "@/lib/fantasy";
+import { fantasyPlayerTotals, fantasyScoreIdsForPlayer } from "@/lib/fantasy";
 import { avatarUrl, getPlayerProfile } from "@/lib/profile-data";
 import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerCatalogItem } from "@/lib/types";
 import { Badge } from "../ui/badge";
@@ -83,9 +83,10 @@ export function PlayerProfileDrawer({
   const fantasyIds = new Set(fantasyScoreIdsForPlayer(profile.player.id, playerCatalog));
   const selectedBy = fantasyRosters.filter((slot) => fantasyIds.has(slot.playerId)).map((slot) => slot.userKey);
   const fantasyRows = fantasyScores.filter((score) => fantasyIds.has(score.playerId));
-  const fantasyTotal = fantasyRows.reduce((total, score) => total + score.points, 0);
-  const fantasyGoals = fantasyRows.reduce((total, score) => total + score.goals, 0);
-  const fantasyAssists = fantasyRows.reduce((total, score) => total + score.assists, 0);
+  const fantasyTotals = fantasyPlayerTotals(profile.player.id, fantasyScores, playerCatalog);
+  const fantasyTotal = fantasyTotals.points;
+  const fantasyGoals = fantasyTotals.goals;
+  const fantasyAssists = fantasyTotals.assists;
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end bg-cup-ink/45">

@@ -361,6 +361,41 @@ export function fantasyScoreIdsForPlayer(playerId: string, playerCatalog: Player
   );
 }
 
+export function fantasyCanonicalPlayerId(playerId: string, playerCatalog: PlayerCatalogItem[] = []) {
+  return resolveFantasyPlayerOption({ playerId }, playerCatalog)?.id ?? playerId;
+}
+
+export function fantasyPlayerTotals(
+  playerId: string,
+  scores: FantasyPlayerMatchScore[],
+  playerCatalog: PlayerCatalogItem[] = []
+) {
+  const targetOption = resolveFantasyPlayerOption({ playerId }, playerCatalog);
+  const targetId = targetOption?.id ?? playerId;
+  const scoreIds = new Set(fantasyScoreIdsForPlayer(playerId, playerCatalog));
+  const totals = {
+    points: 0,
+    goals: 0,
+    assists: 0,
+    cleanSheets: 0
+  };
+
+  for (const score of scores) {
+    const scoreOption = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
+    const canonicalScoreId = scoreOption?.id ?? score.playerId;
+    if (canonicalScoreId !== targetId && !scoreIds.has(score.playerId)) {
+      continue;
+    }
+
+    totals.points += score.points;
+    totals.goals += score.goals;
+    totals.assists += score.assists;
+    totals.cleanSheets += score.cleanSheet ? 1 : 0;
+  }
+
+  return totals;
+}
+
 export function isFantasyPlayerLocked(
   playerId: string,
   matches: Match[],
@@ -667,12 +702,6 @@ export function buildFantasyLeaderboard(
   playerCatalog: PlayerCatalogItem[] = []
 ): FantasyLeaderboardRow[] {
   const lookup = buildFantasyPlayerLookup(playerCatalog);
-  const scoresByPlayer = new Map<string, number>();
-  for (const score of scores) {
-    const option = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
-    const scoreId = option?.id ?? score.playerId;
-    scoresByPlayer.set(scoreId, (scoresByPlayer.get(scoreId) ?? 0) + score.points);
-  }
 
   return (["tata", "lucas"] as UserKey[])
     .map((userKey) => {
@@ -683,7 +712,7 @@ export function buildFantasyLeaderboard(
 
       for (const slot of userSlots) {
         const option = lookup.byId.get(slot.playerId) ?? resolveFantasyPlayerOption({ playerId: slot.playerId }, playerCatalog);
-        const playerPoints = scoresByPlayer.get(option?.id ?? slot.playerId) ?? 0;
+        const playerPoints = fantasyPlayerTotals(slot.playerId, scores, playerCatalog).points;
         const total = slot.isCaptain ? playerPoints * 2 : playerPoints;
         points += total;
         if (slot.isCaptain) {
