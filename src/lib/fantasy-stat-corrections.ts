@@ -26,6 +26,14 @@ const USER_CONFIRMED_STAT_CORRECTIONS: KnownPlayerStatCorrection[] = [
     teamId: "canada",
     goals: 3,
     assists: 0
+  },
+  {
+    matchId: "M37",
+    playerId: "spain-lamine-yamal",
+    playerName: "Lamine Yamal",
+    teamId: "spain",
+    goals: 1,
+    assists: 0
   }
 ];
 

@@ -60,6 +60,7 @@ const CURATED_PROVIDER_ALIASES: Record<string, string[]> = {
   "argentina-lionel-messi": ["argentina-154", "154", "argentina-45843", "45843"],
   "canada-jonathan-david": ["canada-8489", "8489"],
   "england-harry-kane": ["england-184", "184", "england-39836", "39836"],
+  "spain-lamine-yamal": ["spain-362150", "362150"],
   "usa-christian-pulisic": ["usa-225607", "225607"]
 };
 

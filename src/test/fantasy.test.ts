@@ -16,6 +16,7 @@ import {
 } from "@/lib/fantasy";
 import { applyKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { COMPLETE_SQUAD_MINIMUM, mergePlayerCatalog } from "@/lib/player-catalog";
+import { getAllPlayerProfiles } from "@/lib/profile-data";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
 import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
 
@@ -170,6 +171,12 @@ describe("mini-fantasy scoring", () => {
       }
     ];
     const espnScores = [{ ...scores[0]!, playerId: "spain-362150" }];
+    expect(resolveFantasyPlayerOption({ playerId: "spain-362150" })?.id).toBe("spain-lamine-yamal");
+    expect(buildFantasyLeaderboard(legacyRoster, espnScores)[0]).toMatchObject({
+      userKey: "tata",
+      points: 14,
+      captainPoints: 7
+    });
     expect(
       buildFantasyLeaderboard(legacyRoster, espnScores, [
         {
@@ -212,6 +219,27 @@ describe("mini-fantasy scoring", () => {
       points: 14,
       captainPoints: 7
     });
+  });
+
+  it("allows every curated player from every team to receive fantasy points", () => {
+    const profiles = getAllPlayerProfiles();
+    const stats = profiles.map(({ player, team }, index) => {
+      const match = INITIAL_MATCHES.find((item) => item.homeTeamId === team.id || item.awayTeamId === team.id);
+      return {
+        matchId: match?.id ?? `team-${team.id}`,
+        playerId: `${team.id}-provider-${index}`,
+        playerName: player.name,
+        teamId: team.id,
+        goals: 1,
+        assists: 1
+      } satisfies PlayerMatchStat;
+    });
+    const scores = buildFantasyScoresFromMatches(INITIAL_MATCHES, stats);
+    const missing = profiles
+      .filter(({ player }) => fantasyPlayerTotals(player.id, scores).points <= 0)
+      .map(({ player, team }) => `${team.id}:${player.name}`);
+
+    expect(missing).toEqual([]);
   });
 
   it("does not award fallback clean-sheet points to untracked squad players", () => {
@@ -782,15 +810,23 @@ describe("mini-fantasy scoring", () => {
               homeScore: 3,
               awayScore: 0
             }
+          : match.id === "M37"
+            ? {
+                ...match,
+                status: "final" as const,
+                homeScore: 4,
+                awayScore: 0
+              }
           : match
     );
-    const stats = applyKnownPlayerStatCorrections(matches, [], [], new Date("2026-06-21T12:00:00.000Z"));
+    const stats = applyKnownPlayerStatCorrections(matches, [], [], new Date("2026-06-22T12:00:00.000Z"));
     const scores = buildFantasyScoresFromMatches(matches, stats);
 
     expect(stats).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ playerId: "argentina-lionel-messi", goals: 3 }),
-        expect.objectContaining({ playerId: "canada-jonathan-david", goals: 3 })
+        expect.objectContaining({ playerId: "canada-jonathan-david", goals: 3 }),
+        expect.objectContaining({ playerId: "spain-lamine-yamal", goals: 1 })
       ])
     );
     expect(fantasyPlayerTotals("argentina-lionel-messi", scores)).toMatchObject({
@@ -800,6 +836,10 @@ describe("mini-fantasy scoring", () => {
     expect(fantasyPlayerTotals("canada-8489", scores)).toMatchObject({
       points: 12,
       goals: 3
+    });
+    expect(fantasyPlayerTotals("spain-362150", scores)).toMatchObject({
+      points: 4,
+      goals: 1
     });
   });
 

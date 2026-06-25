@@ -54,6 +54,7 @@ type FantasyProfileDrawerProps = {
 const FORMATIONS = ["4-3-3", "4-2-3-1", "3-4-3", "3-5-2", "4-4-2", "5-3-2"] as const;
 const TRACE_TARGETS = [
   { id: "argentina-lionel-messi", label: "Messi", terms: ["messi", "lionel", "154", "45843"] },
+  { id: "spain-lamine-yamal", label: "Yamal", terms: ["lamine", "yamal", "362150"] },
   { id: "england-harry-kane", label: "Kane", terms: ["kane", "harry", "184", "39836"] },
   { id: "usa-christian-pulisic", label: "Pulisic", terms: ["pulisic", "christian", "225607"] },
   { id: "canada-jonathan-david", label: "David", terms: ["jonathan", "david"] }
