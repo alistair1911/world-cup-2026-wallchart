@@ -65,7 +65,7 @@ describe("mini-fantasy scoring", () => {
     expect(yamalOptions).toHaveLength(1);
     expect(yamalOptions[0].id).toBe("spain-362150");
     expect(yamalOptions[0].aliasIds).toContain("spain-lamine-yamal");
-    expect(yamalOptions[0].photoUrl).toBe("/players/lamine-yamal.jpg");
+    expect(yamalOptions[0].photoUrl).toBe("/players/spain-lamine-yamal-2026.jpg");
 
     const optionMap = fantasyOptionMap([
       {
@@ -117,7 +117,7 @@ describe("mini-fantasy scoring", () => {
     ]);
     const yamal = merged.find((player) => player.id === "spain-362150");
 
-    expect(yamal?.photoUrl).toBe("/players/lamine-yamal.jpg");
+    expect(yamal?.photoUrl).toBe("/players/spain-lamine-yamal-2026.jpg");
   });
 
   it("builds player match scores from final matches and captain leaderboard totals", () => {

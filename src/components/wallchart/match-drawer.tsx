@@ -385,7 +385,7 @@ export function MatchDrawer({
 
           {hasSpain ? (
             <section className="saved-pop overflow-hidden rounded-lg border border-cup-gold/60 bg-gradient-to-br from-red-50 via-white to-amber-50 shadow-sm">
-              <img src="/players/lamine-yamal.jpg" alt="Lamine Yamal, Spain spotlight" className="h-48 w-full object-cover object-top" />
+              <img src="/players/spain-lamine-yamal-2026.jpg" alt="Lamine Yamal, Spain spotlight" className="h-48 w-full object-cover object-top" />
               <div className="p-4">
               <div className="text-xs font-black uppercase tracking-wide text-cup-red">Tata & Lucas favorite watch</div>
                 <h3 className="mt-1 text-xl font-black text-cup-ink">Spain spark: Lamine Yamal</h3>

@@ -298,7 +298,7 @@ const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" 
     { name: "Marko Stamenic", position: "CM", role: "Midfield bite" }
   ],
   spain: [
-    { name: "Lamine Yamal", position: "RW", role: "Family favorite and electric creator", shirtNumber: 19, photoUrl: "/players/lamine-yamal.jpg" },
+    { name: "Lamine Yamal", position: "RW", role: "Family favorite and electric creator", shirtNumber: 19, photoUrl: "/players/spain-lamine-yamal-2026.jpg" },
     { name: "Rodri", position: "DM", role: "Control tower" },
     { name: "Pedri", position: "CM", role: "Tempo artist" },
     { name: "Nico Williams", position: "LW", role: "Direct winger" },
