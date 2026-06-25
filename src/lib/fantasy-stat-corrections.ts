@@ -34,6 +34,22 @@ const USER_CONFIRMED_STAT_CORRECTIONS: KnownPlayerStatCorrection[] = [
     teamId: "spain",
     goals: 1,
     assists: 0
+  },
+  {
+    matchId: "M39",
+    playerId: "belgium-730",
+    playerName: "T. Courtois",
+    teamId: "belgium",
+    goals: 0,
+    assists: 0
+  },
+  {
+    matchId: "M39",
+    playerId: "ir-iran-2682",
+    playerName: "A. Beiranvand",
+    teamId: "ir-iran",
+    goals: 0,
+    assists: 0
   }
 ];
 

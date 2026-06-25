@@ -795,38 +795,45 @@ describe("mini-fantasy scoring", () => {
   });
 
   it("applies user-confirmed scorer corrections when production stats are missing", () => {
-    const matches = INITIAL_MATCHES.map((match) =>
-      match.id === "M19"
-        ? {
-            ...match,
-            status: "final" as const,
-            homeScore: 3,
-            awayScore: 1
-          }
-        : match.id === "M3"
-          ? {
-              ...match,
-              status: "final" as const,
-              homeScore: 3,
-              awayScore: 0
-            }
-          : match.id === "M37"
-            ? {
-                ...match,
-                status: "final" as const,
-                homeScore: 4,
-                awayScore: 0
-              }
-          : match
-    );
-    const stats = applyKnownPlayerStatCorrections(matches, [], [], new Date("2026-06-22T12:00:00.000Z"));
-    const scores = buildFantasyScoresFromMatches(matches, stats);
+    const matches = INITIAL_MATCHES.map((match) => {
+      if (match.id === "M19") {
+        return { ...match, status: "final" as const, homeScore: 3, awayScore: 1 };
+      }
+      if (match.id === "M3") {
+        return { ...match, status: "final" as const, homeScore: 3, awayScore: 0 };
+      }
+      if (match.id === "M37") {
+        return { ...match, status: "final" as const, homeScore: 4, awayScore: 0 };
+      }
+      if (match.id === "M39") {
+        return { ...match, status: "final" as const, homeScore: 0, awayScore: 0 };
+      }
+      return match;
+    });
+    const playerCatalog = [
+      {
+        id: "belgium-730",
+        teamId: "belgium",
+        name: "T. Courtois",
+        position: "Goalkeeper"
+      },
+      {
+        id: "ir-iran-2682",
+        teamId: "ir-iran",
+        name: "A. Beiranvand",
+        position: "Goalkeeper"
+      }
+    ];
+    const stats = applyKnownPlayerStatCorrections(matches, [], playerCatalog, new Date("2026-06-22T12:00:00.000Z"));
+    const scores = buildFantasyScoresFromMatches(matches, stats, playerCatalog);
 
     expect(stats).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ playerId: "argentina-lionel-messi", goals: 3 }),
         expect.objectContaining({ playerId: "canada-jonathan-david", goals: 3 }),
-        expect.objectContaining({ playerId: "spain-lamine-yamal", goals: 1 })
+        expect.objectContaining({ playerId: "spain-lamine-yamal", goals: 1 }),
+        expect.objectContaining({ playerId: "belgium-730", goals: 0, assists: 0 }),
+        expect.objectContaining({ playerId: "ir-iran-2682", goals: 0, assists: 0 })
       ])
     );
     expect(fantasyPlayerTotals("argentina-lionel-messi", scores)).toMatchObject({
@@ -840,6 +847,14 @@ describe("mini-fantasy scoring", () => {
     expect(fantasyPlayerTotals("spain-362150", scores)).toMatchObject({
       points: 4,
       goals: 1
+    });
+    expect(fantasyPlayerTotals("belgium-730", scores, playerCatalog)).toMatchObject({
+      points: 4,
+      cleanSheets: 1
+    });
+    expect(fantasyPlayerTotals("ir-iran-2682", scores, playerCatalog)).toMatchObject({
+      points: 4,
+      cleanSheets: 1
     });
   });
 
