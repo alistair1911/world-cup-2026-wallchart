@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
-  FANTASY_ROUND_ID,
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
+  activeFantasyRound,
   buildFantasyScoresFromMatches,
   isFantasyPlayerLocked,
-  mergeFantasyScores
+  mergeFantasyScores,
+  normalizeFantasyRoundId,
+  rostersForFantasyRound,
+  scoresForFantasyRound
 } from "@/lib/fantasy";
 import { buildLeaderboard } from "@/lib/predictions";
 import { buildStandings } from "@/lib/standings";
@@ -185,6 +188,15 @@ export function WallchartApp() {
     const derivedScores = buildFantasyScoresFromMatches(matches, playerStats, playerCatalog);
     return mergeFantasyScores(fantasyScores, derivedScores, playerCatalog);
   }, [fantasyScores, matches, playerStats, playerCatalog]);
+  const currentFantasyRound = useMemo(() => activeFantasyRound(matches), [matches]);
+  const currentFantasyRosters = useMemo(
+    () => rostersForFantasyRound(currentFantasyRound.id, fantasyRosters),
+    [currentFantasyRound.id, fantasyRosters]
+  );
+  const currentFantasyScores = useMemo(
+    () => scoresForFantasyRound(currentFantasyRound.id, effectiveFantasyScores, matches),
+    [currentFantasyRound.id, effectiveFantasyScores, matches]
+  );
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
   const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
   const commentCounts = useMemo(
@@ -237,8 +249,12 @@ export function WallchartApp() {
       return;
     }
 
+    const targetRoundId = normalizeFantasyRoundId(slots[0]?.roundId ?? currentFantasyRound.id);
     const saved = await saveFantasyRoster(session, slots);
-    setFantasyRosters((current) => [...current.filter((slot) => slot.userKey !== session.userKey), ...saved]);
+    setFantasyRosters((current) => [
+      ...current.filter((slot) => slot.userKey !== session.userKey || normalizeFantasyRoundId(slot.roundId) !== targetRoundId),
+      ...saved
+    ]);
   }
 
   async function handleSaveFantasyTeamSettings(settings: Pick<FantasyTeamSetting, "formation">) {
@@ -265,12 +281,17 @@ export function WallchartApp() {
       return;
     }
 
+    if (!currentFantasyRound.selectionEnabled) {
+      setSyncMessage(`${currentFantasyRound.name} squad selection is locked. The next round opens after this round is complete.`);
+      return;
+    }
+
     if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
       setSyncMessage("That player is locked for Mini-Fantasy because the next match is close to kickoff.");
       return;
     }
 
-    const ownSlots = fantasyRosters
+    const ownSlots = currentFantasyRosters
       .filter((slot) => slot.userKey === session.userKey)
       .sort((a, b) => a.slotIndex - b.slotIndex);
     if (ownSlots.some((slot) => slot.playerId === playerId)) {
@@ -285,7 +306,7 @@ export function WallchartApp() {
     const nextSlot: FantasyRosterSlot = {
       userKey: session.userKey,
       playerId,
-      roundId: FANTASY_ROUND_ID,
+      roundId: currentFantasyRound.id,
       slotIndex: ownSlots.length,
       isStarter: ownSlots.length < FANTASY_STARTERS,
       isCaptain: ownSlots.length === 0,
@@ -294,7 +315,7 @@ export function WallchartApp() {
     };
 
     await handleSaveFantasyRoster([...ownSlots, nextSlot]);
-    setSyncMessage("Added player to your Mini-Fantasy squad.");
+    setSyncMessage(`Added player to your ${currentFantasyRound.name} Mini-Fantasy squad.`);
   }
 
   const runScoreSync = useCallback(
@@ -595,7 +616,7 @@ export function WallchartApp() {
         onClose={() => setSelectedTeamId(null)}
         onSelectPlayer={setSelectedPlayerId}
         onAddFantasyPlayer={handleAddFantasyPlayer}
-        fantasyRosters={fantasyRosters}
+        fantasyRosters={currentFantasyRosters}
         session={session}
       />
       <PlayerProfileDrawer
@@ -603,8 +624,8 @@ export function WallchartApp() {
         onClose={() => setSelectedPlayerId(null)}
         onSelectTeam={(teamId) => setSelectedTeamId(teamId)}
         onAddFantasyPlayer={handleAddFantasyPlayer}
-        fantasyRosters={fantasyRosters}
-        fantasyScores={effectiveFantasyScores}
+        fantasyRosters={currentFantasyRosters}
+        fantasyScores={currentFantasyScores}
         playerCatalog={playerCatalog}
       />
       <UserProfileDrawer userKey={selectedUserKey} matches={matches} predictions={predictions} onClose={() => setSelectedUserKey(null)} />

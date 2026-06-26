@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   FANTASY_ROUND_ID,
   buildFantasyLeaderboard,
+  buildFantasyOverallLeaderboard,
+  buildFantasyRoundResults,
   buildFantasyScoresFromMatches,
   fantasyOptionMap,
   fantasyPlayerTotals,
@@ -10,6 +12,8 @@ import {
   mergeFantasyScores,
   normalizeFantasyRosterSlots,
   normalizeFantasyPosition,
+  rostersForFantasyRound,
+  scoresForFantasyRound,
   resolveFantasyPlayerOption,
   scoreFantasyPlayerMatch,
   validateFantasyRoster
@@ -219,6 +223,90 @@ describe("mini-fantasy scoring", () => {
       points: 14,
       captainPoints: 7
     });
+  });
+
+  it("keeps legacy global rosters as Group Stage rosters and separates round scoring", () => {
+    const matches = INITIAL_MATCHES.map((match) =>
+      match.phase === "group" ? { ...match, status: "final" as const, homeScore: 0, awayScore: 0 } : match
+    );
+    const rosters: FantasyRosterSlot[] = [
+      {
+        userKey: "lucas",
+        playerId: "spain-lamine-yamal",
+        roundId: "global",
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: false
+      },
+      {
+        userKey: "tata",
+        playerId: "argentina-lionel-messi",
+        roundId: "global",
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: false
+      },
+      {
+        userKey: "tata",
+        playerId: "england-harry-kane",
+        roundId: "round32",
+        slotIndex: 0,
+        isStarter: true,
+        isCaptain: false,
+        isViceCaptain: false
+      }
+    ];
+    const scores: FantasyPlayerMatchScore[] = [
+      {
+        matchId: "M37",
+        playerId: "spain-lamine-yamal",
+        teamId: "spain",
+        points: 4,
+        goals: 1,
+        assists: 0,
+        cleanSheet: false,
+        yellowCards: 0,
+        redCards: 0,
+        ownGoals: 0,
+        penaltySaves: 0,
+        penaltyMisses: 0,
+        breakdown: { goals: 4 },
+        status: "confirmed"
+      },
+      {
+        matchId: "M73",
+        playerId: "england-harry-kane",
+        teamId: "england",
+        points: 8,
+        goals: 2,
+        assists: 0,
+        cleanSheet: false,
+        yellowCards: 0,
+        redCards: 0,
+        ownGoals: 0,
+        penaltySaves: 0,
+        penaltyMisses: 0,
+        breakdown: { goals: 8 },
+        status: "confirmed"
+      }
+    ];
+
+    expect(rostersForFantasyRound("group", rosters).map((slot) => slot.roundId)).toEqual(["group", "group"]);
+    expect(scoresForFantasyRound("group", scores, matches)).toHaveLength(1);
+    expect(scoresForFantasyRound("round32", scores, matches)).toHaveLength(1);
+
+    const roundResults = buildFantasyRoundResults(rosters, scores, matches);
+    const groupRound = roundResults.find((round) => round.id === "group");
+    const overall = buildFantasyOverallLeaderboard(roundResults, "group");
+
+    expect(groupRound).toMatchObject({
+      status: "complete",
+      winner: expect.objectContaining({ userKey: "lucas", points: 4 })
+    });
+    expect(overall.find((row) => row.userKey === "lucas")).toMatchObject({ roundWins: 1 });
+    expect(overall.find((row) => row.userKey === "tata")).toMatchObject({ roundWins: 0 });
   });
 
   it("allows every curated player from every team to receive fantasy points", () => {

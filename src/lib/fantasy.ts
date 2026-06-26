@@ -1,19 +1,60 @@
 import { getAllPlayerProfiles, getPlayerProfile } from "./profile-data";
-import { TEAMS, getTeam } from "./tournament-data";
+import { INITIAL_MATCHES, TEAMS, getTeam } from "./tournament-data";
 import type {
   FantasyPlayerMatchScore,
   FantasyPosition,
   FantasyRosterSlot,
   Match,
+  MatchPhase,
   PlayerCatalogItem,
   PlayerMatchStat,
   Team,
   UserKey
 } from "./types";
 
-export const FANTASY_ROUND_ID = "global";
+export type FantasyRoundId = "group" | "round32" | "round16" | "quarter";
+
+export type FantasyRoundDefinition = {
+  id: FantasyRoundId;
+  name: string;
+  shortName: string;
+  phases: MatchPhase[];
+};
+
+export type FantasyRoundStatus = "upcoming" | "open" | "locked" | "complete";
+
+export type FantasyRoundState = FantasyRoundDefinition & {
+  startsAt: string;
+  locksAt: string;
+  endsAt: string;
+  status: FantasyRoundStatus;
+  selectionEnabled: boolean;
+  matchCount: number;
+  finalCount: number;
+};
+
+export type FantasyRoundResult = FantasyRoundState & {
+  leaderboard: FantasyLeaderboardRow[];
+  winner?: FantasyLeaderboardRow;
+  tied: boolean;
+};
+
+export type FantasyOverallRow = {
+  userKey: UserKey;
+  displayName: string;
+  roundWins: number;
+  currentRoundPoints: number;
+};
+
+export const FANTASY_ROUND_ID: FantasyRoundId = "group";
 export const FANTASY_SQUAD_SIZE = 15;
 export const FANTASY_STARTERS = 11;
+export const FANTASY_ROUNDS: FantasyRoundDefinition[] = [
+  { id: "group", name: "Group Stage", shortName: "Groups", phases: ["group"] },
+  { id: "round32", name: "Round of 32", shortName: "R32", phases: ["round32"] },
+  { id: "round16", name: "Round of 16", shortName: "R16", phases: ["round16"] },
+  { id: "quarter", name: "Quarter-Finals", shortName: "QF", phases: ["quarter"] }
+];
 export const FANTASY_SCORING_RULES = [
   { label: "Goal", detail: "GK/DEF +6, MID +5, FWD +4" },
   { label: "Assist", detail: "+3" },
@@ -63,6 +104,90 @@ const CURATED_PROVIDER_ALIASES: Record<string, string[]> = {
   "spain-lamine-yamal": ["spain-362150", "362150"],
   "usa-christian-pulisic": ["usa-225607", "225607"]
 };
+
+const FANTASY_ROUND_IDS = new Set(FANTASY_ROUNDS.map((round) => round.id));
+
+function addHours(value: string, hours: number) {
+  return new Date(new Date(value).getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function fallbackRoundMatches(round: FantasyRoundDefinition) {
+  return INITIAL_MATCHES.filter((match) => round.phases.includes(match.phase));
+}
+
+export function normalizeFantasyRoundId(roundId: string | null | undefined): FantasyRoundId {
+  if (roundId === "global" || !roundId) {
+    return FANTASY_ROUND_ID;
+  }
+  return FANTASY_ROUND_IDS.has(roundId as FantasyRoundId) ? (roundId as FantasyRoundId) : FANTASY_ROUND_ID;
+}
+
+export function fantasyRoundDefinition(roundId: string | null | undefined) {
+  const normalized = normalizeFantasyRoundId(roundId);
+  return FANTASY_ROUNDS.find((round) => round.id === normalized) ?? FANTASY_ROUNDS[0];
+}
+
+export function matchesForFantasyRound(roundId: string, matches: Match[]) {
+  const round = fantasyRoundDefinition(roundId);
+  return matches.filter((match) => round.phases.includes(match.phase));
+}
+
+function roundSchedule(round: FantasyRoundDefinition, matches: Match[]) {
+  const roundMatches = matches.filter((match) => round.phases.includes(match.phase));
+  const fallbackMatches = roundMatches.length > 0 ? roundMatches : fallbackRoundMatches(round);
+  const sorted = [...fallbackMatches].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+  const startsAt = sorted[0]?.kickoff ?? new Date(0).toISOString();
+  const locksAt = startsAt;
+  const endsAt = sorted.at(-1)?.kickoff ? addHours(sorted.at(-1)!.kickoff, 3) : startsAt;
+  return { startsAt, locksAt, endsAt, roundMatches };
+}
+
+export function fantasyRoundStates(matches: Match[], now = new Date()): FantasyRoundState[] {
+  let previousComplete = true;
+
+  return FANTASY_ROUNDS.map((round) => {
+    const { startsAt, locksAt, endsAt, roundMatches } = roundSchedule(round, matches);
+    const finalCount = roundMatches.filter((match) => match.status === "final").length;
+    const complete = roundMatches.length > 0 && finalCount === roundMatches.length;
+    const locked = now.getTime() >= new Date(locksAt).getTime();
+    const selectionEnabled = previousComplete && !complete && !locked;
+    const status: FantasyRoundStatus = complete ? "complete" : selectionEnabled ? "open" : locked ? "locked" : "upcoming";
+    const state = {
+      ...round,
+      startsAt,
+      locksAt,
+      endsAt,
+      status,
+      selectionEnabled,
+      matchCount: roundMatches.length,
+      finalCount
+    };
+    previousComplete = previousComplete && complete;
+    return state;
+  });
+}
+
+export function activeFantasyRound(matches: Match[], now = new Date()) {
+  const states = fantasyRoundStates(matches, now);
+  return states.find((round) => round.status === "open") ?? states.find((round) => round.status !== "complete") ?? states.at(-1)!;
+}
+
+export function rostersForFantasyRound(roundId: string, rosters: FantasyRosterSlot[]) {
+  const normalizedRoundId = normalizeFantasyRoundId(roundId);
+  const matching = rosters.filter((slot) => normalizeFantasyRoundId(slot.roundId) === normalizedRoundId);
+  const hasCanonicalRoster = new Set(
+    matching.filter((slot) => slot.roundId === normalizedRoundId).map((slot) => slot.userKey)
+  );
+
+  return matching
+    .filter((slot) => slot.roundId === normalizedRoundId || !hasCanonicalRoster.has(slot.userKey))
+    .map((slot) => ({ ...slot, roundId: normalizedRoundId }));
+}
+
+export function scoresForFantasyRound(roundId: string, scores: FantasyPlayerMatchScore[], matches: Match[]) {
+  const matchIds = new Set(matchesForFantasyRound(roundId, matches).map((match) => match.id));
+  return scores.filter((score) => matchIds.has(score.matchId));
+}
 
 export function normalizeFantasyPosition(position: string): FantasyPosition {
   const compact = position.toUpperCase();
@@ -499,7 +624,7 @@ export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?
     const normalized = {
       ...slot,
       userKey: userKey ?? slot.userKey,
-      roundId: slot.roundId || FANTASY_ROUND_ID
+      roundId: normalizeFantasyRoundId(slot.roundId)
     };
 
     if (slot.isStarter) {
@@ -769,6 +894,56 @@ export function buildFantasyLeaderboard(
       };
     })
     .sort((a, b) => b.points - a.points || b.rosterSize - a.rosterSize || a.displayName.localeCompare(b.displayName));
+}
+
+export function buildFantasyRoundResults(
+  rosters: FantasyRosterSlot[],
+  scores: FantasyPlayerMatchScore[],
+  matches: Match[],
+  playerCatalog: PlayerCatalogItem[] = [],
+  now = new Date()
+): FantasyRoundResult[] {
+  return fantasyRoundStates(matches, now).map((round) => {
+    const roundRosters = rostersForFantasyRound(round.id, rosters);
+    const roundScores = scoresForFantasyRound(round.id, scores, matches);
+    const leaderboard = buildFantasyLeaderboard(roundRosters, roundScores, playerCatalog);
+    const top = leaderboard[0];
+    const second = leaderboard[1];
+    const tied = Boolean(top && second && top.points === second.points);
+    const winner = round.status === "complete" && top && !tied ? top : undefined;
+
+    return {
+      ...round,
+      leaderboard,
+      winner,
+      tied
+    };
+  });
+}
+
+export function buildFantasyOverallLeaderboard(roundResults: FantasyRoundResult[], activeRoundId?: string): FantasyOverallRow[] {
+  const activeId = normalizeFantasyRoundId(activeRoundId);
+  const wins = new Map<UserKey, number>([
+    ["tata", 0],
+    ["lucas", 0]
+  ]);
+
+  for (const round of roundResults) {
+    if (round.winner) {
+      wins.set(round.winner.userKey, (wins.get(round.winner.userKey) ?? 0) + 1);
+    }
+  }
+
+  const activeRound = roundResults.find((round) => round.id === activeId);
+
+  return (["tata", "lucas"] as UserKey[])
+    .map((userKey) => ({
+      userKey,
+      displayName: familyDisplayName[userKey],
+      roundWins: wins.get(userKey) ?? 0,
+      currentRoundPoints: activeRound?.leaderboard.find((row) => row.userKey === userKey)?.points ?? 0
+    }))
+    .sort((a, b) => b.roundWins - a.roundWins || b.currentRoundPoints - a.currentRoundPoints || a.displayName.localeCompare(b.displayName));
 }
 
 export function playerTeam(playerId: string) {

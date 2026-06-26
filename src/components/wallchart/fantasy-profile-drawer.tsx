@@ -6,7 +6,6 @@ import { Check, Crown, Gauge, GripVertical, Move, Plus, Save, Search, ShieldChec
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  FANTASY_ROUND_ID,
   FANTASY_SCORING_RULES,
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
@@ -18,8 +17,10 @@ import {
   isFantasyPlayerLocked,
   normalizeFantasyRosterSlots,
   resolveFantasyPlayerOption,
+  type FantasyRoundResult,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
+import { formatKickoff } from "@/lib/utils";
 import { avatarUrl } from "@/lib/profile-data";
 import type {
   FamilySession,
@@ -44,6 +45,7 @@ type FantasyProfileDrawerProps = {
   playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
   teamSettings: FantasyTeamSetting[];
+  round: FantasyRoundResult;
   onClose: () => void;
   onSaveRoster: (slots: FantasyRosterSlot[]) => Promise<void>;
   onSaveSettings: (settings: Pick<FantasyTeamSetting, "formation">) => Promise<void>;
@@ -253,6 +255,7 @@ export function FantasyProfileDrawer({
   playerStats,
   playerCatalog,
   teamSettings,
+  round,
   onClose,
   onSaveRoster,
   onSaveSettings,
@@ -262,6 +265,8 @@ export function FantasyProfileDrawer({
   const options = useMemo(() => fantasyPlayerOptions(playerCatalog), [playerCatalog]);
   const optionMap = useMemo(() => fantasyOptionMap(playerCatalog), [playerCatalog]);
   const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
+  const roundMatchIds = useMemo(() => new Set(matches.filter((match) => round.phases.includes(match.phase)).map((match) => match.id)), [matches, round.phases]);
+  const roundPlayerStats = useMemo(() => playerStats.filter((stat) => roundMatchIds.has(stat.matchId)), [playerStats, roundMatchIds]);
   const setting = userKey ? teamSettings.find((team) => team.userKey === userKey) : null;
   const savedFormation = validFormation(setting?.formation);
   const savedSlots = useMemo(
@@ -302,7 +307,7 @@ export function FantasyProfileDrawer({
       .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
       .slice(0, 80);
   }, [countryFilter, options, playerSearch, positionFilter]);
-  const canEdit = Boolean(userKey && userKey === session.userKey);
+  const canEdit = Boolean(userKey && userKey === session.userKey && round.selectionEnabled);
   const normalizedDraft = useMemo(() => normalizeDraftSlots(draft, optionMap, userKey), [draft, optionMap, userKey]);
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
 
@@ -389,7 +394,7 @@ export function FantasyProfileDrawer({
 
   function lockedMessage(playerId: string) {
     const player = optionMap.get(playerId);
-    setMessage(`${player?.name ?? "That player"} is locked close to kickoff.`);
+    setMessage(`${player?.name ?? "That player"} is locked for ${round.name}.`);
   }
 
   function moveToStarter(playerId: string, targetIndex: number) {
@@ -487,7 +492,7 @@ export function FantasyProfileDrawer({
     const nextSlot: FantasyRosterSlot = {
       userKey,
       playerId,
-      roundId: FANTASY_ROUND_ID,
+      roundId: round.id,
       slotIndex: FANTASY_STARTERS + benchSlots.length,
       isStarter: false,
       isCaptain: normalizedDraft.length === 0,
@@ -579,15 +584,22 @@ export function FantasyProfileDrawer({
               <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
               <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                {normalizedDraft.length}/{FANTASY_SQUAD_SIZE} players - {starterSlots.length}/{FANTASY_STARTERS} starters - {formation} -{" "}
+                {round.name}: {normalizedDraft.length}/{FANTASY_SQUAD_SIZE} players - {starterSlots.length}/{FANTASY_STARTERS} starters - {formation} -{" "}
                 {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
+              </p>
+              <p className="mt-1 text-xs font-bold text-slate-500">
+                {round.selectionEnabled
+                  ? `Selection locks ${formatKickoff(round.locksAt)}.`
+                  : round.status === "complete"
+                    ? "Round complete. This squad is saved as the historical round roster."
+                    : "Round locked. The next squad opens when the previous round is complete."}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {canEdit ? (
-                <Button size="sm" onClick={handleSave} disabled={saving}>
+              {userKey === session.userKey ? (
+                <Button size="sm" onClick={handleSave} disabled={saving || !canEdit}>
                   {saving ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  {saving ? "Saving" : dirty ? "Autosaving" : "Saved"}
+                  {saving ? "Saving" : canEdit ? (dirty ? "Autosaving" : "Saved") : "Locked"}
                 </Button>
               ) : null}
               <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close fantasy profile drawer">
@@ -607,11 +619,11 @@ export function FantasyProfileDrawer({
                     <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
                   </div>
                   <p className="text-xs font-bold text-slate-500">
-                    {canEdit
+                  {canEdit
                       ? activeMoveId
                         ? "Tap a pitch slot or the bench to place the selected player."
                         : "Tap Move or drag players; they snap into the selected slot."
-                      : "Read-only squad view."}
+                      : `${round.name} is read-only right now.`}
                   </p>
                 </div>
                 <select
@@ -752,7 +764,7 @@ export function FantasyProfileDrawer({
 
             <FantasyPointTrace
               slots={normalizedDraft}
-              playerStats={playerStats}
+              playerStats={roundPlayerStats}
               storedScores={storedScores}
               statScores={statScores}
               scores={scores}
@@ -812,7 +824,7 @@ export function FantasyProfileDrawer({
               <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
                 {playerPool.map((player) => {
                   const selected = selectedPlayerIds.has(player.id);
-                  const locked = isFantasyPlayerLocked(player.id, matches, new Date(), playerCatalog);
+                  const locked = !round.selectionEnabled || isFantasyPlayerLocked(player.id, matches, new Date(), playerCatalog);
                   return (
                     <div
                       key={player.id}
@@ -842,7 +854,7 @@ export function FantasyProfileDrawer({
                         size="sm"
                         variant={selected ? "secondary" : "ghost"}
                         onClick={() => (selected ? removePlayer(player.id) : addPlayer(player.id))}
-                        disabled={!selected && (locked || normalizedDraft.length >= FANTASY_SQUAD_SIZE)}
+                        disabled={!canEdit || (!selected && (locked || normalizedDraft.length >= FANTASY_SQUAD_SIZE))}
                         aria-label={selected ? `Remove ${player.name}` : `Add ${player.name}`}
                       >
                         {selected ? <Trash2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}

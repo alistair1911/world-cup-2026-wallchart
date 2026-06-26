@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { buildFantasyScoresFromMatches } from "@/lib/fantasy";
+import { FANTASY_ROUNDS, buildFantasyScoresFromMatches } from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
@@ -1070,6 +1070,32 @@ function fantasyScoreToRow(score: FantasyPlayerMatchScore) {
   };
 }
 
+function addHours(value: string, hours: number) {
+  return new Date(new Date(value).getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
+async function ensureFantasyRounds(supabase: SupabaseClient) {
+  const rows = FANTASY_ROUNDS.map((round) => {
+    const matches = INITIAL_MATCHES.filter((match) => round.phases.includes(match.phase)).sort(
+      (a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()
+    );
+    const startsAt = matches[0]?.kickoff ?? null;
+    const endsAt = matches.at(-1)?.kickoff ? addHours(matches.at(-1)!.kickoff, 3) : null;
+    return {
+      id: round.id,
+      name: round.name,
+      starts_at: startsAt,
+      locks_at: startsAt,
+      ends_at: endsAt
+    };
+  });
+
+  const { error } = await supabase.from("fantasy_rounds").upsert(rows, { onConflict: "id" });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 function isScheduledZeroPlaceholder(match: Match) {
   return match.status === "scheduled" && match.homeScore === 0 && match.awayScore === 0 && !match.updatedBy;
 }
@@ -1117,6 +1143,13 @@ async function syncScores(request: NextRequest) {
         { ok: false, error: "Unauthorized. Sign in as Tata/Lucas or call from Vercel Cron." },
         { status: 401 }
       );
+    }
+
+    let setupWarning: string | null = null;
+    try {
+      await ensureFantasyRounds(supabase);
+    } catch (error) {
+      setupWarning = error instanceof Error ? `Fantasy rounds could not be prepared: ${error.message}` : "Fantasy rounds could not be prepared.";
     }
 
     const { data: matchRows, error: matchError } = await supabase.from("matches").select("*");
@@ -1216,7 +1249,10 @@ async function syncScores(request: NextRequest) {
 
     let playerStatsUpdated = 0;
     let fantasyScoresUpdated = 0;
-    let warning: string | null = [...warnings, ...statWarnings].length > 0 ? [...warnings, ...statWarnings].join(" ") : null;
+    let warning: string | null =
+      [setupWarning, ...warnings, ...statWarnings].filter(Boolean).length > 0
+        ? [setupWarning, ...warnings, ...statWarnings].filter(Boolean).join(" ")
+        : null;
 
     if (playerStats.length > 0) {
       const { error } = await supabase

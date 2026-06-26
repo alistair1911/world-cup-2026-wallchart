@@ -1,7 +1,7 @@
 "use client";
 
 import { INITIAL_MATCHES } from "./tournament-data";
-import { FANTASY_ROUND_ID, normalizeFantasyRosterSlots } from "./fantasy";
+import { FANTASY_ROUND_ID, normalizeFantasyRosterSlots, normalizeFantasyRoundId } from "./fantasy";
 import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
@@ -220,6 +220,10 @@ function readLocalFantasyScores() {
   }
 }
 
+function rosterRoundMatches(slotRoundId: string | null | undefined, targetRoundId: string) {
+  return normalizeFantasyRoundId(slotRoundId) === normalizeFantasyRoundId(targetRoundId);
+}
+
 async function fetchPlayerCatalogRows() {
   try {
     const response = await fetch("/api/fantasy/players", { cache: "no-store" });
@@ -407,7 +411,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       playerStats: applyKnownPlayerStatCorrections(matches, readLocalPlayerStats()),
       playerCatalog: [],
       fantasyTeams: readLocalFantasyTeams(),
-      fantasyRosters: readLocalFantasyRosters(),
+      fantasyRosters: readLocalFantasyRosters().map((slot) => ({ ...slot, roundId: normalizeFantasyRoundId(slot.roundId) })),
       fantasyScores: readLocalFantasyScores()
     };
   }
@@ -505,7 +509,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
         fantasyRosters.push({
           userKey: profile.user_key,
           playerId: row.player_id,
-          roundId: row.round_id,
+          roundId: normalizeFantasyRoundId(row.round_id),
           slotIndex: row.slot_index,
           isStarter: row.is_starter,
           isCaptain: row.is_captain,
@@ -778,8 +782,13 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
 }
 
 export async function saveFantasyRoster(session: FamilySession, slots: FantasyRosterSlot[]) {
-  const cleaned = normalizeFantasyRosterSlots(slots.slice(0, 15), session.userKey).map((slot) => ({
+  const targetRoundId = normalizeFantasyRoundId(slots[0]?.roundId ?? FANTASY_ROUND_ID);
+  const cleaned = normalizeFantasyRosterSlots(
+    slots.slice(0, 15).map((slot) => ({ ...slot, roundId: targetRoundId })),
+    session.userKey
+  ).map((slot) => ({
     ...slot,
+    roundId: targetRoundId,
     updatedAt: new Date().toISOString()
   }));
 
@@ -800,8 +809,10 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
   const supabase = getSupabaseClient();
 
   if (!supabase) {
-    const otherUsers = readLocalFantasyRosters().filter((slot) => slot.userKey !== session.userKey);
-    window.localStorage.setItem(LOCAL_FANTASY_ROSTERS_KEY, JSON.stringify([...otherUsers, ...cleaned]));
+    const otherUsersAndRounds = readLocalFantasyRosters().filter(
+      (slot) => slot.userKey !== session.userKey || !rosterRoundMatches(slot.roundId, targetRoundId)
+    );
+    window.localStorage.setItem(LOCAL_FANTASY_ROSTERS_KEY, JSON.stringify([...otherUsersAndRounds, ...cleaned]));
     return cleaned;
   }
 
@@ -827,7 +838,7 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
     .from("fantasy_rosters")
     .delete()
     .eq("user_id", session.authUserId)
-    .eq("round_id", FANTASY_ROUND_ID);
+    .in("round_id", targetRoundId === FANTASY_ROUND_ID ? [targetRoundId, "global"] : [targetRoundId]);
 
   if (deleteError) {
     throw new Error(deleteError.message);

@@ -1,18 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Crown, MousePointerClick, Sparkles, Trophy, UsersRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Clock, Crown, Lock, MousePointerClick, Sparkles, Trophy, Unlock, UsersRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import {
   FANTASY_SQUAD_SIZE,
   FANTASY_STARTERS,
+  activeFantasyRound,
   buildFantasyLeaderboard,
+  buildFantasyOverallLeaderboard,
+  buildFantasyRoundResults,
   buildFantasyScoresFromMatches,
-  mergeFantasyScores
+  mergeFantasyScores,
+  rostersForFantasyRound,
+  scoresForFantasyRound,
+  type FantasyRoundId,
+  type FantasyRoundResult
 } from "@/lib/fantasy";
 import { avatarUrl } from "@/lib/profile-data";
+import { formatKickoff } from "@/lib/utils";
 import type {
   FamilySession,
   FantasyPlayerMatchScore,
@@ -39,6 +47,42 @@ type FantasyPanelProps = {
   onSelectTeam: (teamId: string) => void;
 };
 
+function roundStatusLabel(round: FantasyRoundResult) {
+  if (round.status === "complete") {
+    return round.winner ? `${round.winner.displayName} won` : round.tied ? "Draw" : "Complete";
+  }
+  if (round.selectionEnabled) {
+    return "Squads open";
+  }
+  if (round.status === "locked") {
+    return "Squads locked";
+  }
+  return "Coming next";
+}
+
+function roundHelpText(round: FantasyRoundResult, nextRound?: FantasyRoundResult) {
+  if (round.status === "complete") {
+    if (nextRound?.selectionEnabled) {
+      return `${nextRound.name} squads are open until ${formatKickoff(nextRound.locksAt)}.`;
+    }
+    return round.winner
+      ? `${round.winner.displayName} takes this fantasy round.`
+      : "This round finished level, so no overall point was awarded.";
+  }
+
+  if (round.selectionEnabled) {
+    return `Pick your squad before ${formatKickoff(round.locksAt)}. This roster scores only ${round.name} matches.`;
+  }
+
+  if (round.status === "locked") {
+    return nextRound
+      ? `${round.name} is locked. ${nextRound.name} opens after all ${round.name} matches are final.`
+      : `${round.name} is locked until the round is complete.`;
+  }
+
+  return `${round.name} selection opens after the previous round is complete.`;
+}
+
 export function FantasyPanel({
   session,
   matches,
@@ -54,14 +98,34 @@ export function FantasyPanel({
 }: FantasyPanelProps) {
   const statScores = useMemo(() => buildFantasyScoresFromMatches(matches, playerStats, playerCatalog), [matches, playerCatalog, playerStats]);
   const displayScores = useMemo(() => mergeFantasyScores(scores, statScores, playerCatalog), [playerCatalog, scores, statScores]);
-  const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, displayScores, playerCatalog), [displayScores, rosters, playerCatalog]);
+  const activeRound = useMemo(() => activeFantasyRound(matches), [matches]);
+  const [selectedRoundId, setSelectedRoundId] = useState<FantasyRoundId>(activeRound.id);
+  const roundResults = useMemo(
+    () => buildFantasyRoundResults(rosters, displayScores, matches, playerCatalog),
+    [displayScores, matches, playerCatalog, rosters]
+  );
+  const activeRoundResult = roundResults.find((round) => round.id === activeRound.id) ?? roundResults[0];
+  const selectedRound = roundResults.find((round) => round.id === selectedRoundId) ?? activeRoundResult;
+  const nextRound = roundResults[roundResults.findIndex((round) => round.id === selectedRound.id) + 1];
+  const selectedRosters = useMemo(() => rostersForFantasyRound(selectedRound.id, rosters), [rosters, selectedRound.id]);
+  const selectedScores = useMemo(() => scoresForFantasyRound(selectedRound.id, displayScores, matches), [displayScores, matches, selectedRound.id]);
+  const selectedStoredScores = useMemo(() => scoresForFantasyRound(selectedRound.id, scores, matches), [matches, scores, selectedRound.id]);
+  const selectedStatScores = useMemo(() => scoresForFantasyRound(selectedRound.id, statScores, matches), [matches, selectedRound.id, statScores]);
+  const leaderboard = useMemo(() => buildFantasyLeaderboard(selectedRosters, selectedScores, playerCatalog), [playerCatalog, selectedRosters, selectedScores]);
+  const overallLeaderboard = useMemo(() => buildFantasyOverallLeaderboard(roundResults, activeRound.id), [activeRound.id, roundResults]);
   const ownRoster = useMemo(
-    () => rosters.filter((slot) => slot.userKey === session.userKey).sort((a, b) => a.slotIndex - b.slotIndex),
-    [rosters, session.userKey]
+    () => selectedRosters.filter((slot) => slot.userKey === session.userKey).sort((a, b) => a.slotIndex - b.slotIndex),
+    [selectedRosters, session.userKey]
   );
   const [selectedFantasyUser, setSelectedFantasyUser] = useState<UserKey | null>(null);
   const ownStarters = ownRoster.filter((slot) => slot.isStarter).length;
   const ownCaptain = leaderboard.find((row) => row.userKey === session.userKey)?.captain;
+  const tataWins = overallLeaderboard.find((row) => row.userKey === "tata")?.roundWins ?? 0;
+  const lucasWins = overallLeaderboard.find((row) => row.userKey === "lucas")?.roundWins ?? 0;
+
+  useEffect(() => {
+    setSelectedRoundId(activeRound.id);
+  }, [activeRound.id]);
 
   return (
     <Panel className="overflow-hidden p-3">
@@ -70,7 +134,51 @@ export function FantasyPanel({
           <Sparkles className="h-5 w-5 text-cup-gold" />
           <h2 className="text-base font-black">Mini-Fantasy</h2>
         </div>
-        <Badge tone="green">{ownRoster.length}/{FANTASY_SQUAD_SIZE}</Badge>
+        <Badge tone={selectedRound.selectionEnabled ? "green" : "red"}>{roundStatusLabel(selectedRound)}</Badge>
+      </div>
+
+      <div className="mb-3 rounded-lg bg-cup-ink p-3 text-white">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-black uppercase text-white/55">Overall fantasy league</div>
+            <div className="mt-1 text-xl font-black">Lucas {lucasWins} - {tataWins} Tata</div>
+          </div>
+          <Trophy className="h-7 w-7 text-cup-gold" />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {overallLeaderboard.map((row) => (
+            <div key={row.userKey} className="rounded-md bg-white/10 p-2 ring-1 ring-white/10">
+              <div className="text-[10px] font-black uppercase text-white/55">{row.displayName}</div>
+              <div className="text-sm font-black">{row.roundWins} round win{row.roundWins === 1 ? "" : "s"}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        {roundResults.map((round) => (
+          <button
+            key={round.id}
+            type="button"
+            onClick={() => setSelectedRoundId(round.id)}
+            className={`rounded-md border p-2 text-left transition focus:outline-none focus:ring-2 focus:ring-cup-gold ${
+              round.id === selectedRound.id ? "border-cup-red bg-white shadow-sm" : "border-slate-200 bg-slate-50 hover:bg-white"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs font-black">{round.shortName}</span>
+              {round.selectionEnabled ? <Unlock className="h-3.5 w-3.5 text-emerald-600" /> : <Lock className="h-3.5 w-3.5 text-slate-400" />}
+            </div>
+            <div className="mt-1 truncate text-[10px] font-bold text-slate-500">{roundStatusLabel(round)}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-3 rounded-md bg-slate-50 p-2 text-[11px] font-bold leading-snug text-slate-600 ring-1 ring-slate-200">
+        <div className="flex items-start gap-2">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-cup-red" />
+          <span>{roundHelpText(selectedRound, nextRound)}</span>
+        </div>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -99,7 +207,7 @@ export function FantasyPanel({
               </div>
               <div className="text-right">
                 <div className="text-xl font-black text-cup-red">{row.points}</div>
-                <div className="text-[9px] font-black uppercase text-slate-400">Fantasy pts</div>
+                <div className="text-[9px] font-black uppercase text-slate-400">{selectedRound.shortName} pts</div>
               </div>
             </div>
             {row.bestPlayer ? (
@@ -117,7 +225,7 @@ export function FantasyPanel({
             ) : null}
             <div className="mt-2 flex items-center justify-between rounded-md bg-slate-50 px-2 py-1.5 text-[10px] font-black uppercase text-slate-500 ring-1 ring-black/5">
               <span>{row.rosterSize}/{FANTASY_SQUAD_SIZE} players</span>
-              <span>Tap to edit</span>
+              <span>{selectedRound.selectionEnabled && row.userKey === session.userKey ? "Tap to edit" : "Tap to view"}</span>
             </div>
           </button>
         ))}
@@ -128,7 +236,7 @@ export function FantasyPanel({
           <div className="min-w-0">
             <h3 className="text-sm font-black uppercase text-slate-600">{session.displayName}'s Squad</h3>
             <p className="truncate text-xs font-bold text-slate-500">
-              {ownRoster.length}/{FANTASY_SQUAD_SIZE} players - {ownStarters}/{FANTASY_STARTERS} starters
+              {selectedRound.name}: {ownRoster.length}/{FANTASY_SQUAD_SIZE} players - {ownStarters}/{FANTASY_STARTERS} starters
               {ownCaptain ? ` - Captain ${ownCaptain.name}` : ""}
             </p>
           </div>
@@ -141,20 +249,21 @@ export function FantasyPanel({
 
       <div className="mt-3 flex items-center gap-2 rounded-md bg-slate-50 p-2 text-[10px] font-bold text-slate-500">
         <UsersRound className="h-4 w-4 shrink-0 text-cup-red" />
-        Tata and Lucas can both pick the same players. ESPN-confirmed stats update after matches.
+        Squads reset by round. Completed round winners add one point to the overall fantasy league.
       </div>
 
       <FantasyProfileDrawer
         userKey={selectedFantasyUser}
         session={session}
         matches={matches}
-        rosters={rosters}
-        scores={displayScores}
-        storedScores={scores}
-        statScores={statScores}
+        rosters={selectedRosters}
+        scores={selectedScores}
+        storedScores={selectedStoredScores}
+        statScores={selectedStatScores}
         playerStats={playerStats}
         playerCatalog={playerCatalog}
         teamSettings={teamSettings}
+        round={selectedRound}
         onClose={() => setSelectedFantasyUser(null)}
         onSaveRoster={onSaveRoster}
         onSaveSettings={onSaveTeamSettings}

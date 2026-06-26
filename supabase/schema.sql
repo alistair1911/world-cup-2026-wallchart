@@ -118,9 +118,19 @@ create table if not exists public.fantasy_rounds (
   created_at timestamptz not null default now()
 );
 
-insert into public.fantasy_rounds (id, name)
-values ('global', 'Tournament Mini-Fantasy')
-on conflict (id) do nothing;
+insert into public.fantasy_rounds (id, name, starts_at, locks_at, ends_at)
+values
+  ('global', 'Tournament Mini-Fantasy', '2026-06-11T19:00:00.000Z', '2026-06-11T19:00:00.000Z', '2026-06-28T05:00:00.000Z'),
+  ('group', 'Group Stage', '2026-06-11T19:00:00.000Z', '2026-06-11T19:00:00.000Z', '2026-06-28T05:00:00.000Z'),
+  ('round32', 'Round of 32', '2026-06-28T19:00:00.000Z', '2026-06-28T19:00:00.000Z', '2026-07-04T04:30:00.000Z'),
+  ('round16', 'Round of 16', '2026-07-04T17:00:00.000Z', '2026-07-04T17:00:00.000Z', '2026-07-07T23:00:00.000Z'),
+  ('quarter', 'Quarter-Finals', '2026-07-09T20:00:00.000Z', '2026-07-09T20:00:00.000Z', '2026-07-12T04:00:00.000Z')
+on conflict (id) do update
+set
+  name = excluded.name,
+  starts_at = excluded.starts_at,
+  locks_at = excluded.locks_at,
+  ends_at = excluded.ends_at;
 
 create table if not exists public.fantasy_rosters (
   id uuid primary key default gen_random_uuid(),
