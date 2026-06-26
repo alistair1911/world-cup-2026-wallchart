@@ -124,7 +124,9 @@ values
   ('group', 'Group Stage', '2026-06-11T19:00:00.000Z', '2026-06-11T19:00:00.000Z', '2026-06-28T05:00:00.000Z'),
   ('round32', 'Round of 32', '2026-06-28T19:00:00.000Z', '2026-06-28T19:00:00.000Z', '2026-07-04T04:30:00.000Z'),
   ('round16', 'Round of 16', '2026-07-04T17:00:00.000Z', '2026-07-04T17:00:00.000Z', '2026-07-07T23:00:00.000Z'),
-  ('quarter', 'Quarter-Finals', '2026-07-09T20:00:00.000Z', '2026-07-09T20:00:00.000Z', '2026-07-12T04:00:00.000Z')
+  ('quarter', 'Quarter-Finals', '2026-07-09T20:00:00.000Z', '2026-07-09T20:00:00.000Z', '2026-07-12T04:00:00.000Z'),
+  ('semi', 'Semi-Finals', '2026-07-14T19:00:00.000Z', '2026-07-14T19:00:00.000Z', '2026-07-15T22:00:00.000Z'),
+  ('final', 'Final', '2026-07-19T19:00:00.000Z', '2026-07-19T19:00:00.000Z', '2026-07-19T22:00:00.000Z')
 on conflict (id) do update
 set
   name = excluded.name,
@@ -207,6 +209,10 @@ create index if not exists players_provider_player_id_idx
 
 create index if not exists fantasy_rosters_user_round_idx
   on public.fantasy_rosters (user_id, round_id);
+
+create unique index if not exists fantasy_rosters_knockout_unique_player_idx
+  on public.fantasy_rosters (round_id, player_id)
+  where round_id in ('round32', 'round16', 'quarter', 'semi', 'final');
 
 create index if not exists fantasy_scores_match_idx
   on public.fantasy_player_match_scores (match_id);

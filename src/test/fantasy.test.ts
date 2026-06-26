@@ -5,10 +5,12 @@ import {
   buildFantasyOverallLeaderboard,
   buildFantasyRoundResults,
   buildFantasyScoresFromMatches,
+  fantasyRoundStates,
   fantasyOptionMap,
   fantasyPlayerTotals,
   fantasyPlayerOptions,
   fantasyScoreIdsForPlayer,
+  isFantasyKnockoutRound,
   mergeFantasyScores,
   normalizeFantasyRosterSlots,
   normalizeFantasyPosition,
@@ -307,6 +309,73 @@ describe("mini-fantasy scoring", () => {
     });
     expect(overall.find((row) => row.userKey === "lucas")).toMatchObject({ roundWins: 1 });
     expect(overall.find((row) => row.userKey === "tata")).toMatchObject({ roundWins: 0 });
+  });
+
+  it("opens future knockout squads before each round kickoff", () => {
+    const states = fantasyRoundStates(INITIAL_MATCHES, new Date("2026-06-20T12:00:00.000Z"));
+    const editableRounds = states.filter((round) => round.selectionEnabled).map((round) => round.id);
+
+    expect(editableRounds).toEqual(["round32", "round16", "quarter", "semi", "final"]);
+  });
+
+  it("limits knockout fantasy squads to 11 players", () => {
+    const slots: FantasyRosterSlot[] = Array.from({ length: 12 }, (_item, index) => ({
+      userKey: "tata",
+      playerId: `player-${index}`,
+      roundId: "round32",
+      slotIndex: index,
+      isStarter: index < 11,
+      isCaptain: index === 0,
+      isViceCaptain: index === 1
+    }));
+
+    expect(validateFantasyRoster(slots, INITIAL_MATCHES)).toBe("Pick no more than 11 players.");
+    expect(normalizeFantasyRosterSlots(slots, "tata", "round32")).toHaveLength(11);
+  });
+
+  it("treats every post-group fantasy round as knockout-only squad selection", () => {
+    expect(isFantasyKnockoutRound("group")).toBe(false);
+    expect(isFantasyKnockoutRound("round32")).toBe(true);
+    expect(isFantasyKnockoutRound("round16")).toBe(true);
+    expect(isFantasyKnockoutRound("quarter")).toBe(true);
+    expect(isFantasyKnockoutRound("semi")).toBe(true);
+    expect(isFantasyKnockoutRound("final")).toBe(true);
+  });
+
+  it("uses the newest duplicate player stat instead of preserving inflated older rows", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.id === "M3")!,
+      homeTeamId: "canada",
+      awayTeamId: "qatar",
+      homeScore: 3,
+      awayScore: 0,
+      status: "final" as const
+    };
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: "M3",
+          playerId: "canada-8489",
+          playerName: "Jonathan David",
+          teamId: "canada",
+          goals: 9,
+          assists: 0,
+          updatedAt: "2026-06-20T10:00:00.000Z"
+        },
+        {
+          matchId: "M3",
+          playerId: "canada-jonathan-david",
+          playerName: "Jonathan David",
+          teamId: "canada",
+          goals: 3,
+          assists: 0,
+          updatedAt: "2026-06-20T11:00:00.000Z"
+        }
+      ]
+    );
+
+    expect(scores.find((score) => score.playerId === "canada-jonathan-david")).toMatchObject({ goals: 3 });
   });
 
   it("allows every curated player from every team to receive fantasy points", () => {

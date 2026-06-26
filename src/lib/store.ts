@@ -1,7 +1,7 @@
 "use client";
 
 import { INITIAL_MATCHES } from "./tournament-data";
-import { FANTASY_ROUND_ID, normalizeFantasyRosterSlots, normalizeFantasyRoundId } from "./fantasy";
+import { FANTASY_ROUND_ID, fantasyRoundRosterSize, isFantasyKnockoutRound, normalizeFantasyRosterSlots, normalizeFantasyRoundId } from "./fantasy";
 import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
@@ -222,6 +222,10 @@ function readLocalFantasyScores() {
 
 function rosterRoundMatches(slotRoundId: string | null | undefined, targetRoundId: string) {
   return normalizeFantasyRoundId(slotRoundId) === normalizeFantasyRoundId(targetRoundId);
+}
+
+function duplicateKnockoutPlayerMessage(playerId: string) {
+  return `That player is already selected by the other team for this knockout round. Pick a different player. (${playerId})`;
 }
 
 async function fetchPlayerCatalogRows() {
@@ -783,9 +787,11 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
 
 export async function saveFantasyRoster(session: FamilySession, slots: FantasyRosterSlot[]) {
   const targetRoundId = normalizeFantasyRoundId(slots[0]?.roundId ?? FANTASY_ROUND_ID);
+  const squadSize = fantasyRoundRosterSize(targetRoundId);
   const cleaned = normalizeFantasyRosterSlots(
-    slots.slice(0, 15).map((slot) => ({ ...slot, roundId: targetRoundId })),
-    session.userKey
+    slots.slice(0, squadSize).map((slot) => ({ ...slot, roundId: targetRoundId })),
+    session.userKey,
+    targetRoundId
   ).map((slot) => ({
     ...slot,
     roundId: targetRoundId,
@@ -809,6 +815,18 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
   const supabase = getSupabaseClient();
 
   if (!supabase) {
+    if (isFantasyKnockoutRound(targetRoundId)) {
+      const otherTakenPlayer = readLocalFantasyRosters().find(
+        (slot) =>
+          slot.userKey !== session.userKey &&
+          rosterRoundMatches(slot.roundId, targetRoundId) &&
+          cleaned.some((candidate) => candidate.playerId === slot.playerId)
+      );
+      if (otherTakenPlayer) {
+        throw new Error(duplicateKnockoutPlayerMessage(otherTakenPlayer.playerId));
+      }
+    }
+
     const otherUsersAndRounds = readLocalFantasyRosters().filter(
       (slot) => slot.userKey !== session.userKey || !rosterRoundMatches(slot.roundId, targetRoundId)
     );
@@ -832,6 +850,27 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
 
   if (teamError) {
     throw new Error(teamError.message);
+  }
+
+  if (isFantasyKnockoutRound(targetRoundId) && cleaned.length > 0) {
+    const { data: conflictingRows, error: conflictError } = await supabase
+      .from("fantasy_rosters")
+      .select("player_id,user_id")
+      .eq("round_id", targetRoundId)
+      .in(
+        "player_id",
+        cleaned.map((slot) => slot.playerId)
+      )
+      .neq("user_id", session.authUserId);
+
+    if (conflictError) {
+      throw new Error(conflictError.message);
+    }
+
+    const conflictingPlayerId = (conflictingRows as Array<{ player_id: string }> | null)?.[0]?.player_id;
+    if (conflictingPlayerId) {
+      throw new Error(duplicateKnockoutPlayerMessage(conflictingPlayerId));
+    }
   }
 
   const { error: deleteError } = await supabase

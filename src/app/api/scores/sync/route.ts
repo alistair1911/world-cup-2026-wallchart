@@ -405,6 +405,66 @@ function clampStat(value: number) {
   return Math.max(0, Math.min(20, Math.trunc(value)));
 }
 
+function teamScoreForStat(stat: PlayerMatchStat, matchesById: Map<string, Match>) {
+  const match = matchesById.get(stat.matchId);
+  if (!match || !stat.teamId) {
+    return null;
+  }
+  if (stat.teamId === match.homeTeamId) {
+    return match.homeScore;
+  }
+  if (stat.teamId === match.awayTeamId) {
+    return match.awayScore;
+  }
+  return null;
+}
+
+function impossibleStatGroupKey(stat: PlayerMatchStat) {
+  return `${stat.matchId}:${stat.teamId}`;
+}
+
+function sanitizePlayerStatsForScores(stats: PlayerMatchStat[], matches: Match[]) {
+  const matchesById = new Map(matches.map((match) => [match.id, match]));
+  const capped = stats
+    .map((stat) => {
+      const teamScore = teamScoreForStat(stat, matchesById);
+      if (teamScore === null || teamScore === undefined) {
+        return stat;
+      }
+      return { ...stat, goals: Math.min(stat.goals, Math.max(0, teamScore)) };
+    })
+    .filter((stat) => stat.goals > 0 || stat.assists > 0);
+
+  const goalsByGroup = new Map<string, number>();
+  for (const stat of capped) {
+    goalsByGroup.set(impossibleStatGroupKey(stat), (goalsByGroup.get(impossibleStatGroupKey(stat)) ?? 0) + stat.goals);
+  }
+
+  const droppedGroups = new Set<string>();
+  for (const [key, goals] of goalsByGroup) {
+    const [matchId, teamId] = key.split(":");
+    const teamScore = teamScoreForStat(
+      { matchId, teamId, playerId: "", playerName: "", goals: 0, assists: 0 },
+      matchesById
+    );
+    if (teamScore !== null && teamScore !== undefined && goals > teamScore) {
+      droppedGroups.add(key);
+    }
+  }
+
+  return {
+    stats: capped.filter((stat) => !droppedGroups.has(impossibleStatGroupKey(stat))),
+    droppedGroups: [...droppedGroups].map((key) => {
+      const [matchId, teamId] = key.split(":");
+      return { matchId, teamId };
+    }),
+    cappedStats: capped.filter((stat) => {
+      const original = stats.find((item) => item.matchId === stat.matchId && item.playerId === stat.playerId);
+      return original ? original.goals !== stat.goals || original.assists !== stat.assists : false;
+    })
+  };
+}
+
 function eventTeamForMatch(match: Match, feedTeamName: string) {
   const home = getTeam(match.homeTeamId);
   const away = getTeam(match.awayTeamId);
@@ -1224,27 +1284,7 @@ async function syncScores(request: NextRequest) {
     if (provider === "espn") {
       playerStats.push(...parseEspnPlayerStats([...updatedMatchesById.values()], payload));
     } else if (provider === "api-football") {
-      const eventTargets = feedItems
-        .map((item) => ({
-          fixtureId: item.providerFixtureId,
-          match: item.matchId ? updatedMatchesById.get(item.matchId) : null
-        }))
-        .filter((target): target is { fixtureId: string; match: Match } =>
-          Boolean(target.fixtureId && target.match && (force || isActiveSyncWindow(target.match)) && target.match.status !== "scheduled")
-        )
-        .slice(0, 6);
-
-      for (const target of eventTargets) {
-        try {
-          const eventsPayload = await fetchApiFootballFixtureEvents(target.fixtureId);
-          if (!eventsPayload) {
-            continue;
-          }
-          playerStats.push(...parseApiFootballEvents(target.match, eventsPayload));
-        } catch (error) {
-          statWarnings.push(error instanceof Error ? error.message : "API-Football fixture events sync failed.");
-        }
-      }
+      statWarnings.push("Fantasy player scorer sync skipped because ESPN was unavailable.");
     }
 
     let playerStatsUpdated = 0;
@@ -1253,6 +1293,24 @@ async function syncScores(request: NextRequest) {
       [setupWarning, ...warnings, ...statWarnings].filter(Boolean).length > 0
         ? [setupWarning, ...warnings, ...statWarnings].filter(Boolean).join(" ")
         : null;
+
+    const espnTouchedMatchIds =
+      provider === "espn"
+        ? Array.from(
+            new Set(
+              feedItems
+                .map((item) => item.matchId)
+                .filter((matchId): matchId is string => Boolean(matchId))
+            )
+          )
+        : [];
+
+    if (espnTouchedMatchIds.length > 0) {
+      const { error } = await supabase.from("player_match_stats").delete().in("match_id", espnTouchedMatchIds);
+      if (error) {
+        warning = [warning, `Old ESPN player stats could not be cleared: ${error.message}`].filter(Boolean).join(" ");
+      }
+    }
 
     if (playerStats.length > 0) {
       const { error } = await supabase
@@ -1326,6 +1384,32 @@ async function syncScores(request: NextRequest) {
       }
 
       const currentMatchList = [...updatedMatchesById.values()];
+      const sanitized = sanitizePlayerStatsForScores(allPlayerStats, currentMatchList);
+      if (sanitized.droppedGroups.length > 0) {
+        for (const group of sanitized.droppedGroups) {
+          const { error } = await supabase
+            .from("player_match_stats")
+            .delete()
+            .eq("match_id", group.matchId)
+            .eq("team_id", group.teamId);
+          if (error) {
+            warning = [warning, `Impossible player stats could not be cleared: ${error.message}`].filter(Boolean).join(" ");
+          }
+        }
+      }
+      const sanitizedCappedStats = sanitized.cappedStats.filter(
+        (stat) => !sanitized.droppedGroups.some((group) => group.matchId === stat.matchId && group.teamId === stat.teamId)
+      );
+      if (sanitizedCappedStats.length > 0) {
+        const { error } = await supabase
+          .from("player_match_stats")
+          .upsert(sanitizedCappedStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
+        if (error) {
+          warning = [warning, `Impossible player stats could not be capped: ${error.message}`].filter(Boolean).join(" ");
+        }
+      }
+      allPlayerStats.splice(0, allPlayerStats.length, ...sanitized.stats);
+
       const knownCorrections = missingKnownPlayerStatCorrections(currentMatchList, allPlayerStats, playerCatalog);
       if (knownCorrections.length > 0) {
         const { error } = await supabase
@@ -1341,33 +1425,9 @@ async function syncScores(request: NextRequest) {
 
       const repairTargets = playerStatRepairTargets(currentMatchList, allPlayerStats, force);
       if (repairTargets.length > 0) {
-        if (!process.env.OPENROUTER_API_KEY) {
-          warning = [warning, "Player scorer repair skipped because OPENROUTER_API_KEY is not configured."]
-            .filter(Boolean)
-            .join(" ");
-        } else {
-          try {
-            const repairedStats = await fetchOpenRouterPlayerStats(repairTargets);
-            if (repairedStats.length > 0) {
-              const { error } = await supabase
-                .from("player_match_stats")
-                .upsert(repairedStats.map(playerStatToRow), { onConflict: "match_id,player_id" });
-              if (error) {
-                warning = [warning, `Player scorer repair could not be saved: ${error.message}`].filter(Boolean).join(" ");
-              } else {
-                allPlayerStats.push(...repairedStats);
-                playerStatsUpdated += repairedStats.length;
-              }
-            }
-          } catch (error) {
-            warning = [
-              warning,
-              error instanceof Error ? `Player scorer repair skipped: ${error.message}` : "Player scorer repair skipped."
-            ]
-              .filter(Boolean)
-              .join(" ");
-          }
-        }
+        warning = [warning, "Some scorer rows are missing from ESPN and were left blank rather than guessed."]
+          .filter(Boolean)
+          .join(" ");
       }
 
       const matchIdsWithStats = new Set(allPlayerStats.map((stat) => stat.matchId));

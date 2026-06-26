@@ -7,11 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
-  FANTASY_SQUAD_SIZE,
-  FANTASY_STARTERS,
   activeFantasyRound,
   buildFantasyScoresFromMatches,
-  isFantasyPlayerLocked,
+  isFantasyKnockoutRound,
   mergeFantasyScores,
   normalizeFantasyRoundId,
   rostersForFantasyRound,
@@ -282,12 +280,7 @@ export function WallchartApp() {
     }
 
     if (!currentFantasyRound.selectionEnabled) {
-      setSyncMessage(`${currentFantasyRound.name} squad selection is locked. The next round opens after this round is complete.`);
-      return;
-    }
-
-    if (isFantasyPlayerLocked(playerId, matches, new Date(), playerCatalog)) {
-      setSyncMessage("That player is locked for Mini-Fantasy because the next match is close to kickoff.");
+      setSyncMessage(`${currentFantasyRound.name} squad selection is locked because its first match has already started.`);
       return;
     }
 
@@ -298,17 +291,26 @@ export function WallchartApp() {
       setSyncMessage("Player is already in your Mini-Fantasy squad.");
       return;
     }
-    if (ownSlots.length >= FANTASY_SQUAD_SIZE) {
-      setSyncMessage(`Mini-Fantasy squad is full at ${FANTASY_SQUAD_SIZE} players.`);
+    if (
+      isFantasyKnockoutRound(currentFantasyRound.id) &&
+      currentFantasyRosters.some((slot) => slot.userKey !== session.userKey && slot.playerId === playerId)
+    ) {
+      setSyncMessage("That player is already selected by the other team for this knockout round.");
       return;
     }
+    if (ownSlots.length >= currentFantasyRound.squadSize) {
+      setSyncMessage(`Mini-Fantasy squad is full at ${currentFantasyRound.squadSize} players.`);
+      return;
+    }
+    const starterCount = ownSlots.filter((slot) => slot.isStarter).length;
+    const addAsStarter = starterCount < currentFantasyRound.starterSize;
 
     const nextSlot: FantasyRosterSlot = {
       userKey: session.userKey,
       playerId,
       roundId: currentFantasyRound.id,
       slotIndex: ownSlots.length,
-      isStarter: ownSlots.length < FANTASY_STARTERS,
+      isStarter: addAsStarter,
       isCaptain: ownSlots.length === 0,
       isViceCaptain: ownSlots.length === 1,
       updatedAt: new Date().toISOString()

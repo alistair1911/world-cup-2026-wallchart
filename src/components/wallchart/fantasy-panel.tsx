@@ -6,8 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import {
-  FANTASY_SQUAD_SIZE,
-  FANTASY_STARTERS,
   activeFantasyRound,
   buildFantasyLeaderboard,
   buildFantasyOverallLeaderboard,
@@ -71,16 +69,14 @@ function roundHelpText(round: FantasyRoundResult, nextRound?: FantasyRoundResult
   }
 
   if (round.selectionEnabled) {
-    return `Pick your squad before ${formatKickoff(round.locksAt)}. This roster scores only ${round.name} matches.`;
+    return `Pick up to ${round.squadSize} players before ${formatKickoff(round.locksAt)}. This roster scores only ${round.name} matches.`;
   }
 
   if (round.status === "locked") {
-    return nextRound
-      ? `${round.name} is locked. ${nextRound.name} opens after all ${round.name} matches are final.`
-      : `${round.name} is locked until the round is complete.`;
+    return `${round.name} is locked because its first match has already started.`;
   }
 
-  return `${round.name} selection opens after the previous round is complete.`;
+  return `${round.name} selection opens before its first match.`;
 }
 
 export function FantasyPanel({
@@ -224,7 +220,7 @@ export function FantasyPanel({
               </div>
             ) : null}
             <div className="mt-2 flex items-center justify-between rounded-md bg-slate-50 px-2 py-1.5 text-[10px] font-black uppercase text-slate-500 ring-1 ring-black/5">
-              <span>{row.rosterSize}/{FANTASY_SQUAD_SIZE} players</span>
+              <span>{row.rosterSize}/{selectedRound.squadSize} players</span>
               <span>{selectedRound.selectionEnabled && row.userKey === session.userKey ? "Tap to edit" : "Tap to view"}</span>
             </div>
           </button>
@@ -236,7 +232,7 @@ export function FantasyPanel({
           <div className="min-w-0">
             <h3 className="text-sm font-black uppercase text-slate-600">{session.displayName}'s Squad</h3>
             <p className="truncate text-xs font-bold text-slate-500">
-              {selectedRound.name}: {ownRoster.length}/{FANTASY_SQUAD_SIZE} players - {ownStarters}/{FANTASY_STARTERS} starters
+              {selectedRound.name}: {ownRoster.length}/{selectedRound.squadSize} players - {ownStarters}/{selectedRound.starterSize} starters
               {ownCaptain ? ` - Captain ${ownCaptain.name}` : ""}
             </p>
           </div>
@@ -249,7 +245,7 @@ export function FantasyPanel({
 
       <div className="mt-3 flex items-center gap-2 rounded-md bg-slate-50 p-2 text-[10px] font-bold text-slate-500">
         <UsersRound className="h-4 w-4 shrink-0 text-cup-red" />
-        Squads reset by round. Completed round winners add one point to the overall fantasy league.
+        Group Stage uses 15 players. Knockout rounds use 11 players and can be planned before first kickoff.
       </div>
 
       <FantasyProfileDrawer

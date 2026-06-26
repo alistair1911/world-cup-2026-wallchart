@@ -12,13 +12,15 @@ import type {
   UserKey
 } from "./types";
 
-export type FantasyRoundId = "group" | "round32" | "round16" | "quarter";
+export type FantasyRoundId = "group" | "round32" | "round16" | "quarter" | "semi" | "final";
 
 export type FantasyRoundDefinition = {
   id: FantasyRoundId;
   name: string;
   shortName: string;
   phases: MatchPhase[];
+  squadSize: number;
+  starterSize: number;
 };
 
 export type FantasyRoundStatus = "upcoming" | "open" | "locked" | "complete";
@@ -50,10 +52,12 @@ export const FANTASY_ROUND_ID: FantasyRoundId = "group";
 export const FANTASY_SQUAD_SIZE = 15;
 export const FANTASY_STARTERS = 11;
 export const FANTASY_ROUNDS: FantasyRoundDefinition[] = [
-  { id: "group", name: "Group Stage", shortName: "Groups", phases: ["group"] },
-  { id: "round32", name: "Round of 32", shortName: "R32", phases: ["round32"] },
-  { id: "round16", name: "Round of 16", shortName: "R16", phases: ["round16"] },
-  { id: "quarter", name: "Quarter-Finals", shortName: "QF", phases: ["quarter"] }
+  { id: "group", name: "Group Stage", shortName: "Groups", phases: ["group"], squadSize: FANTASY_SQUAD_SIZE, starterSize: FANTASY_STARTERS },
+  { id: "round32", name: "Round of 32", shortName: "R32", phases: ["round32"], squadSize: FANTASY_STARTERS, starterSize: FANTASY_STARTERS },
+  { id: "round16", name: "Round of 16", shortName: "R16", phases: ["round16"], squadSize: FANTASY_STARTERS, starterSize: FANTASY_STARTERS },
+  { id: "quarter", name: "Quarter-Finals", shortName: "QF", phases: ["quarter"], squadSize: FANTASY_STARTERS, starterSize: FANTASY_STARTERS },
+  { id: "semi", name: "Semi-Finals", shortName: "SF", phases: ["semi"], squadSize: FANTASY_STARTERS, starterSize: FANTASY_STARTERS },
+  { id: "final", name: "Final", shortName: "Final", phases: ["final"], squadSize: FANTASY_STARTERS, starterSize: FANTASY_STARTERS }
 ];
 export const FANTASY_SCORING_RULES = [
   { label: "Goal", detail: "GK/DEF +6, MID +5, FWD +4" },
@@ -127,6 +131,18 @@ export function fantasyRoundDefinition(roundId: string | null | undefined) {
   return FANTASY_ROUNDS.find((round) => round.id === normalized) ?? FANTASY_ROUNDS[0];
 }
 
+export function fantasyRoundRosterSize(roundId: string | null | undefined) {
+  return fantasyRoundDefinition(roundId).squadSize;
+}
+
+export function fantasyRoundStarterSize(roundId: string | null | undefined) {
+  return fantasyRoundDefinition(roundId).starterSize;
+}
+
+export function isFantasyKnockoutRound(roundId: string | null | undefined) {
+  return normalizeFantasyRoundId(roundId) !== FANTASY_ROUND_ID;
+}
+
 export function matchesForFantasyRound(roundId: string, matches: Match[]) {
   const round = fantasyRoundDefinition(roundId);
   return matches.filter((match) => round.phases.includes(match.phase));
@@ -143,16 +159,14 @@ function roundSchedule(round: FantasyRoundDefinition, matches: Match[]) {
 }
 
 export function fantasyRoundStates(matches: Match[], now = new Date()): FantasyRoundState[] {
-  let previousComplete = true;
-
   return FANTASY_ROUNDS.map((round) => {
     const { startsAt, locksAt, endsAt, roundMatches } = roundSchedule(round, matches);
     const finalCount = roundMatches.filter((match) => match.status === "final").length;
     const complete = roundMatches.length > 0 && finalCount === roundMatches.length;
     const locked = now.getTime() >= new Date(locksAt).getTime();
-    const selectionEnabled = previousComplete && !complete && !locked;
+    const selectionEnabled = !complete && !locked;
     const status: FantasyRoundStatus = complete ? "complete" : selectionEnabled ? "open" : locked ? "locked" : "upcoming";
-    const state = {
+    return {
       ...round,
       startsAt,
       locksAt,
@@ -162,8 +176,6 @@ export function fantasyRoundStates(matches: Match[], now = new Date()): FantasyR
       matchCount: roundMatches.length,
       finalCount
     };
-    previousComplete = previousComplete && complete;
-    return state;
   });
 }
 
@@ -585,30 +597,37 @@ export function validateFantasyRoster(
   slots: FantasyRosterSlot[],
   matches: Match[],
   now = new Date(),
-  playerCatalog: PlayerCatalogItem[] = []
+  playerCatalog: PlayerCatalogItem[] = [],
+  roundId: string | null | undefined = slots[0]?.roundId
 ) {
+  void matches;
+  void now;
+  void playerCatalog;
+  const squadSize = fantasyRoundRosterSize(roundId);
+  const starterSize = fantasyRoundStarterSize(roundId);
   const uniqueIds = new Set(slots.map((slot) => slot.playerId));
   if (uniqueIds.size !== slots.length) {
     return "Remove duplicate players before saving.";
   }
-  if (slots.length > FANTASY_SQUAD_SIZE) {
-    return `Pick no more than ${FANTASY_SQUAD_SIZE} players.`;
+  if (slots.length > squadSize) {
+    return `Pick no more than ${squadSize} players.`;
   }
   if (slots.length > 0 && !slots.some((slot) => slot.isCaptain)) {
     return "Choose a captain before saving.";
   }
-  if (slots.filter((slot) => slot.isStarter).length > FANTASY_STARTERS) {
-    return `Pick no more than ${FANTASY_STARTERS} starters.`;
-  }
-  if (slots.some((slot) => isFantasyPlayerLocked(slot.playerId, matches, now, playerCatalog))) {
-    return "One or more selected players are locked because their next match is close to kickoff.";
+  if (slots.filter((slot) => slot.isStarter).length > starterSize) {
+    return `Pick no more than ${starterSize} starters.`;
   }
   return null;
 }
 
-export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?: UserKey): FantasyRosterSlot[] {
+export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?: UserKey, roundId?: string | null): FantasyRosterSlot[] {
+  const targetRoundId = normalizeFantasyRoundId(roundId ?? slots[0]?.roundId);
+  const squadSize = fantasyRoundRosterSize(targetRoundId);
+  const starterSize = fantasyRoundStarterSize(targetRoundId);
+  const benchCapacity = Math.max(0, squadSize - starterSize);
   const seenPlayers = new Set<string>();
-  const board: Array<FantasyRosterSlot | null> = Array.from({ length: FANTASY_STARTERS }, () => null);
+  const board: Array<FantasyRosterSlot | null> = Array.from({ length: starterSize }, () => null);
   const bench: FantasyRosterSlot[] = [];
 
   function nextOpenStarterIndex() {
@@ -624,11 +643,11 @@ export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?
     const normalized = {
       ...slot,
       userKey: userKey ?? slot.userKey,
-      roundId: normalizeFantasyRoundId(slot.roundId)
+      roundId: targetRoundId
     };
 
     if (slot.isStarter) {
-      const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < FANTASY_STARTERS ? slot.slotIndex : -1;
+      const preferredIndex = slot.slotIndex >= 0 && slot.slotIndex < starterSize ? slot.slotIndex : -1;
       const targetIndex = preferredIndex >= 0 && !board[preferredIndex] ? preferredIndex : nextOpenStarterIndex();
       if (targetIndex >= 0) {
         board[targetIndex] = { ...normalized, slotIndex: targetIndex, isStarter: true };
@@ -641,21 +660,30 @@ export function normalizeFantasyRosterSlots(slots: FantasyRosterSlot[], userKey?
 
   const usedIndexes = new Set(board.map((slot, index) => (slot ? index : null)).filter((index): index is number => index !== null));
   const benchIndexOrder = [
-    ...Array.from({ length: FANTASY_SQUAD_SIZE - FANTASY_STARTERS }, (_item, index) => FANTASY_STARTERS + index),
-    ...Array.from({ length: FANTASY_STARTERS }, (_item, index) => index)
+    ...Array.from({ length: benchCapacity }, (_item, index) => starterSize + index),
+    ...Array.from({ length: starterSize }, (_item, index) => index)
   ];
   const normalizedBench: FantasyRosterSlot[] = [];
 
   for (const slot of bench) {
-    const slotIndex = benchIndexOrder.find((index) => !usedIndexes.has(index));
-    if (slotIndex === undefined) {
+    if (benchCapacity > 0) {
+      const slotIndex = benchIndexOrder.find((index) => !usedIndexes.has(index));
+      if (slotIndex === undefined) {
+        break;
+      }
+      usedIndexes.add(slotIndex);
+      normalizedBench.push({ ...slot, slotIndex, isStarter: false });
+      continue;
+    }
+
+    const starterIndex = nextOpenStarterIndex();
+    if (starterIndex < 0) {
       break;
     }
-    usedIndexes.add(slotIndex);
-    normalizedBench.push({ ...slot, slotIndex, isStarter: false });
+    board[starterIndex] = { ...slot, slotIndex: starterIndex, isStarter: true };
   }
 
-  return [...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...normalizedBench].slice(0, FANTASY_SQUAD_SIZE);
+  return [...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...normalizedBench].slice(0, squadSize);
 }
 
 function goalPoints(position: FantasyPosition) {
@@ -722,12 +750,11 @@ export function buildFantasyScoresFromMatches(
       return incoming;
     }
 
-    return {
-      ...existing,
-      goals: Math.max(existing.goals, incoming.goals),
-      assists: Math.max(existing.assists, incoming.assists),
-      updatedAt: incoming.updatedAt ?? existing.updatedAt
-    };
+    if (!existing.updatedAt || (incoming.updatedAt && new Date(incoming.updatedAt).getTime() >= new Date(existing.updatedAt).getTime())) {
+      return incoming;
+    }
+
+    return existing;
   }
 
   for (const stat of playerStats) {
