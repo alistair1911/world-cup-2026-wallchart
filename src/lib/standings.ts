@@ -1,6 +1,42 @@
 import { GROUPS, TEAMS, getTeam } from "./tournament-data";
 import type { GroupLetter, KnockoutSeed, Match, StandingRow, Team } from "./types";
 
+type ThirdPlaceSlot = "1A" | "1B" | "1D" | "1E" | "1G" | "1I" | "1K" | "1L";
+
+const THIRD_PLACE_SLOT_BY_POOL: Record<string, ThirdPlaceSlot> = {
+  "A/B/C/D/F": "1E",
+  "C/D/F/G/H": "1I",
+  "C/E/F/H/I": "1A",
+  "E/H/I/J/K": "1L",
+  "B/E/F/I/J": "1D",
+  "A/E/H/I/J": "1G",
+  "E/F/G/I/J": "1B",
+  "D/E/I/J/L": "1K"
+};
+
+const THIRD_PLACE_ASSIGNMENTS: Record<string, Record<ThirdPlaceSlot, GroupLetter>> = {
+  BDEFIJKL: {
+    "1A": "E",
+    "1B": "J",
+    "1D": "B",
+    "1E": "D",
+    "1G": "I",
+    "1I": "F",
+    "1K": "L",
+    "1L": "K"
+  },
+  BDEFGIKL: {
+    "1A": "E",
+    "1B": "G",
+    "1D": "B",
+    "1E": "D",
+    "1G": "I",
+    "1I": "F",
+    "1K": "L",
+    "1L": "K"
+  }
+};
+
 function emptyRow(team: Team): StandingRow {
   return {
     team,
@@ -83,6 +119,18 @@ export function getThirdPlaceRows(standings: Record<GroupLetter, StandingRow[]>)
   return GROUPS.map((group) => standings[group][2]).sort(compareRows);
 }
 
+function thirdPlaceCombinationKey(standings: Record<GroupLetter, StandingRow[]>) {
+  return getThirdPlaceRows(standings)
+    .slice(0, 8)
+    .map((row) => row.team.group)
+    .sort()
+    .join("");
+}
+
+function thirdPlacePoolKey(pool: GroupLetter[]) {
+  return [...pool].sort().join("/");
+}
+
 export function resolveSeed(seed: KnockoutSeed | undefined, standings: Record<GroupLetter, StandingRow[]>) {
   if (!seed) {
     return null;
@@ -93,8 +141,15 @@ export function resolveSeed(seed: KnockoutSeed | undefined, standings: Record<Gr
   }
 
   if (seed.thirdPool) {
-    const thirdPlaces = getThirdPlaceRows(standings).filter((row) => seed.thirdPool?.includes(row.team.group));
-    return thirdPlaces[0]?.team ?? null;
+    const slot = THIRD_PLACE_SLOT_BY_POOL[thirdPlacePoolKey(seed.thirdPool)];
+    const assignment = THIRD_PLACE_ASSIGNMENTS[thirdPlaceCombinationKey(standings)];
+    const assignedGroup = slot ? assignment?.[slot] : null;
+
+    if (!assignedGroup || !seed.thirdPool.includes(assignedGroup)) {
+      return null;
+    }
+
+    return standings[assignedGroup][2]?.team ?? null;
   }
 
   return null;
