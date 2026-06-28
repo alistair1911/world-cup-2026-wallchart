@@ -1,6 +1,6 @@
 import { getTeam } from "./tournament-data";
-import { buildStandings, resolveSeed } from "./standings";
-import type { Match, MatchStatus, Team } from "./types";
+import { buildStandings, getWinnerTeamId, resolveSeed } from "./standings";
+import type { KnockoutSeed, Match, MatchStatus, Team } from "./types";
 
 export type ScoreFeedItem = {
   matchId?: string;
@@ -218,16 +218,41 @@ function findMatch(item: ScoreFeedItem, matches: Match[]) {
     .sort((a, b) => a.distance - b.distance)[0]?.match ?? null;
 }
 
+function resolvedTeamIdForSeed(seed: KnockoutSeed | undefined, standings: ReturnType<typeof buildStandings>, matchesByNumber: Map<number, Match>) {
+  if (!seed) {
+    return undefined;
+  }
+
+  const knockoutReference = seed.label.match(/^([WL])(\d+)$/);
+  if (knockoutReference) {
+    const source = matchesByNumber.get(Number(knockoutReference[2]));
+    const winnerTeamId = source ? getWinnerTeamId(source) : null;
+    if (!source || !winnerTeamId) {
+      return undefined;
+    }
+
+    if (knockoutReference[1] === "W") {
+      return winnerTeamId;
+    }
+
+    const participantIds = [source.homeTeamId, source.awayTeamId].filter((teamId): teamId is string => Boolean(teamId));
+    return participantIds.find((teamId) => teamId !== winnerTeamId);
+  }
+
+  return resolveSeed(seed, standings)?.id;
+}
+
 export function resolveKnockoutSeedsForSync(matches: Match[]) {
   const standings = buildStandings(matches);
+  const matchesByNumber = new Map(matches.map((match) => [match.matchNumber, match]));
 
   return matches.map((match) => {
     if (match.phase === "group") {
       return match;
     }
 
-    const homeTeamId = match.homeTeamId ?? resolveSeed(match.homeSeed, standings)?.id;
-    const awayTeamId = match.awayTeamId ?? resolveSeed(match.awaySeed, standings)?.id;
+    const homeTeamId = match.homeTeamId ?? resolvedTeamIdForSeed(match.homeSeed, standings, matchesByNumber);
+    const awayTeamId = match.awayTeamId ?? resolvedTeamIdForSeed(match.awaySeed, standings, matchesByNumber);
     if (homeTeamId === match.homeTeamId && awayTeamId === match.awayTeamId) {
       return match;
     }

@@ -168,4 +168,17 @@ describe("score sync", () => {
       status: "final"
     });
   });
+
+  it("moves completed knockout winners into the next bracket slot", () => {
+    const round32Resolved = resolveKnockoutSeedsForSync(groupStandingsForSouthAfricaVsCanada());
+    const withMatch73Final = round32Resolved.map((match) =>
+      match.id === "M73" ? finalScore(match, 0, 1) : match
+    );
+    const nextRoundResolved = resolveKnockoutSeedsForSync(withMatch73Final);
+
+    expect(nextRoundResolved.find((match) => match.id === "M90")).toMatchObject({
+      homeTeamId: "canada",
+      awayTeamId: undefined
+    });
+  });
 });

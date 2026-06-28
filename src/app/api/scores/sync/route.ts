@@ -1300,6 +1300,25 @@ async function syncScores(request: NextRequest) {
       updatedMatchesById.set(update.id, update);
     }
 
+    const advancedMatchesSnapshot = resolveKnockoutSeedsForSync([...updatedMatchesById.values()]);
+    const advancedKnockoutUpdates = advancedMatchesSnapshot.filter((match) => {
+      const previous = updatedMatchesById.get(match.id);
+      return (
+        previous &&
+        !previous.updatedBy &&
+        (previous.homeTeamId !== match.homeTeamId || previous.awayTeamId !== match.awayTeamId)
+      );
+    });
+    for (const match of advancedMatchesSnapshot) {
+      updatedMatchesById.set(match.id, match);
+    }
+    if (advancedKnockoutUpdates.length > 0) {
+      const { error } = await supabase.from("matches").upsert(advancedKnockoutUpdates.map(matchToRow), { onConflict: "id" });
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
     const playerStats: PlayerMatchStat[] = [];
     const statWarnings: string[] = [];
 
@@ -1503,7 +1522,7 @@ async function syncScores(request: NextRequest) {
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
       fantasyScoresUpdated,
-      materializedKnockoutTeams: resolvedKnockoutUpdates.length,
+      materializedKnockoutTeams: resolvedKnockoutUpdates.length + advancedKnockoutUpdates.length,
       cleanedPlaceholders: placeholderCleanups.length,
       warning,
       updated: result.updates.map((match) => ({

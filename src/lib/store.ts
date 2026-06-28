@@ -3,6 +3,7 @@
 import { INITIAL_MATCHES } from "./tournament-data";
 import { FANTASY_ROUND_ID, fantasyRoundRosterSize, isFantasyKnockoutRound, normalizeFantasyRosterSlots, normalizeFantasyRoundId } from "./fantasy";
 import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
+import { resolveKnockoutSeedsForSync } from "./score-sync";
 import { getSupabaseClient } from "./supabase";
 import { getCurrentAccessToken } from "./auth";
 import type {
@@ -279,6 +280,8 @@ function mergeMatches(overrides: Partial<Match>[]) {
 function rowToMatchOverride(row: StoredMatchRow): Partial<Match> {
   return {
     id: row.id,
+    homeTeamId: row.home_team_id ?? undefined,
+    awayTeamId: row.away_team_id ?? undefined,
     homeScore: row.home_score ?? null,
     awayScore: row.away_score ?? null,
     status: row.status ?? "scheduled",
@@ -407,7 +410,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
   const supabase = getSupabaseClient();
 
   if (!supabase) {
-    const matches = mergeMatches(readLocalMatches());
+    const matches = resolveKnockoutSeedsForSync(mergeMatches(readLocalMatches()));
     return {
       matches,
       predictions: readLocalPredictions(),
@@ -578,7 +581,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       }
     }
 
-    const matches = mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride));
+    const matches = resolveKnockoutSeedsForSync(mergeMatches(((matchRows || []) as StoredMatchRow[]).map(rowToMatchOverride)));
     const correctedPlayerStats = applyKnownPlayerStatCorrections(matches, playerStats, playerCatalog);
 
     return {
