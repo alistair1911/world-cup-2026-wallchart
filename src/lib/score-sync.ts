@@ -1,4 +1,5 @@
 import { getTeam } from "./tournament-data";
+import { buildStandings, resolveSeed } from "./standings";
 import type { Match, MatchStatus, Team } from "./types";
 
 export type ScoreFeedItem = {
@@ -215,6 +216,29 @@ function findMatch(item: ScoreFeedItem, matches: Match[]) {
   return candidates
     .map((match) => ({ match, distance: Math.abs(new Date(match.kickoff).getTime() - feedTime) }))
     .sort((a, b) => a.distance - b.distance)[0]?.match ?? null;
+}
+
+export function resolveKnockoutSeedsForSync(matches: Match[]) {
+  const standings = buildStandings(matches);
+
+  return matches.map((match) => {
+    if (match.phase === "group") {
+      return match;
+    }
+
+    const homeTeamId = match.homeTeamId ?? resolveSeed(match.homeSeed, standings)?.id;
+    const awayTeamId = match.awayTeamId ?? resolveSeed(match.awaySeed, standings)?.id;
+    if (homeTeamId === match.homeTeamId && awayTeamId === match.awayTeamId) {
+      return match;
+    }
+
+    return {
+      ...match,
+      homeTeamId,
+      awayTeamId,
+      updatedAt: new Date().toISOString()
+    };
+  });
 }
 
 export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]): ScoreSyncResult {

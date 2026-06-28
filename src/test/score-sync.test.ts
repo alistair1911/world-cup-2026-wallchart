@@ -1,6 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { buildScoreUpdates, normalizeScorePayload } from "@/lib/score-sync";
+import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync } from "@/lib/score-sync";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
+import type { Match } from "@/lib/types";
+
+function finalScore(match: Match, homeScore: number, awayScore: number) {
+  return {
+    ...match,
+    homeScore,
+    awayScore,
+    status: "final" as const
+  };
+}
+
+function groupStandingsForSouthAfricaVsCanada() {
+  const scores = new Map<string, [number, number]>([
+    ["M1", [2, 0]],
+    ["M2", [1, 0]],
+    ["M25", [0, 1]],
+    ["M28", [2, 0]],
+    ["M53", [0, 2]],
+    ["M54", [1, 0]],
+    ["M3", [1, 0]],
+    ["M8", [0, 1]],
+    ["M26", [2, 0]],
+    ["M27", [1, 0]],
+    ["M51", [1, 0]],
+    ["M52", [0, 1]]
+  ]);
+
+  return INITIAL_MATCHES.map((match) => {
+    const score = scores.get(match.id);
+    return score ? finalScore(match, score[0], score[1]) : match;
+  });
+}
 
 describe("score sync", () => {
   it("updates a match from a normalized feed item by match number", () => {
@@ -106,6 +138,34 @@ describe("score sync", () => {
       homeScore: 2,
       awayScore: 1,
       status: "FT"
+    });
+  });
+
+  it("resolves knockout seed teams before matching score feed items", () => {
+    const resolvedMatches = resolveKnockoutSeedsForSync(groupStandingsForSouthAfricaVsCanada());
+    const match73 = resolvedMatches.find((match) => match.id === "M73");
+
+    expect(match73).toMatchObject({
+      homeTeamId: "south-africa",
+      awayTeamId: "canada"
+    });
+
+    const result = buildScoreUpdates(resolvedMatches, [
+      {
+        homeTeamName: "South Africa",
+        awayTeamName: "Canada",
+        homeScore: 0,
+        awayScore: 1,
+        status: "FT"
+      }
+    ]);
+
+    expect(result.updates).toHaveLength(1);
+    expect(result.updates[0]).toMatchObject({
+      id: "M73",
+      homeScore: 0,
+      awayScore: 1,
+      status: "final"
     });
   });
 });

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { FANTASY_ROUNDS, buildFantasyScoresFromMatches } from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
-import { buildScoreUpdates, normalizeScorePayload, teamMatchesName } from "@/lib/score-sync";
+import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
 import type { FantasyPlayerMatchScore, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
@@ -1226,6 +1226,8 @@ async function syncScores(request: NextRequest) {
 
       currentMatches.set(row.id, {
         ...existing,
+        homeTeamId: row.home_team_id ?? existing.homeTeamId,
+        awayTeamId: row.away_team_id ?? existing.awayTeamId,
         homeScore: row.home_score ?? null,
         awayScore: row.away_score ?? null,
         status: row.status ?? "scheduled",
@@ -1233,6 +1235,25 @@ async function syncScores(request: NextRequest) {
         updatedBy: row.updated_by ? "tata" : null,
         updatedAt: row.updated_at ?? null
       });
+    }
+
+    const resolvedMatchesSnapshot = resolveKnockoutSeedsForSync([...currentMatches.values()]);
+    const resolvedKnockoutUpdates = resolvedMatchesSnapshot.filter((match) => {
+      const previous = currentMatches.get(match.id);
+      return (
+        previous &&
+        !previous.updatedBy &&
+        (previous.homeTeamId !== match.homeTeamId || previous.awayTeamId !== match.awayTeamId)
+      );
+    });
+    for (const match of resolvedMatchesSnapshot) {
+      currentMatches.set(match.id, match);
+    }
+    if (resolvedKnockoutUpdates.length > 0) {
+      const { error } = await supabase.from("matches").upsert(resolvedKnockoutUpdates.map(matchToRow), { onConflict: "id" });
+      if (error) {
+        throw new Error(error.message);
+      }
     }
 
     const matchesSnapshot = [...currentMatches.values()];
@@ -1257,6 +1278,7 @@ async function syncScores(request: NextRequest) {
         received: 0,
         updated: [],
         playerStatsUpdated: 0,
+        materializedKnockoutTeams: resolvedKnockoutUpdates.length,
         cleanedPlaceholders: placeholderCleanups.length,
         skipped: [{ reason: "No matches are in the automatic sync window." }]
       });
@@ -1481,6 +1503,7 @@ async function syncScores(request: NextRequest) {
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
       fantasyScoresUpdated,
+      materializedKnockoutTeams: resolvedKnockoutUpdates.length,
       cleanedPlaceholders: placeholderCleanups.length,
       warning,
       updated: result.updates.map((match) => ({
