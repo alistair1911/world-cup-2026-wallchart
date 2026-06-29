@@ -216,6 +216,88 @@ export function normalizeFantasyPosition(position: string): FantasyPosition {
   return "FWD";
 }
 
+const FORMATION_POSITION_CAPS: Record<string, Record<FantasyPosition, number>> = {
+  "4-3-3": { GK: 1, DEF: 4, MID: 3, FWD: 3 },
+  "4-2-3-1": { GK: 1, DEF: 4, MID: 5, FWD: 1 },
+  "3-4-3": { GK: 1, DEF: 3, MID: 4, FWD: 3 },
+  "3-5-2": { GK: 1, DEF: 3, MID: 5, FWD: 2 },
+  "4-4-2": { GK: 1, DEF: 4, MID: 4, FWD: 2 },
+  "5-3-2": { GK: 1, DEF: 5, MID: 3, FWD: 2 }
+};
+
+const FORMATION_ENFORCED_ROUNDS = new Set<FantasyRoundId>(["round16", "quarter", "semi", "final"]);
+
+export function shouldEnforceFantasyFormation(roundId: string | null | undefined) {
+  return FORMATION_ENFORCED_ROUNDS.has(normalizeFantasyRoundId(roundId));
+}
+
+export function fantasyFormationPositionCaps(formation: string | null | undefined) {
+  return FORMATION_POSITION_CAPS[formation || ""] ?? FORMATION_POSITION_CAPS["4-3-3"];
+}
+
+function fantasyPositionForPlayer(playerId: string, playerCatalog: PlayerCatalogItem[]) {
+  return resolveFantasyPlayerOption({ playerId }, playerCatalog)?.fantasyPosition ?? "FWD";
+}
+
+export function fantasyFormationLimitMessage(
+  playerId: string,
+  slots: FantasyRosterSlot[],
+  formation: string | null | undefined,
+  playerCatalog: PlayerCatalogItem[],
+  roundId: string | null | undefined
+) {
+  if (!shouldEnforceFantasyFormation(roundId)) {
+    return null;
+  }
+
+  const position = fantasyPositionForPlayer(playerId, playerCatalog);
+  const caps = fantasyFormationPositionCaps(formation);
+  const currentCount = slots.filter((slot) => fantasyPositionForPlayer(slot.playerId, playerCatalog) === position).length;
+  if (currentCount < caps[position]) {
+    return null;
+  }
+
+  return `Formation ${formation || "4-3-3"} allows ${caps[position]} ${position} player${caps[position] === 1 ? "" : "s"} for this round.`;
+}
+
+export function trimFantasyRosterToFormation(
+  slots: FantasyRosterSlot[],
+  formation: string | null | undefined,
+  playerCatalog: PlayerCatalogItem[],
+  roundId: string | null | undefined
+) {
+  const normalized = normalizeFantasyRosterSlots(slots, slots[0]?.userKey, roundId);
+  if (!shouldEnforceFantasyFormation(roundId)) {
+    return normalized;
+  }
+
+  const caps = fantasyFormationPositionCaps(formation);
+  const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+  const kept: FantasyRosterSlot[] = [];
+
+  for (const slot of normalized.sort((a, b) => a.slotIndex - b.slotIndex)) {
+    const position = fantasyPositionForPlayer(slot.playerId, playerCatalog);
+    if (counts[position] >= caps[position]) {
+      continue;
+    }
+    counts[position] += 1;
+    kept.push(slot);
+  }
+
+  const trimmed = normalizeFantasyRosterSlots(kept, slots[0]?.userKey, roundId);
+  if (trimmed.length > 0 && !trimmed.some((slot) => slot.isCaptain)) {
+    trimmed[0] = { ...trimmed[0], isCaptain: true, isViceCaptain: false };
+  }
+  if (trimmed.length > 1 && !trimmed.some((slot) => slot.isViceCaptain)) {
+    const viceIndex = trimmed.findIndex((slot) => !slot.isCaptain);
+    if (viceIndex >= 0) {
+      trimmed[viceIndex] = { ...trimmed[viceIndex], isViceCaptain: true };
+    }
+  }
+
+  return trimmed;
+}
+
 function sortFantasyOptions(options: FantasyPlayerOption[]) {
   return options.sort(
     (a, b) =>
@@ -598,11 +680,11 @@ export function validateFantasyRoster(
   matches: Match[],
   now = new Date(),
   playerCatalog: PlayerCatalogItem[] = [],
-  roundId: string | null | undefined = slots[0]?.roundId
+  roundId: string | null | undefined = slots[0]?.roundId,
+  formation: string | null | undefined = "4-3-3"
 ) {
   void matches;
   void now;
-  void playerCatalog;
   const squadSize = fantasyRoundRosterSize(roundId);
   const starterSize = fantasyRoundStarterSize(roundId);
   const uniqueIds = new Set(slots.map((slot) => slot.playerId));
@@ -617,6 +699,17 @@ export function validateFantasyRoster(
   }
   if (slots.filter((slot) => slot.isStarter).length > starterSize) {
     return `Pick no more than ${starterSize} starters.`;
+  }
+  if (shouldEnforceFantasyFormation(roundId)) {
+    const caps = fantasyFormationPositionCaps(formation);
+    const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    for (const slot of slots) {
+      const position = fantasyPositionForPlayer(slot.playerId, playerCatalog);
+      counts[position] += 1;
+      if (counts[position] > caps[position]) {
+        return `Formation ${formation || "4-3-3"} allows ${caps[position]} ${position} player${caps[position] === 1 ? "" : "s"} for this round.`;
+      }
+    }
   }
   return null;
 }

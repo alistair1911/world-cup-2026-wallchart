@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   FANTASY_SCORING_RULES,
   buildFantasyLeaderboard,
+  fantasyFormationLimitMessage,
   fantasyOptionMap,
   fantasyPlayerOptions,
   fantasyScoreIdsForPlayer,
@@ -15,6 +16,8 @@ import {
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
   resolveFantasyPlayerOption,
+  shouldEnforceFantasyFormation,
+  trimFantasyRosterToFormation,
   type FantasyRoundResult,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
@@ -135,6 +138,17 @@ function normalizeDraftSlots(
     }));
 
   return normalizeFantasyRosterSlots(canonicalSlots, userKey ?? undefined, round.id);
+}
+
+function normalizeAndTrimDraftSlots(
+  slots: FantasyRosterSlot[],
+  optionMap: Map<string, FantasyPlayerOption>,
+  userKey: UserKey | null,
+  round: FantasyRoundResult,
+  formation: string,
+  playerCatalog: PlayerCatalogItem[]
+) {
+  return trimFantasyRosterToFormation(normalizeDraftSlots(slots, optionMap, userKey, round), formation, playerCatalog, round.id);
 }
 
 function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
@@ -272,14 +286,16 @@ export function FantasyProfileDrawer({
   const savedSlots = useMemo(
     () =>
       userKey
-        ? normalizeDraftSlots(
+        ? normalizeAndTrimDraftSlots(
             rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex),
             optionMap,
             userKey,
-            round
+            round,
+            savedFormation,
+            playerCatalog
           )
         : [],
-    [optionMap, rosters, round, userKey]
+    [optionMap, playerCatalog, rosters, round, savedFormation, userKey]
   );
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
   const [formation, setFormation] = useState(savedFormation);
@@ -312,7 +328,10 @@ export function FantasyProfileDrawer({
   const squadSize = round.squadSize;
   const starterSize = round.starterSize;
   const hasBench = squadSize > starterSize;
-  const normalizedDraft = useMemo(() => normalizeDraftSlots(draft, optionMap, userKey, round), [draft, optionMap, round, userKey]);
+  const normalizedDraft = useMemo(
+    () => normalizeAndTrimDraftSlots(draft, optionMap, userKey, round, formation, playerCatalog),
+    [draft, formation, optionMap, playerCatalog, round, userKey]
+  );
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
 
   useEffect(() => {
@@ -354,8 +373,8 @@ export function FantasyProfileDrawer({
     const timeoutId = window.setTimeout(async () => {
       setSaving(true);
       try {
-        await onSaveRoster(normalizedDraft);
         await onSaveSettings({ formation });
+        await onSaveRoster(normalizedDraft);
         lastSavedKeyRef.current = autoSaveKey;
         setDirty(false);
         setMessage("Autosaved.");
@@ -487,6 +506,11 @@ export function FantasyProfileDrawer({
       setMessage(`${optionMap.get(playerId)?.name ?? "That player"} is already selected by ${takenBy} for ${round.name}.`);
       return;
     }
+    const formationLimit = fantasyFormationLimitMessage(playerId, normalizedDraft, formation, playerCatalog, round.id);
+    if (formationLimit) {
+      setMessage(formationLimit);
+      return;
+    }
     if (normalizedDraft.length >= squadSize) {
       setMessage(`Mini-Fantasy squad is full at ${squadSize} players.`);
       return;
@@ -558,8 +582,8 @@ export function FantasyProfileDrawer({
     setSaving(true);
     setMessage(null);
     try {
-      await onSaveRoster(normalizedDraft);
       await onSaveSettings({ formation });
+      await onSaveRoster(normalizedDraft);
       lastSavedKeyRef.current = rosterSignature(normalizedDraft, formation);
       setDirty(false);
       setMessage("Fantasy formation saved.");
@@ -627,7 +651,9 @@ export function FantasyProfileDrawer({
                 <select
                   value={formation}
                   onChange={(event) => {
-                    setFormation(event.target.value);
+                    const nextFormation = event.target.value;
+                    setFormation(nextFormation);
+                    setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, userKey, round, nextFormation, playerCatalog));
                     setDirty(true);
                     setMessage("Autosaving formation...");
                   }}
@@ -780,7 +806,8 @@ export function FantasyProfileDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-600">Add Players</h3>
                   <p className="text-xs font-bold text-slate-500">
-                    {normalizedDraft.length}/{squadSize} selected - filter by country or position.
+                    {normalizedDraft.length}/{squadSize} selected -{" "}
+                    {shouldEnforceFantasyFormation(round.id) ? `${formation} caps active.` : "filter by country or position."}
                   </p>
                 </div>
                 <Badge tone={normalizedDraft.length >= squadSize ? "red" : "green"}>{squadSize - normalizedDraft.length} spots</Badge>
@@ -828,6 +855,7 @@ export function FantasyProfileDrawer({
                   const selected = selectedPlayerIds.has(player.id);
                   const locked = !round.selectionEnabled;
                   const takenBy = takenByOtherUser.get(player.id);
+                  const formationLimit = selected ? null : fantasyFormationLimitMessage(player.id, normalizedDraft, formation, playerCatalog, round.id);
                   return (
                     <div
                       key={player.id}
@@ -849,6 +877,7 @@ export function FantasyProfileDrawer({
                               <span>{player.team.code}</span>
                               <Badge tone="green">{player.fantasyPosition}</Badge>
                               {takenBy ? <span className="text-cup-red">Taken by {takenBy}</span> : null}
+                              {formationLimit ? <span className="text-cup-red">Formation limit</span> : null}
                               {locked ? <span className="text-cup-red">Locked</span> : null}
                             </div>
                           </div>
@@ -858,8 +887,9 @@ export function FantasyProfileDrawer({
                         size="sm"
                         variant={selected ? "secondary" : "ghost"}
                         onClick={() => (selected ? removePlayer(player.id) : addPlayer(player.id))}
-                        disabled={!canEdit || (!selected && (locked || Boolean(takenBy) || normalizedDraft.length >= squadSize))}
+                        disabled={!canEdit || (!selected && (locked || Boolean(takenBy) || Boolean(formationLimit) || normalizedDraft.length >= squadSize))}
                         aria-label={selected ? `Remove ${player.name}` : `Add ${player.name}`}
+                        title={formationLimit ?? undefined}
                       >
                         {selected ? <Trash2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                       </Button>

@@ -9,6 +9,7 @@ import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
   activeFantasyRound,
   buildFantasyScoresFromMatches,
+  fantasyFormationLimitMessage,
   isFantasyKnockoutRound,
   mergeFantasyScores,
   normalizeFantasyRoundId,
@@ -296,6 +297,12 @@ export function WallchartApp() {
       currentFantasyRosters.some((slot) => slot.userKey !== session.userKey && slot.playerId === playerId)
     ) {
       setSyncMessage("That player is already selected by the other team for this knockout round.");
+      return;
+    }
+    const formation = fantasyTeams.find((team) => team.userKey === session.userKey)?.formation ?? "4-3-3";
+    const formationLimit = fantasyFormationLimitMessage(playerId, ownSlots, formation, playerCatalog, currentFantasyRound.id);
+    if (formationLimit) {
+      setSyncMessage(formationLimit);
       return;
     }
     if (ownSlots.length >= currentFantasyRound.squadSize) {

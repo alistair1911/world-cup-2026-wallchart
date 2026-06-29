@@ -5,6 +5,7 @@ import {
   buildFantasyOverallLeaderboard,
   buildFantasyRoundResults,
   buildFantasyScoresFromMatches,
+  fantasyFormationLimitMessage,
   fantasyRoundStates,
   fantasyOptionMap,
   fantasyPlayerTotals,
@@ -18,13 +19,14 @@ import {
   scoresForFantasyRound,
   resolveFantasyPlayerOption,
   scoreFantasyPlayerMatch,
+  trimFantasyRosterToFormation,
   validateFantasyRoster
 } from "@/lib/fantasy";
 import { applyKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { COMPLETE_SQUAD_MINIMUM, mergePlayerCatalog } from "@/lib/player-catalog";
 import { getAllPlayerProfiles } from "@/lib/profile-data";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
-import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerMatchStat } from "@/lib/types";
+import type { FantasyPlayerMatchScore, FantasyRosterSlot, PlayerCatalogItem, PlayerMatchStat } from "@/lib/types";
 
 describe("mini-fantasy scoring", () => {
   it("scores goals by fantasy position and adds assists and clean sheets", () => {
@@ -1130,5 +1132,59 @@ describe("mini-fantasy scoring", () => {
     expect(normalized.filter((slot) => !slot.isStarter)).toHaveLength(5);
     expect(normalized.some((slot) => slot.playerId === "usa-christian-pulisic")).toBe(true);
     expect(normalized.every((slot) => slot.slotIndex >= 0 && slot.slotIndex < 15)).toBe(true);
+  });
+
+  it("trims future knockout rosters to the selected formation position caps", () => {
+    const playerCatalog: PlayerCatalogItem[] = [
+      { id: "gk-1", teamId: "canada", name: "Keeper One", position: "Goalkeeper" },
+      { id: "def-1", teamId: "canada", name: "Defender One", position: "Defender" },
+      { id: "def-2", teamId: "canada", name: "Defender Two", position: "Defender" },
+      { id: "def-3", teamId: "canada", name: "Defender Three", position: "Defender" },
+      { id: "mid-1", teamId: "canada", name: "Mid One", position: "Midfielder" },
+      { id: "mid-2", teamId: "canada", name: "Mid Two", position: "Midfielder" },
+      { id: "mid-3", teamId: "canada", name: "Mid Three", position: "Midfielder" },
+      { id: "mid-4", teamId: "canada", name: "Mid Four", position: "Midfielder" },
+      { id: "fwd-1", teamId: "canada", name: "Forward One", position: "Forward" },
+      { id: "fwd-2", teamId: "canada", name: "Forward Two", position: "Forward" },
+      { id: "fwd-3", teamId: "canada", name: "Forward Three", position: "Forward" },
+      { id: "fwd-4", teamId: "canada", name: "Forward Four", position: "Forward" }
+    ];
+    const slots = playerCatalog.map((player, index) => ({
+      userKey: "lucas" as const,
+      playerId: player.id,
+      roundId: "round16",
+      slotIndex: index,
+      isStarter: true,
+      isCaptain: index === 0,
+      isViceCaptain: index === 1
+    }));
+
+    const trimmed = trimFantasyRosterToFormation(slots, "3-4-3", playerCatalog, "round16");
+
+    expect(trimmed).toHaveLength(11);
+    expect(trimmed.some((slot) => slot.playerId === "fwd-4")).toBe(false);
+    expect(trimmed.filter((slot) => slot.playerId.startsWith("fwd-"))).toHaveLength(3);
+    expect(validateFantasyRoster(trimmed, INITIAL_MATCHES, new Date("2026-07-03T12:00:00.000Z"), playerCatalog, "round16", "3-4-3")).toBeNull();
+  });
+
+  it("blocks over-cap future additions but leaves Round of 32 unconstrained", () => {
+    const playerCatalog: PlayerCatalogItem[] = [
+      { id: "fwd-1", teamId: "spain", name: "Forward One", position: "Forward" },
+      { id: "fwd-2", teamId: "spain", name: "Forward Two", position: "Forward" },
+      { id: "fwd-3", teamId: "spain", name: "Forward Three", position: "Forward" },
+      { id: "fwd-4", teamId: "spain", name: "Forward Four", position: "Forward" }
+    ];
+    const slots: FantasyRosterSlot[] = playerCatalog.slice(0, 3).map((player, index) => ({
+      userKey: "tata",
+      playerId: player.id,
+      roundId: "round16",
+      slotIndex: index,
+      isStarter: true,
+      isCaptain: index === 0,
+      isViceCaptain: index === 1
+    }));
+
+    expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round16")).toContain("allows 3 FWD");
+    expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round32")).toBeNull();
   });
 });

@@ -1,7 +1,14 @@
 "use client";
 
 import { INITIAL_MATCHES } from "./tournament-data";
-import { FANTASY_ROUND_ID, fantasyRoundRosterSize, isFantasyKnockoutRound, normalizeFantasyRosterSlots, normalizeFantasyRoundId } from "./fantasy";
+import {
+  FANTASY_ROUND_ID,
+  fantasyRoundRosterSize,
+  isFantasyKnockoutRound,
+  normalizeFantasyRosterSlots,
+  normalizeFantasyRoundId,
+  trimFantasyRosterToFormation
+} from "./fantasy";
 import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
 import { resolveKnockoutSeedsForSync } from "./score-sync";
 import { getSupabaseClient } from "./supabase";
@@ -258,6 +265,18 @@ async function fetchPlayerCatalogRows() {
       error: { message: error instanceof Error ? error.message : "Could not load Fantasy player catalog." }
     };
   }
+}
+
+function storedPlayerRowsToCatalog(rows: StoredPlayerRow[]): PlayerCatalogItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    teamId: row.team_id,
+    name: row.name,
+    age: row.age ?? null,
+    shirtNumber: row.shirt_number ?? null,
+    position: row.position,
+    photoUrl: row.photo_url ?? null
+  }));
 }
 
 function mergeMatches(overrides: Partial<Match>[]) {
@@ -791,9 +810,28 @@ export async function savePlayerStats(session: FamilySession, matchId: string, s
 export async function saveFantasyRoster(session: FamilySession, slots: FantasyRosterSlot[]) {
   const targetRoundId = normalizeFantasyRoundId(slots[0]?.roundId ?? FANTASY_ROUND_ID);
   const squadSize = fantasyRoundRosterSize(targetRoundId);
-  const cleaned = normalizeFantasyRosterSlots(
-    slots.slice(0, squadSize).map((slot) => ({ ...slot, roundId: targetRoundId })),
-    session.userKey,
+  const supabase = getSupabaseClient();
+  const rawSlots = slots.slice(0, squadSize).map((slot) => ({ ...slot, roundId: targetRoundId }));
+  const catalogRows = await fetchPlayerCatalogRows();
+  const playerCatalog = storedPlayerRowsToCatalog(catalogRows.data || []);
+  let formation = readLocalFantasyTeams().find((team) => team.userKey === session.userKey)?.formation ?? "4-3-3";
+
+  if (supabase && session.authUserId) {
+    const { data: teamRow, error: teamReadError } = await supabase
+      .from("fantasy_teams")
+      .select("formation")
+      .eq("user_id", session.authUserId)
+      .maybeSingle<{ formation?: string | null }>();
+    if (teamReadError) {
+      throw new Error(teamReadError.message);
+    }
+    formation = teamRow?.formation || formation;
+  }
+
+  const cleaned = trimFantasyRosterToFormation(
+    normalizeFantasyRosterSlots(rawSlots, session.userKey, targetRoundId),
+    formation,
+    playerCatalog,
     targetRoundId
   ).map((slot) => ({
     ...slot,
@@ -814,8 +852,6 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
       slot.isViceCaptain = index === viceIndex;
     }
   }
-
-  const supabase = getSupabaseClient();
 
   if (!supabase) {
     if (isFantasyKnockoutRound(targetRoundId)) {

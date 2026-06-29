@@ -1,12 +1,18 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { FANTASY_ROUNDS, buildFantasyScoresFromMatches } from "@/lib/fantasy";
+import {
+  FANTASY_ROUNDS,
+  buildFantasyScoresFromMatches,
+  fantasyFormationPositionCaps,
+  fantasyOptionMap,
+  shouldEnforceFantasyFormation
+} from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
-import type { FantasyPlayerMatchScore, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
+import type { FantasyPlayerMatchScore, FantasyPosition, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -274,6 +280,43 @@ function toEspnEventRow(event: unknown) {
   };
 }
 
+function readEspnSummaryCompetition(payload: unknown) {
+  const record = readEventObject(payload);
+  const header = readEventObject(record?.header);
+  const competitions = Array.isArray(header?.competitions) ? header.competitions : [];
+  return readEventObject(competitions[0]);
+}
+
+async function fetchEspnSummaryEventRow(row: EspnEventRow, force: boolean) {
+  if (!row.eventId || row.details.length > 0) {
+    return row;
+  }
+
+  const response = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${encodeURIComponent(row.eventId)}`,
+    {
+      next: { revalidate: force ? 0 : 300 }
+    }
+  );
+  if (!response.ok) {
+    return row;
+  }
+
+  const payload = await response.json();
+  const competition = readEspnSummaryCompetition(payload);
+  const details = Array.isArray(competition?.details) ? competition.details : [];
+  const competitors = readEspnCompetitors(competition).map((competitor) => ({
+    id: readEspnTeamId(competitor),
+    name: readEspnTeamName(competitor)
+  }));
+
+  return {
+    ...row,
+    competitors: competitors.length > 0 ? competitors : row.competitors,
+    details: details.length > 0 ? details : row.details
+  };
+}
+
 async function fetchEspnScoreboardDate(date: string, force: boolean) {
   const response = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${espnDate(date)}&limit=100`,
@@ -310,9 +353,12 @@ async function fetchEspnScorePayload(matches: Match[], force: boolean) {
     throw new Error(`ESPN returned no FIFA World Cup fixtures for checked dates: ${limitedDates.join(", ")}.`);
   }
 
+  const eventRows = events.map(toEspnEventRow).filter((item): item is EspnEventRow => Boolean(item));
+  const espnEvents = await Promise.all(eventRows.map((row) => fetchEspnSummaryEventRow(row, force)));
+
   return {
     matches: scoreMatches,
-    espnEvents: events.map(toEspnEventRow).filter(Boolean)
+    espnEvents
   };
 }
 
@@ -573,10 +619,10 @@ function parseApiFootballEvents(match: Match, payload: unknown) {
 }
 
 type EspnEventRow = {
-  eventId?: string;
+  eventId: string | undefined;
   homeTeamName: string;
   awayTeamName: string;
-  kickoff?: string;
+  kickoff: string | undefined;
   competitors: Array<{ id: string | null; name: string }>;
   details: unknown[];
 };
@@ -599,6 +645,22 @@ function espnAthleteName(value: unknown) {
     : typeof athlete?.fullName === "string"
       ? athlete.fullName
       : null;
+}
+
+function espnParticipantAthleteName(value: unknown) {
+  const participant = readEventObject(value);
+  return espnAthleteName(participant?.athlete ?? value);
+}
+
+function espnScorerNameForDetail(detail: Record<string, unknown>) {
+  const athletes = Array.isArray(detail.athletesInvolved) ? detail.athletesInvolved : [];
+  const athleteName = espnAthleteName(athletes[0]);
+  if (athleteName) {
+    return athleteName;
+  }
+
+  const participants = Array.isArray(detail.participants) ? detail.participants : [];
+  return participants.map(espnParticipantAthleteName).find((name): name is string => Boolean(name)) ?? null;
 }
 
 function parseEspnPlayerStats(matches: Match[], payload: unknown) {
@@ -633,8 +695,7 @@ function parseEspnPlayerStats(matches: Match[], payload: unknown) {
 
       const teamName = espnTeamNameForDetail(row, detail);
       const team = teamName ? eventTeamForMatch(match, teamName) : null;
-      const athletes = Array.isArray(detail.athletesInvolved) ? detail.athletesInvolved : [];
-      const scorer = espnAthleteName(athletes[0]);
+      const scorer = espnScorerNameForDetail(detail);
       if (!team || !scorer) {
         continue;
       }
@@ -1156,6 +1217,123 @@ async function ensureFantasyRounds(supabase: SupabaseClient) {
   }
 }
 
+type StoredFutureFantasyRosterRow = {
+  id: string;
+  user_id: string;
+  round_id: string;
+  player_id: string;
+  slot_index: number;
+  is_starter: boolean;
+  is_captain: boolean;
+  is_vice_captain: boolean;
+};
+
+function fantasyPositionForRosterPlayer(
+  playerIdValue: string,
+  optionMap: ReturnType<typeof fantasyOptionMap>,
+  playerCatalog: PlayerCatalogItem[]
+): FantasyPosition {
+  return optionMap.get(playerIdValue)?.fantasyPosition ?? fantasyOptionMap(playerCatalog).get(playerIdValue)?.fantasyPosition ?? "FWD";
+}
+
+async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, playerCatalog: PlayerCatalogItem[]) {
+  const enforcedRoundIds = FANTASY_ROUNDS.map((round) => round.id).filter((roundId) => shouldEnforceFantasyFormation(roundId));
+  if (enforcedRoundIds.length === 0) {
+    return 0;
+  }
+
+  const [{ data: rosterRows, error: rosterError }, { data: teamRows, error: teamError }] = await Promise.all([
+    supabase
+      .from("fantasy_rosters")
+      .select("id,user_id,round_id,player_id,slot_index,is_starter,is_captain,is_vice_captain")
+      .in("round_id", enforcedRoundIds),
+    supabase.from("fantasy_teams").select("user_id,formation")
+  ]);
+
+  if (rosterError) {
+    throw new Error(rosterError.message);
+  }
+  if (teamError) {
+    throw new Error(teamError.message);
+  }
+
+  const formationByUser = new Map(
+    ((teamRows || []) as Array<{ user_id: string; formation?: string | null }>).map((row) => [row.user_id, row.formation ?? "4-3-3"])
+  );
+  const rows = (rosterRows || []) as StoredFutureFantasyRosterRow[];
+  const optionMap = fantasyOptionMap(playerCatalog);
+  const groups = new Map<string, StoredFutureFantasyRosterRow[]>();
+  for (const row of rows) {
+    const key = `${row.user_id}:${row.round_id}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  let removedCount = 0;
+  for (const groupRows of groups.values()) {
+    const firstRow = groupRows[0];
+    if (!firstRow) {
+      continue;
+    }
+
+    const caps = fantasyFormationPositionCaps(formationByUser.get(firstRow.user_id));
+    const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    const kept: StoredFutureFantasyRosterRow[] = [];
+    const removed: StoredFutureFantasyRosterRow[] = [];
+
+    for (const row of [...groupRows].sort((a, b) => a.slot_index - b.slot_index)) {
+      const position = fantasyPositionForRosterPlayer(row.player_id, optionMap, playerCatalog);
+      if (counts[position] >= caps[position] || kept.length >= 11) {
+        removed.push(row);
+        continue;
+      }
+
+      counts[position] += 1;
+      kept.push(row);
+    }
+
+    const captainId = kept.find((row) => row.is_captain)?.id ?? kept[0]?.id;
+    const viceId = kept.find((row) => row.is_vice_captain && row.id !== captainId)?.id ?? kept.find((row) => row.id !== captainId)?.id;
+
+    for (const [index, row] of kept.entries()) {
+      const next = {
+        slot_index: index,
+        is_starter: true,
+        is_captain: row.id === captainId,
+        is_vice_captain: row.id === viceId
+      };
+      if (
+        row.slot_index === next.slot_index &&
+        row.is_starter === next.is_starter &&
+        row.is_captain === next.is_captain &&
+        row.is_vice_captain === next.is_vice_captain
+      ) {
+        continue;
+      }
+
+      const { error } = await supabase.from("fantasy_rosters").update(next).eq("id", row.id);
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
+    if (removed.length > 0) {
+      const { error } = await supabase
+        .from("fantasy_rosters")
+        .delete()
+        .in(
+          "id",
+          removed.map((row) => row.id)
+        );
+      if (error) {
+        throw new Error(error.message);
+      }
+      removedCount += removed.length;
+    }
+  }
+
+  return removedCount;
+}
+
 function isScheduledZeroPlaceholder(match: Match) {
   return match.status === "scheduled" && match.homeScore === 0 && match.awayScore === 0 && !match.updatedBy;
 }
@@ -1330,6 +1508,7 @@ async function syncScores(request: NextRequest) {
 
     let playerStatsUpdated = 0;
     let fantasyScoresUpdated = 0;
+    let formationRostersCleaned = 0;
     let warning: string | null =
       [setupWarning, ...warnings, ...statWarnings].filter(Boolean).length > 0
         ? [setupWarning, ...warnings, ...statWarnings].filter(Boolean).join(" ")
@@ -1422,6 +1601,16 @@ async function syncScores(request: NextRequest) {
       const playerCatalog = mergePlayerCatalog(rawPlayerCatalog);
       if (playerRowsError) {
         warning = [warning, `Fantasy catalog fell back to watchlist players: ${playerRowsError.message}`].filter(Boolean).join(" ");
+      }
+      try {
+        formationRostersCleaned = await enforceFutureFantasyFormationRosters(supabase, playerCatalog);
+      } catch (error) {
+        warning = [
+          warning,
+          `Future fantasy formation cleanup skipped: ${error instanceof Error ? error.message : "Unknown error"}`
+        ]
+          .filter(Boolean)
+          .join(" ");
       }
 
       const currentMatchList = [...updatedMatchesById.values()];
@@ -1522,6 +1711,7 @@ async function syncScores(request: NextRequest) {
       playerStatsFound: playerStats.length,
       playerStatsUpdated,
       fantasyScoresUpdated,
+      formationRostersCleaned,
       materializedKnockoutTeams: resolvedKnockoutUpdates.length + advancedKnockoutUpdates.length,
       cleanedPlaceholders: placeholderCleanups.length,
       warning,
