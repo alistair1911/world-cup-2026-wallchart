@@ -663,25 +663,27 @@ function espnScorerNameForDetail(detail: Record<string, unknown>) {
   return participants.map(espnParticipantAthleteName).find((name): name is string => Boolean(name)) ?? null;
 }
 
+function matchForEspnEventRow(row: EspnEventRow, matches: Match[]) {
+  const candidates = matches.filter((match) => {
+    const home = getTeam(match.homeTeamId);
+    const away = getTeam(match.awayTeamId);
+    return home && away && teamMatchesName(home, row.homeTeamName) && teamMatchesName(away, row.awayTeamName);
+  });
+  if (!row.kickoff || candidates.length <= 1) {
+    return candidates[0] ?? null;
+  }
+
+  const kickoffMs = new Date(row.kickoff).getTime();
+  return candidates
+    .map((match) => ({ match, distance: Math.abs(new Date(match.kickoff).getTime() - kickoffMs) }))
+    .sort((a, b) => a.distance - b.distance)[0]?.match ?? null;
+}
+
 function parseEspnPlayerStats(matches: Match[], payload: unknown) {
   const totals: PlayerMatchStat[] = [];
 
   for (const row of readEspnEventRows(payload)) {
-    const feedItem = normalizeScorePayload(
-      {
-        matches: [
-          {
-            providerFixtureId: row.eventId,
-            homeTeamName: row.homeTeamName,
-            awayTeamName: row.awayTeamName,
-            kickoff: row.kickoff,
-            status: "FT"
-          }
-        ]
-      },
-      matches
-    )[0];
-    const match = feedItem?.matchId ? matches.find((item) => item.id === feedItem.matchId) : null;
+    const match = matchForEspnEventRow(row, matches);
     if (!match) {
       continue;
     }
@@ -1293,42 +1295,51 @@ async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, pl
 
     const captainId = kept.find((row) => row.is_captain)?.id ?? kept[0]?.id;
     const viceId = kept.find((row) => row.is_vice_captain && row.id !== captainId)?.id ?? kept.find((row) => row.id !== captainId)?.id;
-
-    for (const [index, row] of kept.entries()) {
-      const next = {
-        slot_index: index,
-        is_starter: true,
-        is_captain: row.id === captainId,
-        is_vice_captain: row.id === viceId
-      };
-      if (
-        row.slot_index === next.slot_index &&
-        row.is_starter === next.is_starter &&
-        row.is_captain === next.is_captain &&
-        row.is_vice_captain === next.is_vice_captain
-      ) {
-        continue;
-      }
-
-      const { error } = await supabase.from("fantasy_rosters").update(next).eq("id", row.id);
-      if (error) {
-        throw new Error(error.message);
-      }
-    }
-
-    if (removed.length > 0) {
-      const { error } = await supabase
-        .from("fantasy_rosters")
-        .delete()
-        .in(
-          "id",
-          removed.map((row) => row.id)
+    const nextRows = kept.map((row, index) => ({
+      user_id: row.user_id,
+      round_id: row.round_id,
+      player_id: row.player_id,
+      slot_index: index,
+      is_starter: true,
+      is_captain: row.id === captainId,
+      is_vice_captain: row.id === viceId
+    }));
+    const needsRewrite =
+      removed.length > 0 ||
+      nextRows.some((next, index) => {
+        const current = kept[index];
+        return (
+          !current ||
+          current.slot_index !== next.slot_index ||
+          current.is_starter !== next.is_starter ||
+          current.is_captain !== next.is_captain ||
+          current.is_vice_captain !== next.is_vice_captain
         );
-      if (error) {
-        throw new Error(error.message);
-      }
-      removedCount += removed.length;
+      });
+
+    if (!needsRewrite) {
+      continue;
     }
+
+    const { error: deleteError } = await supabase
+      .from("fantasy_rosters")
+      .delete()
+      .in(
+        "id",
+        groupRows.map((row) => row.id)
+      );
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+
+    if (nextRows.length > 0) {
+      const { error: insertError } = await supabase.from("fantasy_rosters").insert(nextRows);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+    }
+
+    removedCount += removed.length;
   }
 
   return removedCount;
