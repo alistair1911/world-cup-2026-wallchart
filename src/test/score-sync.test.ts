@@ -181,4 +181,38 @@ describe("score sync", () => {
       awayTeamId: undefined
     });
   });
+
+  it("stores a penalty winner for tied knockout finals and advances that team", () => {
+    const resolvedMatches = INITIAL_MATCHES.map((match) =>
+      match.id === "M74" ? { ...match, homeTeamId: "germany", awayTeamId: "paraguay" } : match
+    );
+
+    const result = buildScoreUpdates(resolvedMatches, [
+      {
+        homeTeamName: "Germany",
+        awayTeamName: "Paraguay",
+        kickoff: resolvedMatches.find((match) => match.id === "M74")?.kickoff,
+        homeScore: 1,
+        awayScore: 1,
+        status: "FT-Pens",
+        penaltyWinnerTeamName: "Paraguay"
+      }
+    ]);
+
+    expect(result.updates).toHaveLength(1);
+    expect(result.updates[0]).toMatchObject({
+      id: "M74",
+      homeScore: 1,
+      awayScore: 1,
+      status: "final",
+      penaltyWinnerId: "paraguay"
+    });
+
+    const nextRoundResolved = resolveKnockoutSeedsForSync(
+      resolvedMatches.map((match) => (match.id === "M74" ? result.updates[0] : match))
+    );
+    expect(nextRoundResolved.find((match) => match.id === "M89")).toMatchObject({
+      homeTeamId: "paraguay"
+    });
+  });
 });

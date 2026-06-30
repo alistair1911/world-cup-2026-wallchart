@@ -13,6 +13,7 @@ export type ScoreFeedItem = {
   awayScore?: number | null;
   status?: string | null;
   penaltyWinnerTeamId?: string | null;
+  penaltyWinnerTeamName?: string | null;
 };
 
 export type ScoreSyncResult = {
@@ -57,7 +58,7 @@ export function normalizeFeedStatus(status?: string | null): MatchStatus | null 
   }
 
   const value = status.toLowerCase();
-  if (["final", "ft", "aet", "pen", "finished", "match finished"].includes(value)) {
+  if (["final", "ft", "aet", "pen", "pens", "ft-pens", "finished", "match finished", "final score - after penalties"].includes(value)) {
     return "final";
   }
 
@@ -114,7 +115,8 @@ function readGenericItem(item: Record<string, unknown>): ScoreFeedItem {
           : typeof statusObject?.long === "string"
             ? statusObject.long
             : null,
-    penaltyWinnerTeamId: typeof item.penaltyWinnerTeamId === "string" ? item.penaltyWinnerTeamId : null
+    penaltyWinnerTeamId: typeof item.penaltyWinnerTeamId === "string" ? item.penaltyWinnerTeamId : null,
+    penaltyWinnerTeamName: typeof item.penaltyWinnerTeamName === "string" ? item.penaltyWinnerTeamName : null
   };
 }
 
@@ -164,6 +166,31 @@ function readApiFootballItem(item: Record<string, unknown>, matches: Match[]): S
     status: typeof status?.short === "string" ? status.short : null,
     penaltyWinnerTeamId
   };
+}
+
+function penaltyWinnerTeamIdForItem(item: ScoreFeedItem, match: Match, homeScore: number | null, awayScore: number | null) {
+  if (homeScore === null || awayScore === null || homeScore !== awayScore) {
+    return null;
+  }
+
+  if (item.penaltyWinnerTeamId) {
+    return item.penaltyWinnerTeamId;
+  }
+
+  if (!item.penaltyWinnerTeamName) {
+    return match.penaltyWinnerId ?? null;
+  }
+
+  const home = getTeam(match.homeTeamId);
+  const away = getTeam(match.awayTeamId);
+  if (home && teamMatchesName(home, item.penaltyWinnerTeamName)) {
+    return match.homeTeamId ?? null;
+  }
+  if (away && teamMatchesName(away, item.penaltyWinnerTeamName)) {
+    return match.awayTeamId ?? null;
+  }
+
+  return match.penaltyWinnerId ?? null;
 }
 
 export function normalizeScorePayload(payload: unknown, matches: Match[]) {
@@ -301,7 +328,7 @@ export function buildScoreUpdates(matches: Match[], feedItems: ScoreFeedItem[]):
       homeScore,
       awayScore,
       status: incomingStatus,
-      penaltyWinnerId: item.penaltyWinnerTeamId ?? match.penaltyWinnerId ?? null,
+      penaltyWinnerId: penaltyWinnerTeamIdForItem(item, match, homeScore, awayScore),
       updatedBy: null,
       updatedAt: now
     };

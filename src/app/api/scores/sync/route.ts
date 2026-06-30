@@ -228,6 +228,37 @@ function readEspnTeamId(competitor: Record<string, unknown> | null) {
   return typeof team?.id === "string" || typeof team?.id === "number" ? String(team.id) : null;
 }
 
+function readEspnShootoutScore(competitor: Record<string, unknown> | null) {
+  const value = competitor?.shootoutScore;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function readEspnPenaltyWinnerName(home: Record<string, unknown> | null, away: Record<string, unknown> | null, homeScore: number | null, awayScore: number | null) {
+  if (homeScore === null || awayScore === null || homeScore !== awayScore) {
+    return null;
+  }
+
+  const winner = [home, away].find((competitor) => competitor?.winner === true || competitor?.advance === true);
+  if (winner) {
+    return readEspnTeamName(winner);
+  }
+
+  const homeShootoutScore = readEspnShootoutScore(home);
+  const awayShootoutScore = readEspnShootoutScore(away);
+  if (homeShootoutScore === null || awayShootoutScore === null || homeShootoutScore === awayShootoutScore) {
+    return null;
+  }
+
+  return homeShootoutScore > awayShootoutScore ? readEspnTeamName(home) : readEspnTeamName(away);
+}
+
 function toEspnScoreMatch(event: unknown) {
   const record = readEventObject(event);
   const competition = readEspnCompetition(event);
@@ -246,6 +277,8 @@ function toEspnScoreMatch(event: unknown) {
 
   const homeScore = typeof home?.score === "string" ? Number(home.score) : typeof home?.score === "number" ? home.score : null;
   const awayScore = typeof away?.score === "string" ? Number(away.score) : typeof away?.score === "number" ? away.score : null;
+  const normalizedHomeScore = Number.isFinite(homeScore) ? homeScore : null;
+  const normalizedAwayScore = Number.isFinite(awayScore) ? awayScore : null;
 
   return {
     provider: "espn",
@@ -253,9 +286,10 @@ function toEspnScoreMatch(event: unknown) {
     homeTeamName,
     awayTeamName,
     kickoff: typeof record.date === "string" ? record.date : typeof competition.date === "string" ? competition.date : undefined,
-    homeScore: Number.isFinite(homeScore) ? homeScore : null,
-    awayScore: Number.isFinite(awayScore) ? awayScore : null,
-    status: espnStatus(competition)
+    homeScore: normalizedHomeScore,
+    awayScore: normalizedAwayScore,
+    status: espnStatus(competition),
+    penaltyWinnerTeamName: readEspnPenaltyWinnerName(home, away, normalizedHomeScore, normalizedAwayScore)
   };
 }
 

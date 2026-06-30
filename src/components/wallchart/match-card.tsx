@@ -25,6 +25,7 @@ export function MatchCard({ match, standings, onSelect, compact = false, comment
   const { home, away } = getMatchTeams(match, standings);
   const scoreReady = match.homeScore !== null && match.awayScore !== null;
   const final = match.status === "final";
+  const penaltyWinner = final && scoreReady && match.homeScore === match.awayScore ? getTeam(match.penaltyWinnerId) : null;
 
   return (
     <button
@@ -57,6 +58,11 @@ export function MatchCard({ match, standings, onSelect, compact = false, comment
           </span>
         </div>
       </div>
+      {penaltyWinner ? (
+        <div className="mt-2 rounded bg-cup-ink px-2 py-1 text-[10px] font-black uppercase text-cup-gold">
+          Pens: {penaltyWinner.name}
+        </div>
+      ) : null}
       {!compact ? (
         <div className="mt-2 flex items-center justify-between gap-2 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
           <span className="truncate">{formatKickoff(match.kickoff)}</span>
