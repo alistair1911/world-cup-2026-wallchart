@@ -546,7 +546,13 @@ export function WallchartApp() {
             onSelectPlayer={setSelectedPlayerId}
             onSelectTeam={setSelectedTeamId}
           />
-          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
+          <LeaderboardPanel
+            matches={matches}
+            predictions={predictions}
+            playerStats={playerStats}
+            playerCatalog={playerCatalog}
+            onSelectUser={setSelectedUserKey}
+          />
           {rightGroups.map((group) => (
             <GroupPanel
               key={group}
@@ -613,7 +619,13 @@ export function WallchartApp() {
           </div>
         ) : null}
         {mobileTab === "leaderboard" ? (
-          <LeaderboardPanel matches={matches} predictions={predictions} playerStats={playerStats} onSelectUser={setSelectedUserKey} />
+          <LeaderboardPanel
+            matches={matches}
+            predictions={predictions}
+            playerStats={playerStats}
+            playerCatalog={playerCatalog}
+            onSelectUser={setSelectedUserKey}
+          />
         ) : null}
         {mobileTab === "fantasy" ? (
           <FantasyPanel

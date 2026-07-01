@@ -105,6 +105,33 @@ export function playerCatalogId(teamId: string, value: string | number) {
   return `${teamId}-${slugify(String(value)) || "player"}`;
 }
 
+function playerCatalogIdSuffix(row: Pick<PlayerCatalogItem, "id" | "teamId">) {
+  return row.id.startsWith(`${row.teamId}-`) ? row.id.slice(row.teamId.length + 1) : row.id;
+}
+
+function providerPhotoUrl(row: Pick<PlayerCatalogItem, "id" | "teamId" | "photoUrl">) {
+  if (row.photoUrl) {
+    return row.photoUrl;
+  }
+
+  const suffix = playerCatalogIdSuffix(row);
+  return /^\d+$/.test(suffix) ? `https://media.api-sports.io/football/players/${suffix}.png` : null;
+}
+
+function isGeneratedProviderPhoto(value: string | null | undefined) {
+  return Boolean(value?.startsWith("https://media.api-sports.io/football/players/"));
+}
+
+function mergePhotoUrl(existing: string | null | undefined, incoming: string | null | undefined) {
+  if (!existing) {
+    return incoming ?? null;
+  }
+  if (incoming && isGeneratedProviderPhoto(existing) && !isGeneratedProviderPhoto(incoming)) {
+    return incoming;
+  }
+  return existing;
+}
+
 function comparableName(value: string) {
   return slugify(value);
 }
@@ -259,24 +286,25 @@ export function mergePlayerCatalog(
       }
 
       const nameKey = comparableName(row.name);
+      const rowWithPhoto = { ...row, photoUrl: providerPhotoUrl(row) };
       const existingByName = byName.get(nameKey);
       if (existingByName) {
         byName.set(nameKey, {
           ...existingByName,
-          age: existingByName.age ?? row.age ?? null,
-          shirtNumber: existingByName.shirtNumber ?? row.shirtNumber ?? null,
-          position: existingByName.position || row.position,
-          photoUrl: existingByName.photoUrl ?? row.photoUrl ?? null
+          age: existingByName.age ?? rowWithPhoto.age ?? null,
+          shirtNumber: existingByName.shirtNumber ?? rowWithPhoto.shirtNumber ?? null,
+          position: existingByName.position || rowWithPhoto.position,
+          photoUrl: mergePhotoUrl(existingByName.photoUrl, rowWithPhoto.photoUrl)
         });
         continue;
       }
 
-      if (byId.has(row.id)) {
+      if (byId.has(rowWithPhoto.id)) {
         continue;
       }
 
-      byId.add(row.id);
-      byName.set(nameKey, row);
+      byId.add(rowWithPhoto.id);
+      byName.set(nameKey, rowWithPhoto);
     }
 
     const teamRows = [...byName.values()];

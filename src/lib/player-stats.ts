@@ -1,6 +1,7 @@
 import { getAllPlayerProfiles } from "./profile-data";
+import { resolveFantasyPlayerOption } from "./fantasy";
 import { getTeam } from "./tournament-data";
-import type { Match, PlayerMatchStat, Team } from "./types";
+import type { Match, PlayerCatalogItem, PlayerMatchStat, Team } from "./types";
 
 export type PlayerStatLeader = {
   playerId: string;
@@ -14,7 +15,58 @@ export type PlayerStatLeader = {
   matches: number;
 };
 
-export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[]) {
+function teamScoreForStat(stat: PlayerMatchStat, match: Match | undefined) {
+  if (!match) {
+    return null;
+  }
+  if (stat.teamId === match.homeTeamId) {
+    return match.homeScore;
+  }
+  if (stat.teamId === match.awayTeamId) {
+    return match.awayScore;
+  }
+  return null;
+}
+
+function canonicalizeStat(stat: PlayerMatchStat, playerCatalog: PlayerCatalogItem[]) {
+  const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId }, playerCatalog);
+  return {
+    ...stat,
+    playerId: option?.id ?? stat.playerId,
+    playerName: option?.name ?? stat.playerName,
+    teamId: option?.team.id ?? stat.teamId
+  };
+}
+
+function dedupePlayerMatchStats(stats: PlayerMatchStat[], matches: Match[], playerCatalog: PlayerCatalogItem[]) {
+  const matchesById = new Map(matches.map((match) => [match.id, match]));
+  const byPlayerMatch = new Map<string, PlayerMatchStat>();
+
+  for (const stat of stats) {
+    const canonical = canonicalizeStat(stat, playerCatalog);
+    const match = matchesById.get(canonical.matchId);
+    const teamScore = teamScoreForStat(canonical, match);
+    const safeGoals = teamScore === null || teamScore === undefined ? canonical.goals : Math.min(canonical.goals, Math.max(0, teamScore));
+    const safeStat = { ...canonical, goals: safeGoals };
+    const key = `${safeStat.matchId}:${safeStat.playerId}`;
+    const existing = byPlayerMatch.get(key);
+
+    byPlayerMatch.set(
+      key,
+      existing
+        ? {
+            ...existing,
+            goals: Math.max(existing.goals, safeStat.goals),
+            assists: Math.max(existing.assists, safeStat.assists)
+          }
+        : safeStat
+    );
+  }
+
+  return [...byPlayerMatch.values()];
+}
+
+export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[], playerCatalog: PlayerCatalogItem[] = []) {
   const finalMatchIds = new Set(matches.filter((match) => match.status === "final").map((match) => match.id));
   const profileMap = new Map(
     getAllPlayerProfiles().map(({ player, team }) => [
@@ -28,12 +80,13 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
 
   const totals = new Map<string, PlayerStatLeader & { matchIds: Set<string> }>();
 
-  for (const stat of stats) {
+  for (const stat of dedupePlayerMatchStats(stats, matches, playerCatalog)) {
     if (!finalMatchIds.has(stat.matchId) || (stat.goals <= 0 && stat.assists <= 0)) {
       continue;
     }
 
     const profile = profileMap.get(stat.playerId);
+    const catalogPlayer = playerCatalog.find((player) => player.id === stat.playerId);
     const team = profile?.team ?? getTeam(stat.teamId);
     if (!team) {
       continue;
@@ -43,10 +96,10 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
       totals.get(stat.playerId) ??
       {
         playerId: stat.playerId,
-        playerName: profile?.player.name ?? stat.playerName,
+        playerName: profile?.player.name ?? catalogPlayer?.name ?? stat.playerName,
         team,
-        photoUrl: profile?.player.photoUrl,
-        position: profile?.player.position ?? "Player",
+        photoUrl: profile?.player.photoUrl ?? catalogPlayer?.photoUrl ?? undefined,
+        position: profile?.player.position ?? catalogPlayer?.position ?? "Player",
         goals: 0,
         assists: 0,
         involvements: 0,

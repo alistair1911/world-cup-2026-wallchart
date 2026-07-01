@@ -10,19 +10,20 @@ import {
   type ReZeroBadge,
   type ReZeroExactBadge
 } from "@/lib/rezero-progression";
-import type { Match, PlayerMatchStat, Prediction, UserKey } from "@/lib/types";
+import type { Match, PlayerCatalogItem, PlayerMatchStat, Prediction, UserKey } from "@/lib/types";
 import { Flag } from "./flag";
 
 type LeaderboardPanelProps = {
   matches: Match[];
   predictions: Prediction[];
   playerStats: PlayerMatchStat[];
+  playerCatalog?: PlayerCatalogItem[];
   onSelectUser?: (userKey: UserKey) => void;
 };
 
-export function LeaderboardPanel({ matches, predictions, playerStats, onSelectUser }: LeaderboardPanelProps) {
+export function LeaderboardPanel({ matches, predictions, playerStats, playerCatalog = [], onSelectUser }: LeaderboardPanelProps) {
   const leaderboard = buildLeaderboard(matches, predictions);
-  const statLeaders = buildPlayerStatLeaders(playerStats, matches);
+  const statLeaders = buildPlayerStatLeaders(playerStats, matches, playerCatalog);
   const topScore = Math.max(1, ...leaderboard.map((user) => user.points));
 
   return (

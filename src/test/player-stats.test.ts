@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildPlayerStatLeaders } from "@/lib/player-stats";
 import { INITIAL_MATCHES } from "@/lib/tournament-data";
-import type { PlayerMatchStat } from "@/lib/types";
+import type { PlayerCatalogItem, PlayerMatchStat } from "@/lib/types";
 
 describe("player stat leaderboards", () => {
   it("aggregates only final match goals and assists", () => {
@@ -52,5 +52,49 @@ describe("player stat leaderboards", () => {
     expect(leaders.topAssists[0]).toMatchObject({ playerName: "Lamine Yamal", assists: 2 });
     expect(leaders.topAssists.every((row) => row.assists > 0)).toBe(true);
     expect(leaders.topInvolvements[0]).toMatchObject({ playerName: "Lamine Yamal", involvements: 3 });
+  });
+
+  it("dedupes alias rows for the same player and match", () => {
+    const match = {
+      ...INITIAL_MATCHES[0],
+      id: "M3",
+      homeTeamId: "canada",
+      awayTeamId: "usa",
+      homeScore: 3,
+      awayScore: 0,
+      status: "final" as const
+    };
+    const playerCatalog: PlayerCatalogItem[] = [
+      {
+        id: "canada-8489",
+        teamId: "canada",
+        name: "Jonathan David",
+        position: "Forward",
+        photoUrl: "/players/canada-jonathan-david.jpg"
+      }
+    ];
+    const stats: PlayerMatchStat[] = [
+      {
+        matchId: "M3",
+        playerId: "canada-8489",
+        playerName: "Jonathan David",
+        teamId: "canada",
+        goals: 3,
+        assists: 0
+      },
+      {
+        matchId: "M3",
+        playerId: "canada-jonathan-david",
+        playerName: "Jonathan David",
+        teamId: "canada",
+        goals: 3,
+        assists: 0
+      }
+    ];
+
+    const leaders = buildPlayerStatLeaders(stats, [match], playerCatalog);
+
+    expect(leaders.topScorers).toHaveLength(1);
+    expect(leaders.topScorers[0]).toMatchObject({ playerName: "Jonathan David", goals: 3 });
   });
 });

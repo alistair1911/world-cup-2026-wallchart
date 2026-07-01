@@ -205,6 +205,21 @@ describe("mini-fantasy scoring", () => {
     expect(yamal?.photoUrl).toBe("/players/spain-lamine-yamal-2026.jpg");
   });
 
+  it("fills missing photos for numeric provider catalog ids", () => {
+    const merged = mergePlayerCatalog([
+      {
+        id: "canada-123456",
+        teamId: "canada",
+        name: "Canada Provider Player",
+        position: "Forward",
+        photoUrl: null
+      }
+    ]);
+    const player = merged.find((item) => item.id === "canada-123456");
+
+    expect(player?.photoUrl).toBe("https://media.api-sports.io/football/players/123456.png");
+  });
+
   it("builds player match scores from final matches and captain leaderboard totals", () => {
     const match = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
