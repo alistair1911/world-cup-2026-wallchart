@@ -8,15 +8,11 @@ import { Button } from "@/components/ui/button";
 import {
   FANTASY_SCORING_RULES,
   buildFantasyLeaderboard,
-  fantasyFormationLimitMessage,
   fantasyOptionMap,
   fantasyPlayerOptions,
-  fantasyScoreIdsForPlayer,
   fantasyPlayerTotals,
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
-  resolveFantasyPlayerOption,
-  shouldEnforceFantasyFormation,
   trimFantasyRosterToFormation,
   type FantasyRoundResult,
   type FantasyPlayerOption
@@ -30,7 +26,6 @@ import type {
   FantasyTeamSetting,
   Match,
   PlayerCatalogItem,
-  PlayerMatchStat,
   UserKey
 } from "@/lib/types";
 import { Flag } from "./flag";
@@ -41,9 +36,6 @@ type FantasyProfileDrawerProps = {
   matches: Match[];
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
-  storedScores: FantasyPlayerMatchScore[];
-  statScores: FantasyPlayerMatchScore[];
-  playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
   teamSettings: FantasyTeamSetting[];
   round: FantasyRoundResult;
@@ -55,13 +47,12 @@ type FantasyProfileDrawerProps = {
 };
 
 const FORMATIONS = ["4-3-3", "4-2-3-1", "3-4-3", "3-5-2", "4-4-2", "5-3-2"] as const;
-const TRACE_TARGETS = [
-  { id: "argentina-lionel-messi", label: "Messi", terms: ["messi", "lionel", "154", "45843"] },
-  { id: "spain-lamine-yamal", label: "Yamal", terms: ["lamine", "yamal", "362150"] },
-  { id: "england-harry-kane", label: "Kane", terms: ["kane", "harry", "184", "39836"] },
-  { id: "usa-christian-pulisic", label: "Pulisic", terms: ["pulisic", "christian", "225607"] },
-  { id: "canada-jonathan-david", label: "David", terms: ["jonathan", "david"] }
-] as const;
+const EMPTY_PLAYER_TOTALS = {
+  points: 0,
+  goals: 0,
+  assists: 0,
+  cleanSheets: 0
+};
 
 const FORMATION_LINES: Record<string, Array<{ id: string; label: string; count: number }>> = {
   "4-3-3": [
@@ -157,116 +148,12 @@ function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
     .join("|")}`;
 }
 
-function scoreSummary(rows: FantasyPlayerMatchScore[]) {
-  return rows.reduce(
-    (total, row) => ({
-      points: total.points + row.points,
-      goals: total.goals + row.goals,
-      assists: total.assists + row.assists
-    }),
-    { points: 0, goals: 0, assists: 0 }
-  );
-}
-
-function matchesTraceTerms(value: string, terms: readonly string[]) {
-  const lower = value.toLowerCase();
-  return terms.some((term) => lower.includes(term));
-}
-
-function resolveTraceScoreRows(playerId: string, rows: FantasyPlayerMatchScore[], playerCatalog: PlayerCatalogItem[]) {
-  const ids = new Set(fantasyScoreIdsForPlayer(playerId, playerCatalog));
-  const targetId = resolveFantasyPlayerOption({ playerId }, playerCatalog)?.id ?? playerId;
-  return rows.filter((row) => {
-    const option = resolveFantasyPlayerOption({ playerId: row.playerId, teamId: row.teamId }, playerCatalog);
-    return (option?.id ?? row.playerId) === targetId || ids.has(row.playerId);
-  });
-}
-
-function FantasyPointTrace({
-  slots,
-  playerStats,
-  storedScores,
-  statScores,
-  scores,
-  playerCatalog
-}: {
-  slots: FantasyRosterSlot[];
-  playerStats: PlayerMatchStat[];
-  storedScores: FantasyPlayerMatchScore[];
-  statScores: FantasyPlayerMatchScore[];
-  scores: FantasyPlayerMatchScore[];
-  playerCatalog: PlayerCatalogItem[];
-}) {
-  const rows = TRACE_TARGETS.map((target) => {
-    const ids = new Set(fantasyScoreIdsForPlayer(target.id, playerCatalog));
-    const rosterRows = slots.filter((slot) => {
-      const option = resolveFantasyPlayerOption({ playerId: slot.playerId }, playerCatalog);
-      return (option?.id ?? slot.playerId) === target.id || ids.has(slot.playerId) || matchesTraceTerms(slot.playerId, target.terms);
-    });
-    const statRows = playerStats.filter((stat) => {
-      const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId }, playerCatalog);
-      return (
-        (option?.id ?? stat.playerId) === target.id ||
-        ids.has(stat.playerId) ||
-        matchesTraceTerms(`${stat.playerId} ${stat.playerName} ${stat.teamId}`, target.terms)
-      );
-    });
-    const storedRows = resolveTraceScoreRows(target.id, storedScores, playerCatalog);
-    const derivedRows = resolveTraceScoreRows(target.id, statScores, playerCatalog);
-    const mergedRows = resolveTraceScoreRows(target.id, scores, playerCatalog);
-
-    return {
-      target,
-      rosterRows,
-      statRows,
-      stored: scoreSummary(storedRows),
-      derived: scoreSummary(derivedRows),
-      merged: scoreSummary(mergedRows),
-      storedRows,
-      derivedRows,
-      mergedRows
-    };
-  }).filter((row) => row.rosterRows.length > 0 || row.statRows.length > 0 || row.storedRows.length > 0 || row.derivedRows.length > 0 || row.mergedRows.length > 0);
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return (
-    <details className="rounded-lg bg-white p-4 ring-1 ring-amber-200">
-      <summary className="cursor-pointer text-sm font-black uppercase text-amber-800">Fantasy Data Trace</summary>
-      <div className="mt-3 space-y-3">
-        {rows.map((row) => (
-          <div key={row.target.id} className="rounded-md bg-amber-50 p-3 text-[11px] font-bold text-amber-950 ring-1 ring-amber-100">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-black uppercase">{row.target.label}</span>
-              <span>Merged {row.merged.points} pts / G {row.merged.goals} / A {row.merged.assists}</span>
-            </div>
-            <div className="mt-2 grid gap-1">
-              <div>Roster: {row.rosterRows.map((slot) => slot.playerId).join(", ") || "none"}</div>
-              <div>
-                Stats:{" "}
-                {row.statRows.map((stat) => `${stat.playerId} ${stat.playerName} ${stat.teamId} G${stat.goals} A${stat.assists}`).join(" | ") || "none"}
-              </div>
-              <div>Stored: {row.stored.points} pts / G {row.stored.goals} / A {row.stored.assists}</div>
-              <div>Derived: {row.derived.points} pts / G {row.derived.goals} / A {row.derived.assists}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </details>
-  );
-}
-
 export function FantasyProfileDrawer({
   userKey,
   session,
   matches,
   rosters,
   scores,
-  storedScores,
-  statScores,
-  playerStats,
   playerCatalog,
   teamSettings,
   round,
@@ -279,8 +166,6 @@ export function FantasyProfileDrawer({
   const options = useMemo(() => fantasyPlayerOptions(playerCatalog), [playerCatalog]);
   const optionMap = useMemo(() => fantasyOptionMap(playerCatalog), [playerCatalog]);
   const leaderboard = useMemo(() => buildFantasyLeaderboard(rosters, scores, playerCatalog), [rosters, scores, playerCatalog]);
-  const roundMatchIds = useMemo(() => new Set(matches.filter((match) => round.phases.includes(match.phase)).map((match) => match.id)), [matches, round.phases]);
-  const roundPlayerStats = useMemo(() => playerStats.filter((stat) => roundMatchIds.has(stat.matchId)), [playerStats, roundMatchIds]);
   const setting = userKey ? teamSettings.find((team) => team.userKey === userKey) : null;
   const savedFormation = validFormation(setting?.formation);
   const savedSlots = useMemo(
@@ -388,6 +273,16 @@ export function FantasyProfileDrawer({
     return () => window.clearTimeout(timeoutId);
   }, [autoSaveKey, canEdit, dirty, formation, normalizedDraft, onSaveRoster, onSaveSettings, userKey]);
 
+  const draftStats = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof fantasyPlayerTotals>>();
+    for (const slot of normalizedDraft) {
+      if (!map.has(slot.playerId)) {
+        map.set(slot.playerId, fantasyPlayerTotals(slot.playerId, scores, playerCatalog));
+      }
+    }
+    return map;
+  }, [normalizedDraft, playerCatalog, scores]);
+
   if (!userKey) {
     return null;
   }
@@ -413,7 +308,7 @@ export function FantasyProfileDrawer({
   );
   const totals = normalizedDraft.reduce(
     (total, slot) => {
-      const output = fantasyPlayerTotals(slot.playerId, scores, playerCatalog);
+      const output = draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS;
       total.points += slot.isCaptain ? output.points * 2 : output.points;
       total.goals += output.goals;
       total.assists += output.assists;
@@ -461,7 +356,7 @@ export function FantasyProfileDrawer({
     setActiveMoveId(null);
     setDraggingId(null);
     setDirty(true);
-    setMessage("Autosaving formation...");
+    setMessage("Autosaving board...");
   }
 
   function moveToBench(playerId: string) {
@@ -504,11 +399,6 @@ export function FantasyProfileDrawer({
     const takenBy = takenByOtherUser.get(playerId);
     if (takenBy) {
       setMessage(`${optionMap.get(playerId)?.name ?? "That player"} is already selected by ${takenBy} for ${round.name}.`);
-      return;
-    }
-    const formationLimit = fantasyFormationLimitMessage(playerId, normalizedDraft, formation, playerCatalog, round.id, userKey);
-    if (formationLimit) {
-      setMessage(formationLimit);
       return;
     }
     if (normalizedDraft.length >= squadSize) {
@@ -586,9 +476,9 @@ export function FantasyProfileDrawer({
       await onSaveRoster(normalizedDraft);
       lastSavedKeyRef.current = rosterSignature(normalizedDraft, formation);
       setDirty(false);
-      setMessage("Fantasy formation saved.");
+      setMessage("Fantasy squad saved.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save Fantasy formation.");
+      setMessage(error instanceof Error ? error.message : "Could not save Fantasy squad.");
     } finally {
       setSaving(false);
     }
@@ -606,7 +496,7 @@ export function FantasyProfileDrawer({
               <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
               <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                {round.name}: {normalizedDraft.length}/{squadSize} players - {starterSlots.length}/{starterSize} starters - {formation} -{" "}
+                {round.name}: {normalizedDraft.length}/{squadSize} players - {starterSlots.length}/{starterSize} starters - Layout {formation} -{" "}
                 {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
               </p>
               <p className="mt-1 text-xs font-bold text-slate-500">
@@ -638,13 +528,13 @@ export function FantasyProfileDrawer({
                 <div>
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-cup-gold" />
-                    <h3 className="text-sm font-black uppercase text-slate-600">Formation Board</h3>
+                    <h3 className="text-sm font-black uppercase text-slate-600">Squad Board</h3>
                   </div>
                   <p className="text-xs font-bold text-slate-500">
                   {canEdit
                       ? activeMoveId
                         ? "Tap a pitch slot or the bench to place the selected player."
-                        : "Tap Move or drag players; they snap into the selected slot."
+                        : "Formation is only a visual layout; any role mix is allowed."
                       : `${round.name} is read-only right now.`}
                   </p>
                 </div>
@@ -655,7 +545,7 @@ export function FantasyProfileDrawer({
                     setFormation(nextFormation);
                     setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, userKey, round, nextFormation, playerCatalog));
                     setDirty(true);
-                    setMessage("Autosaving formation...");
+                    setMessage("Autosaving layout...");
                   }}
                   disabled={!canEdit}
                   className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-cup-ink disabled:opacity-60"
@@ -712,7 +602,7 @@ export function FantasyProfileDrawer({
                               key={`${line.id}-${index}`}
                               slot={slot}
                               player={slot ? optionMap.get(slot.playerId) : undefined}
-                              stats={slot ? fantasyPlayerTotals(slot.playerId, scores, playerCatalog) : null}
+                              stats={slot ? draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS : null}
                               compact={line.count === 1}
                               canEdit={canEdit}
                               draggingId={draggingId}
@@ -777,7 +667,7 @@ export function FantasyProfileDrawer({
                       key={slot.playerId}
                       slot={slot}
                       player={optionMap.get(slot.playerId)}
-                      stats={fantasyPlayerTotals(slot.playerId, scores, playerCatalog)}
+                      stats={draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS}
                       canEdit={canEdit}
                       activeMoveId={activeMoveId}
                       onDragStart={setDraggingId}
@@ -790,15 +680,6 @@ export function FantasyProfileDrawer({
               </div>
             </div>
 
-            <FantasyPointTrace
-              slots={normalizedDraft}
-              playerStats={roundPlayerStats}
-              storedScores={storedScores}
-              statScores={statScores}
-              scores={scores}
-              playerCatalog={playerCatalog}
-            />
-
             <ScoringRulesPanel />
 
             <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
@@ -806,8 +687,7 @@ export function FantasyProfileDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-600">Add Players</h3>
                   <p className="text-xs font-bold text-slate-500">
-                    {normalizedDraft.length}/{squadSize} selected -{" "}
-                    {shouldEnforceFantasyFormation(round.id) ? `${formation} caps active.` : "filter by country or position."}
+                    {normalizedDraft.length}/{squadSize} selected - any role mix allowed.
                   </p>
                 </div>
                 <Badge tone={normalizedDraft.length >= squadSize ? "red" : "green"}>{squadSize - normalizedDraft.length} spots</Badge>
@@ -855,7 +735,6 @@ export function FantasyProfileDrawer({
                   const selected = selectedPlayerIds.has(player.id);
                   const locked = !round.selectionEnabled;
                   const takenBy = takenByOtherUser.get(player.id);
-                  const formationLimit = selected ? null : fantasyFormationLimitMessage(player.id, normalizedDraft, formation, playerCatalog, round.id, userKey);
                   return (
                     <div
                       key={player.id}
@@ -877,7 +756,6 @@ export function FantasyProfileDrawer({
                               <span>{player.team.code}</span>
                               <Badge tone="green">{player.fantasyPosition}</Badge>
                               {takenBy ? <span className="text-cup-red">Taken by {takenBy}</span> : null}
-                              {formationLimit ? <span className="text-cup-red">Formation limit</span> : null}
                               {locked ? <span className="text-cup-red">Locked</span> : null}
                             </div>
                           </div>
@@ -887,9 +765,8 @@ export function FantasyProfileDrawer({
                         size="sm"
                         variant={selected ? "secondary" : "ghost"}
                         onClick={() => (selected ? removePlayer(player.id) : addPlayer(player.id))}
-                        disabled={!canEdit || (!selected && (locked || Boolean(takenBy) || Boolean(formationLimit) || normalizedDraft.length >= squadSize))}
+                        disabled={!canEdit || (!selected && (locked || Boolean(takenBy) || normalizedDraft.length >= squadSize))}
                         aria-label={selected ? `Remove ${player.name}` : `Add ${player.name}`}
-                        title={formationLimit ?? undefined}
                       >
                         {selected ? <Trash2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                       </Button>
@@ -910,7 +787,7 @@ export function FantasyProfileDrawer({
                   if (!player) {
                     return null;
                   }
-                  const stats = fantasyPlayerTotals(slot.playerId, scores, playerCatalog);
+                  const stats = draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS;
                   return (
                     <button
                       key={slot.playerId}
@@ -979,16 +856,21 @@ function MiniStat({ label, value }: { label: string; value: number }) {
 
 function ScoringRulesPanel() {
   return (
-    <div className="rounded-lg bg-gradient-to-br from-cup-ink via-pitch-900 to-pitch-700 p-4 text-white shadow-sm ring-1 ring-cup-gold/30">
-      <div className="mb-3 flex items-center gap-2">
-        <Gauge className="h-4 w-4 text-cup-gold" />
-        <h3 className="text-sm font-black uppercase">Scoring</h3>
+    <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="mb-3 flex items-start gap-2">
+        <Gauge className="mt-0.5 h-4 w-4 text-cup-red" />
+        <div>
+          <h3 className="text-sm font-black uppercase text-slate-700">Scoring Rules</h3>
+          <p className="mt-1 text-xs font-bold leading-snug text-slate-500">
+            Defender and keeper value comes from clean sheets, wins, draws, and low goals conceded, not only goals.
+          </p>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         {FANTASY_SCORING_RULES.map((rule) => (
-          <div key={rule.label} className="rounded-md bg-white/10 p-2 ring-1 ring-white/10">
-            <div className="text-[9px] font-black uppercase text-white/55">{rule.label}</div>
-            <div className="mt-1 text-[11px] font-black leading-tight text-white">{rule.detail}</div>
+          <div key={rule.label} className="rounded-md bg-slate-50 p-2 ring-1 ring-slate-200">
+            <div className="text-[9px] font-black uppercase text-slate-500">{rule.label}</div>
+            <div className="mt-1 text-[11px] font-black leading-tight text-cup-ink">{rule.detail}</div>
           </div>
         ))}
       </div>

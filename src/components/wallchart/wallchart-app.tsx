@@ -8,10 +8,7 @@ import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
   activeFantasyRound,
-  buildFantasyScoresFromMatches,
-  fantasyFormationLimitMessage,
   isFantasyKnockoutRound,
-  mergeFantasyScores,
   normalizeFantasyRoundId,
   rostersForFantasyRound,
   scoresForFantasyRound
@@ -22,6 +19,7 @@ import { GROUPS } from "@/lib/tournament-data";
 import {
   ensureProfile,
   loadTournamentState,
+  loadFantasyScores,
   migrateLocalFamilyData,
   saveComment,
   saveFantasyRoster,
@@ -77,6 +75,7 @@ export function WallchartApp() {
   const [fantasyTeams, setFantasyTeams] = useState<FantasyTeamSetting[]>([]);
   const [fantasyRosters, setFantasyRosters] = useState<FantasyRosterSlot[]>([]);
   const [fantasyScores, setFantasyScores] = useState<FantasyPlayerMatchScore[]>([]);
+  const [fantasyScoresLoading, setFantasyScoresLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
@@ -90,10 +89,23 @@ export function WallchartApp() {
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
   const lastAutoSyncAt = useRef(0);
 
+  const refreshFantasyScores = useCallback(async () => {
+    setFantasyScoresLoading(true);
+    try {
+      const result = await loadFantasyScores();
+      setFantasyScores(result.fantasyScores);
+      if (result.fantasyError) {
+        setError(result.fantasyError);
+      }
+    } finally {
+      setFantasyScoresLoading(false);
+    }
+  }, []);
+
   const refreshTournamentState = useCallback(async () => {
     setRefreshing(true);
     try {
-      const state = await loadTournamentState();
+      const state = await loadTournamentState({ includeFantasyScores: false });
       setMatches(state.matches);
       setPredictions(state.predictions);
       setComments(state.comments);
@@ -101,7 +113,6 @@ export function WallchartApp() {
       setPlayerCatalog(state.playerCatalog);
       setFantasyTeams(state.fantasyTeams);
       setFantasyRosters(state.fantasyRosters);
-      setFantasyScores(state.fantasyScores);
       setError(state.error ?? null);
       setLastRefreshed(new Date());
     } finally {
@@ -137,7 +148,7 @@ export function WallchartApp() {
         profileError = error instanceof Error ? error.message : "Could not prepare shared profile.";
       }
 
-      const state = await loadTournamentState();
+      const state = await loadTournamentState({ includeFantasyScores: false });
       if (!alive) {
         return;
       }
@@ -149,11 +160,13 @@ export function WallchartApp() {
       setPlayerCatalog(state.playerCatalog);
       setFantasyTeams(state.fantasyTeams);
       setFantasyRosters(state.fantasyRosters);
-      setFantasyScores(state.fantasyScores);
       setError(profileError || state.error || null);
       setSyncMessage(migrationMessage);
       setLastRefreshed(new Date());
       setLoading(false);
+      refreshFantasyScores().catch(() => {
+        setError("Could not load fantasy scores.");
+      });
     }
 
     boot();
@@ -161,7 +174,7 @@ export function WallchartApp() {
     return () => {
       alive = false;
     };
-  }, [router]);
+  }, [refreshFantasyScores, router]);
 
   useEffect(() => {
     if (!session) {
@@ -183,10 +196,7 @@ export function WallchartApp() {
 
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
-  const effectiveFantasyScores = useMemo(() => {
-    const derivedScores = buildFantasyScoresFromMatches(matches, playerStats, playerCatalog);
-    return mergeFantasyScores(fantasyScores, derivedScores, playerCatalog);
-  }, [fantasyScores, matches, playerStats, playerCatalog]);
+  const effectiveFantasyScores = fantasyScores;
   const currentFantasyRound = useMemo(() => activeFantasyRound(matches), [matches]);
   const currentFantasyRosters = useMemo(
     () => rostersForFantasyRound(currentFantasyRound.id, fantasyRosters),
@@ -299,12 +309,6 @@ export function WallchartApp() {
       setSyncMessage("That player is already selected by the other team for this knockout round.");
       return;
     }
-    const formation = fantasyTeams.find((team) => team.userKey === session.userKey)?.formation ?? "4-3-3";
-    const formationLimit = fantasyFormationLimitMessage(playerId, ownSlots, formation, playerCatalog, currentFantasyRound.id, session.userKey);
-    if (formationLimit) {
-      setSyncMessage(formationLimit);
-      return;
-    }
     if (ownSlots.length >= currentFantasyRound.squadSize) {
       setSyncMessage(`Mini-Fantasy squad is full at ${currentFantasyRound.squadSize} players.`);
       return;
@@ -331,6 +335,7 @@ export function WallchartApp() {
     async (force = true, announce = true) => {
       const result = await syncLiveScores(force);
       await refreshTournamentState();
+      await refreshFantasyScores();
       const updated = result.updated?.length ?? 0;
       const statsUpdated = result.playerStatsUpdated ?? 0;
       const cleaned = result.cleanedPlaceholders ?? 0;
@@ -345,7 +350,7 @@ export function WallchartApp() {
         setSyncMessage(`${scoreText}${statText}.${fantasyText}${cleanupText}${warningText}`);
       }
     },
-    [refreshTournamentState]
+    [refreshFantasyScores, refreshTournamentState]
   );
 
   async function handleSyncScores() {
@@ -511,6 +516,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            scoresLoading={fantasyScoresLoading}
             playerStats={playerStats}
             playerCatalog={playerCatalog}
             teamSettings={fantasyTeams}
@@ -594,6 +600,7 @@ export function WallchartApp() {
             matches={matches}
             rosters={fantasyRosters}
             scores={effectiveFantasyScores}
+            scoresLoading={fantasyScoresLoading}
             playerStats={playerStats}
             playerCatalog={playerCatalog}
             teamSettings={fantasyTeams}

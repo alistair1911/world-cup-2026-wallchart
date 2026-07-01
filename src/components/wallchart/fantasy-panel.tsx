@@ -11,7 +11,6 @@ import {
   buildFantasyOverallLeaderboard,
   buildFantasyRoundResults,
   buildFantasyScoresFromMatches,
-  mergeFantasyScores,
   rostersForFantasyRound,
   scoresForFantasyRound,
   type FantasyRoundId,
@@ -36,6 +35,7 @@ type FantasyPanelProps = {
   matches: Match[];
   rosters: FantasyRosterSlot[];
   scores: FantasyPlayerMatchScore[];
+  scoresLoading?: boolean;
   playerStats: PlayerMatchStat[];
   playerCatalog: PlayerCatalogItem[];
   teamSettings: FantasyTeamSetting[];
@@ -84,6 +84,7 @@ export function FantasyPanel({
   matches,
   rosters,
   scores,
+  scoresLoading = false,
   playerStats,
   playerCatalog,
   teamSettings,
@@ -92,8 +93,11 @@ export function FantasyPanel({
   onSelectPlayer,
   onSelectTeam
 }: FantasyPanelProps) {
-  const statScores = useMemo(() => buildFantasyScoresFromMatches(matches, playerStats, playerCatalog), [matches, playerCatalog, playerStats]);
-  const displayScores = useMemo(() => mergeFantasyScores(scores, statScores, playerCatalog), [playerCatalog, scores, statScores]);
+  const fallbackScores = useMemo(
+    () => (scores.length === 0 && !scoresLoading ? buildFantasyScoresFromMatches(matches, playerStats, playerCatalog) : []),
+    [matches, playerCatalog, playerStats, scores.length, scoresLoading]
+  );
+  const displayScores = scores.length > 0 ? scores : fallbackScores;
   const activeRound = useMemo(() => activeFantasyRound(matches), [matches]);
   const [selectedRoundId, setSelectedRoundId] = useState<FantasyRoundId>(activeRound.id);
   const roundResults = useMemo(
@@ -105,8 +109,6 @@ export function FantasyPanel({
   const nextRound = roundResults[roundResults.findIndex((round) => round.id === selectedRound.id) + 1];
   const selectedRosters = useMemo(() => rostersForFantasyRound(selectedRound.id, rosters), [rosters, selectedRound.id]);
   const selectedScores = useMemo(() => scoresForFantasyRound(selectedRound.id, displayScores, matches), [displayScores, matches, selectedRound.id]);
-  const selectedStoredScores = useMemo(() => scoresForFantasyRound(selectedRound.id, scores, matches), [matches, scores, selectedRound.id]);
-  const selectedStatScores = useMemo(() => scoresForFantasyRound(selectedRound.id, statScores, matches), [matches, selectedRound.id, statScores]);
   const leaderboard = useMemo(() => buildFantasyLeaderboard(selectedRosters, selectedScores, playerCatalog), [playerCatalog, selectedRosters, selectedScores]);
   const overallLeaderboard = useMemo(() => buildFantasyOverallLeaderboard(roundResults, activeRound.id), [activeRound.id, roundResults]);
   const ownRoster = useMemo(
@@ -174,6 +176,16 @@ export function FantasyPanel({
         <div className="flex items-start gap-2">
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-cup-red" />
           <span>{roundHelpText(selectedRound, nextRound)}</span>
+        </div>
+      </div>
+
+      <div className="mb-3 rounded-md bg-white p-2 text-[11px] font-bold leading-snug text-slate-600 ring-1 ring-slate-200">
+        <div className="flex items-start gap-2">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-cup-gold" />
+          <span>
+            Goals and assists still matter most. Defenders and keepers also score from clean sheets, wins, draws, and low goals conceded.
+            {scoresLoading ? " Fantasy scores are loading in the background." : ""}
+          </span>
         </div>
       </div>
 
@@ -254,9 +266,6 @@ export function FantasyPanel({
         matches={matches}
         rosters={selectedRosters}
         scores={selectedScores}
-        storedScores={selectedStoredScores}
-        statScores={selectedStatScores}
-        playerStats={playerStats}
         playerCatalog={playerCatalog}
         teamSettings={teamSettings}
         round={selectedRound}

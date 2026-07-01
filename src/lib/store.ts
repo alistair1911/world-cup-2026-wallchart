@@ -425,7 +425,46 @@ export async function migrateLocalFamilyData(session: FamilySession): Promise<Lo
   };
 }
 
-export async function loadTournamentState(): Promise<TournamentState> {
+type LoadTournamentStateOptions = {
+  includeFantasyScores?: boolean;
+};
+
+function rowToFantasyScore(row: StoredFantasyScoreRow): FantasyPlayerMatchScore {
+  return {
+    matchId: row.match_id,
+    playerId: row.player_id,
+    teamId: row.team_id,
+    points: row.points,
+    goals: row.goals,
+    assists: row.assists,
+    cleanSheet: row.clean_sheet,
+    yellowCards: row.yellow_cards,
+    redCards: row.red_cards,
+    ownGoals: row.own_goals,
+    penaltySaves: row.penalty_saves,
+    penaltyMisses: row.penalty_misses,
+    breakdown: row.breakdown ?? {},
+    status: row.status ?? "confirmed",
+    updatedAt: row.updated_at ?? null
+  };
+}
+
+export async function loadFantasyScores(): Promise<{ fantasyScores: FantasyPlayerMatchScore[]; fantasyError?: string }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { fantasyScores: readLocalFantasyScores() };
+  }
+
+  const { data, error } = await supabase.from("fantasy_player_match_scores").select("*");
+  if (error) {
+    return { fantasyScores: [], fantasyError: error.message };
+  }
+
+  return { fantasyScores: ((data || []) as StoredFantasyScoreRow[]).map(rowToFantasyScore) };
+}
+
+export async function loadTournamentState(options: LoadTournamentStateOptions = {}): Promise<TournamentState> {
+  const includeFantasyScores = options.includeFantasyScores ?? true;
   const supabase = getSupabaseClient();
 
   if (!supabase) {
@@ -438,7 +477,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       playerCatalog: [],
       fantasyTeams: readLocalFantasyTeams(),
       fantasyRosters: readLocalFantasyRosters().map((slot) => ({ ...slot, roundId: normalizeFantasyRoundId(slot.roundId) })),
-      fantasyScores: readLocalFantasyScores()
+      fantasyScores: includeFantasyScores ? readLocalFantasyScores() : []
     };
   }
 
@@ -462,7 +501,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
       fetchPlayerCatalogRows(),
       supabase.from("fantasy_teams").select("*"),
       supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
-      supabase.from("fantasy_player_match_scores").select("*")
+      includeFantasyScores ? supabase.from("fantasy_player_match_scores").select("*") : Promise.resolve({ data: [], error: null })
     ]);
 
     if (matchError || predictionError) {
@@ -565,23 +604,7 @@ export async function loadTournamentState(): Promise<TournamentState> {
     const fantasyScores: FantasyPlayerMatchScore[] = [];
     if (!fantasyScoreError) {
       for (const row of (fantasyScoreRows || []) as StoredFantasyScoreRow[]) {
-        fantasyScores.push({
-          matchId: row.match_id,
-          playerId: row.player_id,
-          teamId: row.team_id,
-          points: row.points,
-          goals: row.goals,
-          assists: row.assists,
-          cleanSheet: row.clean_sheet,
-          yellowCards: row.yellow_cards,
-          redCards: row.red_cards,
-          ownGoals: row.own_goals,
-          penaltySaves: row.penalty_saves,
-          penaltyMisses: row.penalty_misses,
-          breakdown: row.breakdown ?? {},
-          status: row.status ?? "confirmed",
-          updatedAt: row.updated_at ?? null
-        });
+        fantasyScores.push(rowToFantasyScore(row));
       }
     }
 
