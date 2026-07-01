@@ -5,6 +5,7 @@ import {
   buildFantasyScoresFromMatches,
   fantasyFormationPositionCaps,
   fantasyOptionMap,
+  isFantasyFormationBypassPlayer,
   shouldEnforceFantasyFormation
 } from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
@@ -1278,12 +1279,17 @@ async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, pl
     return 0;
   }
 
-  const [{ data: rosterRows, error: rosterError }, { data: teamRows, error: teamError }] = await Promise.all([
+  const [
+    { data: rosterRows, error: rosterError },
+    { data: teamRows, error: teamError },
+    { data: profileRows, error: profileError }
+  ] = await Promise.all([
     supabase
       .from("fantasy_rosters")
       .select("id,user_id,round_id,player_id,slot_index,is_starter,is_captain,is_vice_captain")
       .in("round_id", enforcedRoundIds),
-    supabase.from("fantasy_teams").select("user_id,formation")
+    supabase.from("fantasy_teams").select("user_id,formation"),
+    supabase.from("profiles").select("id,user_key")
   ]);
 
   if (rosterError) {
@@ -1292,9 +1298,15 @@ async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, pl
   if (teamError) {
     throw new Error(teamError.message);
   }
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
 
   const formationByUser = new Map(
     ((teamRows || []) as Array<{ user_id: string; formation?: string | null }>).map((row) => [row.user_id, row.formation ?? "4-3-3"])
+  );
+  const userKeyByUserId = new Map(
+    ((profileRows || []) as Array<{ id: string; user_key?: "tata" | "lucas" | null }>).map((row) => [row.id, row.user_key ?? null])
   );
   const rows = (rosterRows || []) as StoredFutureFantasyRosterRow[];
   const optionMap = fantasyOptionMap(playerCatalog);
@@ -1312,13 +1324,24 @@ async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, pl
     }
 
     const caps = fantasyFormationPositionCaps(formationByUser.get(firstRow.user_id));
+    const userKey = userKeyByUserId.get(firstRow.user_id);
     const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
     const kept: StoredFutureFantasyRosterRow[] = [];
     const removed: StoredFutureFantasyRosterRow[] = [];
 
     for (const row of [...groupRows].sort((a, b) => a.slot_index - b.slot_index)) {
+      if (kept.length >= 11) {
+        removed.push(row);
+        continue;
+      }
+
+      if (isFantasyFormationBypassPlayer(userKey, row.player_id, playerCatalog)) {
+        kept.push(row);
+        continue;
+      }
+
       const position = fantasyPositionForRosterPlayer(row.player_id, optionMap, playerCatalog);
-      if (counts[position] >= caps[position] || kept.length >= 11) {
+      if (counts[position] >= caps[position]) {
         removed.push(row);
         continue;
       }

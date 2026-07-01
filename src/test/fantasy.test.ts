@@ -1187,4 +1187,61 @@ describe("mini-fantasy scoring", () => {
     expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round16")).toContain("allows 3 FWD");
     expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round32")).toBeNull();
   });
+
+  it("lets Lucas keep selected Spain exceptions over future formation caps", () => {
+    const playerCatalog: PlayerCatalogItem[] = [
+      { id: "spain-unai-simon", teamId: "spain", name: "Unai Simon", position: "Goalkeeper" },
+      { id: "spain-pau-cubarsi", teamId: "spain", name: "Pau Cubarsi", position: "Defender" },
+      { id: "spain-marc-cucurella", teamId: "spain", name: "Marc Cucurella", position: "Defender" },
+      { id: "spain-mikel-merino", teamId: "spain", name: "Mikel Merino", position: "Midfielder" },
+      { id: "def-1", teamId: "canada", name: "Defender One", position: "Defender" },
+      { id: "def-2", teamId: "canada", name: "Defender Two", position: "Defender" },
+      { id: "def-3", teamId: "canada", name: "Defender Three", position: "Defender" },
+      { id: "mid-1", teamId: "canada", name: "Mid One", position: "Midfielder" },
+      { id: "fwd-1", teamId: "canada", name: "Forward One", position: "Forward" },
+      { id: "fwd-2", teamId: "canada", name: "Forward Two", position: "Forward" },
+      { id: "fwd-3", teamId: "canada", name: "Forward Three", position: "Forward" }
+    ];
+    const slots = playerCatalog.map((player, index) => ({
+      userKey: "lucas" as const,
+      playerId: player.id,
+      roundId: "round16",
+      slotIndex: index,
+      isStarter: true,
+      isCaptain: index === 0,
+      isViceCaptain: index === 1
+    }));
+
+    const trimmed = trimFantasyRosterToFormation(slots, "3-4-3", playerCatalog, "round16");
+
+    expect(trimmed).toHaveLength(11);
+    expect(trimmed.map((slot) => slot.playerId)).toEqual(expect.arrayContaining([
+      "spain-unai-simon",
+      "spain-pau-cubarsi",
+      "spain-marc-cucurella",
+      "spain-mikel-merino"
+    ]));
+    expect(trimmed.filter((slot) => slot.playerId.includes("def") || slot.playerId.includes("cubarsi") || slot.playerId.includes("cucurella"))).toHaveLength(5);
+  });
+
+  it("bypasses Lucas's selected Spain players without opening the same cap for Tata", () => {
+    const playerCatalog: PlayerCatalogItem[] = [
+      { id: "spain-marc-cucurella", teamId: "spain", name: "Marc Cucurella", position: "Defender" },
+      { id: "def-1", teamId: "canada", name: "Defender One", position: "Defender" },
+      { id: "def-2", teamId: "canada", name: "Defender Two", position: "Defender" },
+      { id: "def-3", teamId: "canada", name: "Defender Three", position: "Defender" }
+    ];
+    const slots: FantasyRosterSlot[] = playerCatalog.slice(1).map((player, index) => ({
+      userKey: "lucas",
+      playerId: player.id,
+      roundId: "round16",
+      slotIndex: index,
+      isStarter: true,
+      isCaptain: index === 0,
+      isViceCaptain: index === 1
+    }));
+
+    expect(fantasyFormationLimitMessage("spain-marc-cucurella", slots, "3-4-3", playerCatalog, "round16", "lucas")).toBeNull();
+    expect(fantasyFormationLimitMessage("spain-marc-cucurella", slots, "3-4-3", playerCatalog, "round16", "tata")).toContain("allows 3 DEF");
+  });
 });

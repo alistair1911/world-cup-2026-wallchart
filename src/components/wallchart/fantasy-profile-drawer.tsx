@@ -506,7 +506,7 @@ export function FantasyProfileDrawer({
       setMessage(`${optionMap.get(playerId)?.name ?? "That player"} is already selected by ${takenBy} for ${round.name}.`);
       return;
     }
-    const formationLimit = fantasyFormationLimitMessage(playerId, normalizedDraft, formation, playerCatalog, round.id);
+    const formationLimit = fantasyFormationLimitMessage(playerId, normalizedDraft, formation, playerCatalog, round.id, userKey);
     if (formationLimit) {
       setMessage(formationLimit);
       return;
@@ -855,7 +855,7 @@ export function FantasyProfileDrawer({
                   const selected = selectedPlayerIds.has(player.id);
                   const locked = !round.selectionEnabled;
                   const takenBy = takenByOtherUser.get(player.id);
-                  const formationLimit = selected ? null : fantasyFormationLimitMessage(player.id, normalizedDraft, formation, playerCatalog, round.id);
+                  const formationLimit = selected ? null : fantasyFormationLimitMessage(player.id, normalizedDraft, formation, playerCatalog, round.id, userKey);
                   return (
                     <div
                       key={player.id}

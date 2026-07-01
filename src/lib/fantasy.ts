@@ -226,6 +226,7 @@ const FORMATION_POSITION_CAPS: Record<string, Record<FantasyPosition, number>> =
 };
 
 const FORMATION_ENFORCED_ROUNDS = new Set<FantasyRoundId>(["round16", "quarter", "semi", "final"]);
+const LUCAS_FORMATION_BYPASS_NAMES = new Set(["pau-cubarsi", "mikel-merino", "unai-simon", "marc-cucurella"]);
 
 export function shouldEnforceFantasyFormation(roundId: string | null | undefined) {
   return FORMATION_ENFORCED_ROUNDS.has(normalizeFantasyRoundId(roundId));
@@ -239,20 +240,51 @@ function fantasyPositionForPlayer(playerId: string, playerCatalog: PlayerCatalog
   return resolveFantasyPlayerOption({ playerId }, playerCatalog)?.fantasyPosition ?? "FWD";
 }
 
+export function isFantasyFormationBypassPlayer(
+  userKey: UserKey | null | undefined,
+  playerId: string,
+  playerCatalog: PlayerCatalogItem[]
+) {
+  if (userKey !== "lucas") {
+    return false;
+  }
+
+  const option = resolveFantasyPlayerOption({ playerId }, playerCatalog);
+  const catalogPlayer = playerCatalog.find((player) => player.id === playerId);
+  const teamId = option?.team.id ?? catalogPlayer?.teamId ?? (playerId.startsWith("spain-") ? "spain" : null);
+  if (teamId !== "spain") {
+    return false;
+  }
+
+  const idSuffix = playerId.startsWith("spain-") ? playerId.slice("spain-".length) : playerId;
+  return [option?.name, catalogPlayer?.name, idSuffix]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => LUCAS_FORMATION_BYPASS_NAMES.has(comparablePlayerName(value)));
+}
+
 export function fantasyFormationLimitMessage(
   playerId: string,
   slots: FantasyRosterSlot[],
   formation: string | null | undefined,
   playerCatalog: PlayerCatalogItem[],
-  roundId: string | null | undefined
+  roundId: string | null | undefined,
+  userKey?: UserKey | null
 ) {
   if (!shouldEnforceFantasyFormation(roundId)) {
     return null;
   }
 
+  if (isFantasyFormationBypassPlayer(userKey ?? slots[0]?.userKey, playerId, playerCatalog)) {
+    return null;
+  }
+
   const position = fantasyPositionForPlayer(playerId, playerCatalog);
   const caps = fantasyFormationPositionCaps(formation);
-  const currentCount = slots.filter((slot) => fantasyPositionForPlayer(slot.playerId, playerCatalog) === position).length;
+  const currentCount = slots.filter(
+    (slot) =>
+      !isFantasyFormationBypassPlayer(userKey ?? slot.userKey, slot.playerId, playerCatalog) &&
+      fantasyPositionForPlayer(slot.playerId, playerCatalog) === position
+  ).length;
   if (currentCount < caps[position]) {
     return null;
   }
@@ -276,6 +308,11 @@ export function trimFantasyRosterToFormation(
   const kept: FantasyRosterSlot[] = [];
 
   for (const slot of normalized.sort((a, b) => a.slotIndex - b.slotIndex)) {
+    if (isFantasyFormationBypassPlayer(slot.userKey, slot.playerId, playerCatalog)) {
+      kept.push(slot);
+      continue;
+    }
+
     const position = fantasyPositionForPlayer(slot.playerId, playerCatalog);
     if (counts[position] >= caps[position]) {
       continue;

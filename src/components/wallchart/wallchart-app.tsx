@@ -300,7 +300,7 @@ export function WallchartApp() {
       return;
     }
     const formation = fantasyTeams.find((team) => team.userKey === session.userKey)?.formation ?? "4-3-3";
-    const formationLimit = fantasyFormationLimitMessage(playerId, ownSlots, formation, playerCatalog, currentFantasyRound.id);
+    const formationLimit = fantasyFormationLimitMessage(playerId, ownSlots, formation, playerCatalog, currentFantasyRound.id, session.userKey);
     if (formationLimit) {
       setSyncMessage(formationLimit);
       return;
