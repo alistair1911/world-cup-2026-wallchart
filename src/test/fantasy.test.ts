@@ -121,6 +121,49 @@ describe("mini-fantasy scoring", () => {
     expect(optionMap.get("spain-lamine-yamal")?.id).toBe("spain-362150");
   });
 
+  it("resolves legacy provider-only roster ids from the player catalog", () => {
+    const catalog: PlayerCatalogItem[] = [
+      {
+        id: "netherlands-583",
+        teamId: "netherlands",
+        name: "Netherlands Test Forward",
+        position: "Forward"
+      },
+      {
+        id: "spain-227765",
+        teamId: "spain",
+        name: "Spain Test Midfielder",
+        position: "Midfielder"
+      }
+    ];
+    const optionMap = fantasyOptionMap(catalog);
+
+    expect(optionMap.get("583")?.id).toBe("netherlands-583");
+    expect(resolveFantasyPlayerOption({ playerId: "58/583" }, catalog)?.id).toBe("netherlands-583");
+    expect(resolveFantasyPlayerOption({ playerId: "22/227765" }, catalog)?.id).toBe("spain-227765");
+    expect(fantasyScoreIdsForPlayer("58/583", catalog)).toEqual(expect.arrayContaining(["58/583", "netherlands-583", "583"]));
+  });
+
+  it("does not guess provider-only roster ids when two players share that provider suffix", () => {
+    const catalog: PlayerCatalogItem[] = [
+      {
+        id: "netherlands-583",
+        teamId: "netherlands",
+        name: "Netherlands Test Forward",
+        position: "Forward"
+      },
+      {
+        id: "spain-583",
+        teamId: "spain",
+        name: "Spain Test Forward",
+        position: "Forward"
+      }
+    ];
+
+    expect(fantasyOptionMap(catalog).get("583")).toBeUndefined();
+    expect(resolveFantasyPlayerOption({ playerId: "58/583" }, catalog)).toBeNull();
+  });
+
   it("keeps every team fantasy-eligible and replaces bad Czechia rows with ESPN rows", () => {
     const merged = mergePlayerCatalog(
       [

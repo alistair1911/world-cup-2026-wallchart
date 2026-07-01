@@ -416,6 +416,45 @@ function playerIdSuffix(teamId: string, playerId: string) {
   return playerId.startsWith(`${teamId}-`) ? playerId.slice(teamId.length + 1) : "";
 }
 
+function providerIdLookupKeys(value: string) {
+  const keys = new Set<string>();
+  const normalized = comparablePlayerName(value);
+  const rawSegments = value.split(/[/:|\\]+/).map((part) => part.trim()).filter(Boolean);
+  const normalizedSegments = normalized.split("-").filter(Boolean);
+
+  for (const candidate of [value, normalized, rawSegments.at(-1) ?? "", normalizedSegments.at(-1) ?? ""]) {
+    const key = comparablePlayerName(candidate);
+    if (/^\d+$/.test(key)) {
+      keys.add(key);
+    }
+  }
+
+  return [...keys];
+}
+
+function optionProviderIdLookupKeys(option: FantasyPlayerOption) {
+  const keys = new Set<string>();
+  for (const id of [option.id, ...(option.aliasIds ?? [])]) {
+    const suffix = playerIdSuffix(option.team.id, id);
+    for (const key of providerIdLookupKeys(suffix || id)) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+}
+
+function directPlayerIdLookupKeys(playerId: string) {
+  const keys = new Set([playerId]);
+  const normalized = comparablePlayerName(playerId);
+  if (normalized) {
+    keys.add(normalized);
+  }
+  for (const key of providerIdLookupKeys(playerId)) {
+    keys.add(key);
+  }
+  return [...keys];
+}
+
 function teamNameKey(teamId: string, nameKey: string) {
   return `${teamId}:${nameKey}`;
 }
@@ -540,6 +579,7 @@ function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): Fant
 
   const options = fantasyPlayerOptions(playerCatalog);
   const nameKeyCounts = new Map<string, number>();
+  const providerIdKeyCounts = new Map<string, number>();
 
   for (const option of options) {
     const ids = [option.id, ...(option.aliasIds ?? [])];
@@ -554,6 +594,10 @@ function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): Fant
 
     for (const scoped of optionNameKeys) {
       nameKeyCounts.set(scoped, (nameKeyCounts.get(scoped) ?? 0) + 1);
+    }
+
+    for (const key of optionProviderIdLookupKeys(option)) {
+      providerIdKeyCounts.set(key, (providerIdKeyCounts.get(key) ?? 0) + 1);
     }
   }
 
@@ -574,6 +618,12 @@ function buildFantasyPlayerLookup(playerCatalog: PlayerCatalogItem[] = []): Fant
         }
         byName.set(scoped, option);
         generatedIds.add(`${option.team.id}-${key}`);
+      }
+    }
+
+    for (const key of optionProviderIdLookupKeys(option)) {
+      if ((providerIdKeyCounts.get(key) ?? 0) === 1) {
+        generatedIds.add(key);
       }
     }
 
@@ -632,9 +682,11 @@ export function resolveFantasyPlayerOption(
   const lookup = buildFantasyPlayerLookup(playerCatalog);
 
   if (input.playerId) {
-    const byId = lookup.byId.get(input.playerId);
-    if (byId) {
-      return byId;
+    for (const id of directPlayerIdLookupKeys(input.playerId)) {
+      const byId = lookup.byId.get(id);
+      if (byId) {
+        return byId;
+      }
     }
   }
 

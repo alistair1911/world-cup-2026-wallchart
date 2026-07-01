@@ -14,6 +14,7 @@ import {
   fantasyPlayerTotals,
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
+  resolveFantasyPlayerOption,
   type FantasyRoundResult,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
@@ -102,16 +103,42 @@ function validFormation(value: string | null | undefined) {
   return value && FORMATION_LINES[value] ? value : "4-3-3";
 }
 
+function drawerPlayerOption(
+  playerId: string,
+  optionMap: Map<string, FantasyPlayerOption>,
+  playerCatalog: PlayerCatalogItem[]
+) {
+  return optionMap.get(playerId) ?? resolveFantasyPlayerOption({ playerId }, playerCatalog) ?? undefined;
+}
+
+function drawerCanonicalPlayerId(
+  playerId: string,
+  optionMap: Map<string, FantasyPlayerOption>,
+  playerCatalog: PlayerCatalogItem[]
+) {
+  return drawerPlayerOption(playerId, optionMap, playerCatalog)?.id ?? playerId;
+}
+
+function fallbackRosterPlayerName(playerId: string | null | undefined) {
+  if (!playerId) {
+    return "Player";
+  }
+  const parts = playerId.split(/[/:|\\-]+/).filter(Boolean);
+  const lastPart = parts.at(-1);
+  return lastPart ? `Player ${lastPart}` : "Player";
+}
+
 function normalizeDraftSlots(
   slots: FantasyRosterSlot[],
   optionMap: Map<string, FantasyPlayerOption>,
+  playerCatalog: PlayerCatalogItem[],
   userKey: UserKey | null,
   round: FantasyRoundResult
 ) {
   const seen = new Set<string>();
   const canonicalSlots = slots
     .filter((slot) => {
-      const canonicalId = optionMap.get(slot.playerId)?.id ?? slot.playerId;
+      const canonicalId = drawerCanonicalPlayerId(slot.playerId, optionMap, playerCatalog);
       if (seen.has(canonicalId)) {
         return false;
       }
@@ -121,7 +148,7 @@ function normalizeDraftSlots(
     .slice(0, round.squadSize)
     .map((slot) => ({
       ...slot,
-      playerId: optionMap.get(slot.playerId)?.id ?? slot.playerId,
+      playerId: drawerCanonicalPlayerId(slot.playerId, optionMap, playerCatalog),
       roundId: round.id,
       userKey: userKey ?? slot.userKey,
       isCaptain: slot.isStarter ? slot.isCaptain : false,
@@ -134,10 +161,11 @@ function normalizeDraftSlots(
 function normalizeAndTrimDraftSlots(
   slots: FantasyRosterSlot[],
   optionMap: Map<string, FantasyPlayerOption>,
+  playerCatalog: PlayerCatalogItem[],
   userKey: UserKey | null,
   round: FantasyRoundResult
 ) {
-  return normalizeDraftSlots(slots, optionMap, userKey, round);
+  return normalizeDraftSlots(slots, optionMap, playerCatalog, userKey, round);
 }
 
 function buildBoardSlots(slots: FantasyRosterSlot[], starterSize: number) {
@@ -197,11 +225,12 @@ export function FantasyProfileDrawer({
         ? normalizeAndTrimDraftSlots(
             rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex),
             optionMap,
+            playerCatalog,
             userKey,
             round
           )
         : [],
-    [optionMap, rosters, round, userKey]
+    [optionMap, playerCatalog, rosters, round, userKey]
   );
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
   const [formation, setFormation] = useState(savedFormation);
@@ -240,8 +269,8 @@ export function FantasyProfileDrawer({
   const starterSize = round.starterSize;
   const hasBench = squadSize > starterSize;
   const normalizedDraft = useMemo(
-    () => normalizeAndTrimDraftSlots(draft, optionMap, userKey, round),
-    [draft, optionMap, round, userKey]
+    () => normalizeAndTrimDraftSlots(draft, optionMap, playerCatalog, userKey, round),
+    [draft, optionMap, playerCatalog, round, userKey]
   );
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
   const eligibleTeamCount = countryOptions.length;
@@ -332,12 +361,12 @@ export function FantasyProfileDrawer({
     isFantasyKnockoutRound(round.id)
       ? rosters
           .filter((slot) => slot.userKey !== userKey)
-          .map((slot) => [optionMap.get(slot.playerId)?.id ?? slot.playerId, familyName(slot.userKey)] as const)
+          .map((slot) => [drawerCanonicalPlayerId(slot.playerId, optionMap, playerCatalog), familyName(slot.userKey)] as const)
       : []
   );
   const selectedTeams = new Set(
     normalizedDraft
-      .map((slot) => optionMap.get(slot.playerId)?.team)
+      .map((slot) => drawerPlayerOption(slot.playerId, optionMap, playerCatalog)?.team)
       .filter((team): team is FantasyPlayerOption["team"] => Boolean(team))
       .map((team) => team.id)
   );
@@ -384,7 +413,7 @@ export function FantasyProfileDrawer({
       board[targetIndex] = movedSlot;
     }
 
-    setDraft(normalizeDraftSlots([...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...bench], optionMap, userKey, round));
+    setDraft(normalizeDraftSlots([...board.filter((slot): slot is FantasyRosterSlot => Boolean(slot)), ...bench], optionMap, playerCatalog, userKey, round));
     setActiveMoveId(null);
     setDraggingId(null);
     setDirty(true);
@@ -403,7 +432,7 @@ export function FantasyProfileDrawer({
     const next = normalizedDraft.map((slot) =>
       slot.playerId === playerId ? { ...slot, slotIndex: starterSize, isStarter: false, isCaptain: false, isViceCaptain: false } : slot
     );
-    setDraft(normalizeDraftSlots(next, optionMap, userKey, round));
+    setDraft(normalizeDraftSlots(next, optionMap, playerCatalog, userKey, round));
     setActiveMoveId(null);
     setDraggingId(null);
     setDirty(true);
@@ -416,7 +445,7 @@ export function FantasyProfileDrawer({
     }
 
     setActiveMoveId((current) => (current === playerId ? null : playerId));
-    const player = optionMap.get(playerId);
+    const player = drawerPlayerOption(playerId, optionMap, playerCatalog);
     setMessage(`Moving ${player?.name ?? "player"}. Tap a pitch slot or the bench to snap them into place.`);
   }
 
@@ -430,7 +459,7 @@ export function FantasyProfileDrawer({
     }
     const takenBy = takenByOtherUser.get(playerId);
     if (takenBy) {
-      setMessage(`${optionMap.get(playerId)?.name ?? "That player"} is already selected by ${takenBy} for ${round.name}.`);
+      setMessage(`${drawerPlayerOption(playerId, optionMap, playerCatalog)?.name ?? "That player"} is already selected by ${takenBy} for ${round.name}.`);
       return;
     }
     if (normalizedDraft.length >= squadSize) {
@@ -452,7 +481,7 @@ export function FantasyProfileDrawer({
       updatedAt: new Date().toISOString()
     };
 
-    setDraft(normalizeDraftSlots([...normalizedDraft, nextSlot], optionMap, userKey, round));
+    setDraft(normalizeDraftSlots([...normalizedDraft, nextSlot], optionMap, playerCatalog, userKey, round));
     setDirty(true);
     setMessage(addAsStarter ? "Player added to the pitch. Autosaving..." : "Player added to bench. Autosaving...");
   }
@@ -471,14 +500,14 @@ export function FantasyProfileDrawer({
       const next = normalizedDraft.map((slot) =>
         slot.playerId === playerId ? { ...slot, slotIndex: starterSize, isStarter: false, isCaptain: false, isViceCaptain: false } : slot
       );
-      setDraft(normalizeDraftSlots(next, optionMap, userKey, round));
+      setDraft(normalizeDraftSlots(next, optionMap, playerCatalog, userKey, round));
       setMessage("Player moved to bench. Autosaving...");
     } else {
       const next = normalizedDraft.filter((slot) => slot.playerId !== playerId);
       if (removed.isCaptain && next.length > 0) {
         next[0] = { ...next[0], isCaptain: true, isViceCaptain: false };
       }
-      setDraft(normalizeDraftSlots(next, optionMap, userKey, round));
+      setDraft(normalizeDraftSlots(next, optionMap, playerCatalog, userKey, round));
       setMessage("Player removed from squad. Autosaving...");
     }
 
@@ -575,7 +604,7 @@ export function FantasyProfileDrawer({
                   onChange={(event) => {
                     const nextFormation = event.target.value;
                     setFormation(nextFormation);
-                    setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, userKey, round));
+                    setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, playerCatalog, userKey, round));
                     setDirty(true);
                     setMessage("Autosaving layout...");
                   }}
@@ -633,7 +662,7 @@ export function FantasyProfileDrawer({
                             <PitchSlot
                               key={`${line.id}-${index}`}
                               slot={slot}
-                              player={slot ? optionMap.get(slot.playerId) : undefined}
+                              player={slot ? drawerPlayerOption(slot.playerId, optionMap, playerCatalog) : undefined}
                               stats={slot ? draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS : null}
                               compact={line.count === 1}
                               canEdit={canEdit}
@@ -698,7 +727,7 @@ export function FantasyProfileDrawer({
                     <BenchRow
                       key={slot.playerId}
                       slot={slot}
-                      player={optionMap.get(slot.playerId)}
+                      player={drawerPlayerOption(slot.playerId, optionMap, playerCatalog)}
                       stats={draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS}
                       canEdit={canEdit}
                       activeMoveId={activeMoveId}
@@ -824,7 +853,7 @@ export function FantasyProfileDrawer({
               </div>
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {normalizedDraft.map((slot) => {
-                  const player = optionMap.get(slot.playerId);
+                  const player = drawerPlayerOption(slot.playerId, optionMap, playerCatalog);
                   if (!player) {
                     return null;
                   }
@@ -951,7 +980,7 @@ function PitchSlot({
   const isTarget = Boolean(activeMoveId || draggingId);
   const isMovingThis = Boolean(slot && slot.playerId === activeMoveId);
   const canPlaceHere = Boolean(activeMoveId && activeMoveId !== slot?.playerId);
-  const playerName = player?.name ?? slot?.playerId.split("-").slice(1).join(" ") ?? "Player";
+  const playerName = player?.name ?? fallbackRosterPlayerName(slot?.playerId);
   const playerPortrait = player?.photoUrl ?? avatarUrl(playerName);
 
   return (
