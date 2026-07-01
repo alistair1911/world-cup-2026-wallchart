@@ -2,18 +2,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   FANTASY_ROUNDS,
-  buildFantasyScoresFromMatches,
-  fantasyFormationPositionCaps,
-  fantasyOptionMap,
-  isFantasyFormationBypassPlayer,
-  shouldEnforceFantasyFormation
+  buildFantasyScoresFromMatches
 } from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
-import type { FantasyPlayerMatchScore, FantasyPosition, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
+import type { FantasyPlayerMatchScore, Match, PlayerCatalogItem, PlayerMatchStat, Team } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -1254,152 +1250,10 @@ async function ensureFantasyRounds(supabase: SupabaseClient) {
   }
 }
 
-type StoredFutureFantasyRosterRow = {
-  id: string;
-  user_id: string;
-  round_id: string;
-  player_id: string;
-  slot_index: number;
-  is_starter: boolean;
-  is_captain: boolean;
-  is_vice_captain: boolean;
-};
-
-function fantasyPositionForRosterPlayer(
-  playerIdValue: string,
-  optionMap: ReturnType<typeof fantasyOptionMap>,
-  playerCatalog: PlayerCatalogItem[]
-): FantasyPosition {
-  return optionMap.get(playerIdValue)?.fantasyPosition ?? fantasyOptionMap(playerCatalog).get(playerIdValue)?.fantasyPosition ?? "FWD";
-}
-
 async function enforceFutureFantasyFormationRosters(supabase: SupabaseClient, playerCatalog: PlayerCatalogItem[]) {
-  const enforcedRoundIds = FANTASY_ROUNDS.map((round) => round.id).filter((roundId) => shouldEnforceFantasyFormation(roundId));
-  if (enforcedRoundIds.length === 0) {
-    return 0;
-  }
-
-  const [
-    { data: rosterRows, error: rosterError },
-    { data: teamRows, error: teamError },
-    { data: profileRows, error: profileError }
-  ] = await Promise.all([
-    supabase
-      .from("fantasy_rosters")
-      .select("id,user_id,round_id,player_id,slot_index,is_starter,is_captain,is_vice_captain")
-      .in("round_id", enforcedRoundIds),
-    supabase.from("fantasy_teams").select("user_id,formation"),
-    supabase.from("profiles").select("id,user_key")
-  ]);
-
-  if (rosterError) {
-    throw new Error(rosterError.message);
-  }
-  if (teamError) {
-    throw new Error(teamError.message);
-  }
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
-
-  const formationByUser = new Map(
-    ((teamRows || []) as Array<{ user_id: string; formation?: string | null }>).map((row) => [row.user_id, row.formation ?? "4-3-3"])
-  );
-  const userKeyByUserId = new Map(
-    ((profileRows || []) as Array<{ id: string; user_key?: "tata" | "lucas" | null }>).map((row) => [row.id, row.user_key ?? null])
-  );
-  const rows = (rosterRows || []) as StoredFutureFantasyRosterRow[];
-  const optionMap = fantasyOptionMap(playerCatalog);
-  const groups = new Map<string, StoredFutureFantasyRosterRow[]>();
-  for (const row of rows) {
-    const key = `${row.user_id}:${row.round_id}`;
-    groups.set(key, [...(groups.get(key) ?? []), row]);
-  }
-
-  let removedCount = 0;
-  for (const groupRows of groups.values()) {
-    const firstRow = groupRows[0];
-    if (!firstRow) {
-      continue;
-    }
-
-    const caps = fantasyFormationPositionCaps(formationByUser.get(firstRow.user_id));
-    const userKey = userKeyByUserId.get(firstRow.user_id);
-    const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    const kept: StoredFutureFantasyRosterRow[] = [];
-    const removed: StoredFutureFantasyRosterRow[] = [];
-
-    for (const row of [...groupRows].sort((a, b) => a.slot_index - b.slot_index)) {
-      if (kept.length >= 11) {
-        removed.push(row);
-        continue;
-      }
-
-      if (isFantasyFormationBypassPlayer(userKey, row.player_id, playerCatalog)) {
-        kept.push(row);
-        continue;
-      }
-
-      const position = fantasyPositionForRosterPlayer(row.player_id, optionMap, playerCatalog);
-      if (counts[position] >= caps[position]) {
-        removed.push(row);
-        continue;
-      }
-
-      counts[position] += 1;
-      kept.push(row);
-    }
-
-    const captainId = kept.find((row) => row.is_captain)?.id ?? kept[0]?.id;
-    const viceId = kept.find((row) => row.is_vice_captain && row.id !== captainId)?.id ?? kept.find((row) => row.id !== captainId)?.id;
-    const nextRows = kept.map((row, index) => ({
-      user_id: row.user_id,
-      round_id: row.round_id,
-      player_id: row.player_id,
-      slot_index: index,
-      is_starter: true,
-      is_captain: row.id === captainId,
-      is_vice_captain: row.id === viceId
-    }));
-    const needsRewrite =
-      removed.length > 0 ||
-      nextRows.some((next, index) => {
-        const current = kept[index];
-        return (
-          !current ||
-          current.slot_index !== next.slot_index ||
-          current.is_starter !== next.is_starter ||
-          current.is_captain !== next.is_captain ||
-          current.is_vice_captain !== next.is_vice_captain
-        );
-      });
-
-    if (!needsRewrite) {
-      continue;
-    }
-
-    const { error: deleteError } = await supabase
-      .from("fantasy_rosters")
-      .delete()
-      .in(
-        "id",
-        groupRows.map((row) => row.id)
-      );
-    if (deleteError) {
-      throw new Error(deleteError.message);
-    }
-
-    if (nextRows.length > 0) {
-      const { error: insertError } = await supabase.from("fantasy_rosters").insert(nextRows);
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
-    }
-
-    removedCount += removed.length;
-  }
-
-  return removedCount;
+  void supabase;
+  void playerCatalog;
+  return 0;
 }
 
 function isScheduledZeroPlaceholder(match: Match) {

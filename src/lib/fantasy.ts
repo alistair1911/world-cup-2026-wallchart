@@ -63,6 +63,8 @@ export const FANTASY_SCORING_RULES = [
   { label: "Goal", detail: "GK/DEF +6, MID +5, FWD +4" },
   { label: "Assist", detail: "+3" },
   { label: "Clean sheet", detail: "GK/DEF +4, MID +1" },
+  { label: "Team result", detail: "Win +2, draw +1" },
+  { label: "Defensive result", detail: "GK/DEF +1 if conceding 1, -1 per 2 conceded" },
   { label: "Yellow / red", detail: "-1 / -3" },
   { label: "Own goal", detail: "-2" },
   { label: "Penalty", detail: "Save +5, miss -2" }
@@ -225,19 +227,15 @@ const FORMATION_POSITION_CAPS: Record<string, Record<FantasyPosition, number>> =
   "5-3-2": { GK: 1, DEF: 5, MID: 3, FWD: 2 }
 };
 
-const FORMATION_ENFORCED_ROUNDS = new Set<FantasyRoundId>(["round16", "quarter", "semi", "final"]);
 const LUCAS_FORMATION_BYPASS_NAMES = new Set(["pau-cubarsi", "mikel-merino", "unai-simon", "marc-cucurella"]);
 
 export function shouldEnforceFantasyFormation(roundId: string | null | undefined) {
-  return FORMATION_ENFORCED_ROUNDS.has(normalizeFantasyRoundId(roundId));
+  void roundId;
+  return false;
 }
 
 export function fantasyFormationPositionCaps(formation: string | null | undefined) {
   return FORMATION_POSITION_CAPS[formation || ""] ?? FORMATION_POSITION_CAPS["4-3-3"];
-}
-
-function fantasyPositionForPlayer(playerId: string, playerCatalog: PlayerCatalogItem[]) {
-  return resolveFantasyPlayerOption({ playerId }, playerCatalog)?.fantasyPosition ?? "FWD";
 }
 
 export function isFantasyFormationBypassPlayer(
@@ -270,26 +268,13 @@ export function fantasyFormationLimitMessage(
   roundId: string | null | undefined,
   userKey?: UserKey | null
 ) {
-  if (!shouldEnforceFantasyFormation(roundId)) {
-    return null;
-  }
-
-  if (isFantasyFormationBypassPlayer(userKey ?? slots[0]?.userKey, playerId, playerCatalog)) {
-    return null;
-  }
-
-  const position = fantasyPositionForPlayer(playerId, playerCatalog);
-  const caps = fantasyFormationPositionCaps(formation);
-  const currentCount = slots.filter(
-    (slot) =>
-      !isFantasyFormationBypassPlayer(userKey ?? slot.userKey, slot.playerId, playerCatalog) &&
-      fantasyPositionForPlayer(slot.playerId, playerCatalog) === position
-  ).length;
-  if (currentCount < caps[position]) {
-    return null;
-  }
-
-  return `Formation ${formation || "4-3-3"} allows ${caps[position]} ${position} player${caps[position] === 1 ? "" : "s"} for this round.`;
+  void playerId;
+  void slots;
+  void formation;
+  void playerCatalog;
+  void roundId;
+  void userKey;
+  return null;
 }
 
 export function trimFantasyRosterToFormation(
@@ -298,41 +283,9 @@ export function trimFantasyRosterToFormation(
   playerCatalog: PlayerCatalogItem[],
   roundId: string | null | undefined
 ) {
-  const normalized = normalizeFantasyRosterSlots(slots, slots[0]?.userKey, roundId);
-  if (!shouldEnforceFantasyFormation(roundId)) {
-    return normalized;
-  }
-
-  const caps = fantasyFormationPositionCaps(formation);
-  const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-  const kept: FantasyRosterSlot[] = [];
-
-  for (const slot of normalized.sort((a, b) => a.slotIndex - b.slotIndex)) {
-    if (isFantasyFormationBypassPlayer(slot.userKey, slot.playerId, playerCatalog)) {
-      kept.push(slot);
-      continue;
-    }
-
-    const position = fantasyPositionForPlayer(slot.playerId, playerCatalog);
-    if (counts[position] >= caps[position]) {
-      continue;
-    }
-    counts[position] += 1;
-    kept.push(slot);
-  }
-
-  const trimmed = normalizeFantasyRosterSlots(kept, slots[0]?.userKey, roundId);
-  if (trimmed.length > 0 && !trimmed.some((slot) => slot.isCaptain)) {
-    trimmed[0] = { ...trimmed[0], isCaptain: true, isViceCaptain: false };
-  }
-  if (trimmed.length > 1 && !trimmed.some((slot) => slot.isViceCaptain)) {
-    const viceIndex = trimmed.findIndex((slot) => !slot.isCaptain);
-    if (viceIndex >= 0) {
-      trimmed[viceIndex] = { ...trimmed[viceIndex], isViceCaptain: true };
-    }
-  }
-
-  return trimmed;
+  void formation;
+  void playerCatalog;
+  return normalizeFantasyRosterSlots(slots, slots[0]?.userKey, roundId);
 }
 
 function sortFantasyOptions(options: FantasyPlayerOption[]) {
@@ -722,6 +675,8 @@ export function validateFantasyRoster(
 ) {
   void matches;
   void now;
+  void playerCatalog;
+  void formation;
   const squadSize = fantasyRoundRosterSize(roundId);
   const starterSize = fantasyRoundStarterSize(roundId);
   const uniqueIds = new Set(slots.map((slot) => slot.playerId));
@@ -736,17 +691,6 @@ export function validateFantasyRoster(
   }
   if (slots.filter((slot) => slot.isStarter).length > starterSize) {
     return `Pick no more than ${starterSize} starters.`;
-  }
-  if (shouldEnforceFantasyFormation(roundId)) {
-    const caps = fantasyFormationPositionCaps(formation);
-    const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    for (const slot of slots) {
-      const position = fantasyPositionForPlayer(slot.playerId, playerCatalog);
-      counts[position] += 1;
-      if (counts[position] > caps[position]) {
-        return `Formation ${formation || "4-3-3"} allows ${caps[position]} ${position} player${caps[position] === 1 ? "" : "s"} for this round.`;
-      }
-    }
   }
   return null;
 }
@@ -826,11 +770,45 @@ function goalPoints(position: FantasyPosition) {
   return 4;
 }
 
+type FantasyTeamResult = "win" | "draw" | "loss";
+
+function isDefensivePosition(position: FantasyPosition) {
+  return position === "GK" || position === "DEF";
+}
+
+function matchTeamContext(match: Match | undefined, teamId: string) {
+  if (
+    !match ||
+    match.status !== "final" ||
+    match.homeScore === null ||
+    match.awayScore === null ||
+    (teamId !== match.homeTeamId && teamId !== match.awayTeamId)
+  ) {
+    return {
+      cleanSheet: false,
+      goalsConceded: undefined,
+      teamResult: undefined
+    };
+  }
+
+  const goalsFor = teamId === match.homeTeamId ? match.homeScore : match.awayScore;
+  const goalsConceded = teamId === match.homeTeamId ? match.awayScore : match.homeScore;
+  const teamResult: FantasyTeamResult = goalsFor > goalsConceded ? "win" : goalsFor === goalsConceded ? "draw" : "loss";
+
+  return {
+    cleanSheet: goalsConceded === 0,
+    goalsConceded,
+    teamResult
+  };
+}
+
 export function scoreFantasyPlayerMatch(input: {
   position: FantasyPosition;
   goals?: number;
   assists?: number;
   cleanSheet?: boolean;
+  teamResult?: FantasyTeamResult;
+  goalsConceded?: number;
   yellowCards?: number;
   redCards?: number;
   ownGoals?: number;
@@ -844,17 +822,28 @@ export function scoreFantasyPlayerMatch(input: {
   const ownGoals = input.ownGoals ?? 0;
   const penaltySaves = input.penaltySaves ?? 0;
   const penaltyMisses = input.penaltyMisses ?? 0;
+  const defensivePosition = isDefensivePosition(input.position);
   const cleanSheetPoints =
-    input.cleanSheet && (input.position === "GK" || input.position === "DEF")
+    input.cleanSheet && defensivePosition
       ? 4
       : input.cleanSheet && input.position === "MID"
         ? 1
         : 0;
+  const teamResultPoints = input.teamResult === "win" ? 2 : input.teamResult === "draw" ? 1 : 0;
+  const oneGoalConcededPoints =
+    defensivePosition && typeof input.goalsConceded === "number" && input.goalsConceded === 1 ? 1 : 0;
+  const goalsConcededPoints =
+    defensivePosition && typeof input.goalsConceded === "number" && input.goalsConceded >= 2
+      ? -Math.floor(input.goalsConceded / 2)
+      : 0;
 
   const breakdown = {
     goals: goals * goalPoints(input.position),
     assists: assists * 3,
     cleanSheet: cleanSheetPoints,
+    teamResult: teamResultPoints,
+    oneGoalConceded: oneGoalConcededPoints,
+    goalsConceded: goalsConcededPoints,
     yellowCards: yellowCards * -1,
     redCards: redCards * -3,
     ownGoals: ownGoals * -2,
@@ -910,6 +899,31 @@ export function buildFantasyScoresFromMatches(
 
   const matchesById = new Map(matches.map((match) => [match.id, match]));
   const scores: FantasyPlayerMatchScore[] = [];
+  const candidates = new Map<
+    string,
+    {
+      matchId: string;
+      option: FantasyPlayerOption;
+    }
+  >();
+
+  for (const match of matches) {
+    if (match.status !== "final" || match.homeScore === null || match.awayScore === null) {
+      continue;
+    }
+
+    for (const player of playerCatalog) {
+      if (player.teamId !== match.homeTeamId && player.teamId !== match.awayTeamId) {
+        continue;
+      }
+
+      const option = resolveFantasyPlayerOption({ playerId: player.id, playerName: player.name, teamId: player.teamId }, playerCatalog);
+      if (!option) {
+        continue;
+      }
+      candidates.set(`${match.id}:${option.id}`, { matchId: match.id, option });
+    }
+  }
 
   for (const stat of statsByPlayer.values()) {
     const option = resolveFantasyPlayerOption(
@@ -920,38 +934,49 @@ export function buildFantasyScoresFromMatches(
       continue;
     }
 
-    const match = matchesById.get(stat.matchId);
-    const isMatchParticipant = match ? option.team.id === match.homeTeamId || option.team.id === match.awayTeamId : false;
+    candidates.set(`${stat.matchId}:${option.id}`, { matchId: stat.matchId, option });
+  }
 
-    let cleanSheet = false;
-    if (match && isMatchParticipant) {
-      const conceded =
-        option.team.id === match.homeTeamId ? match.awayScore ?? null : option.team.id === match.awayTeamId ? match.homeScore ?? null : null;
-      cleanSheet = match.status === "final" && conceded === 0;
+  for (const candidate of candidates.values()) {
+    const stat = statsByPlayer.get(`${candidate.matchId}:${candidate.option.id}`);
+    const match = matchesById.get(candidate.matchId);
+    const context = matchTeamContext(match, candidate.option.team.id);
+    const goals = stat?.goals ?? 0;
+    const assists = stat?.assists ?? 0;
+
+    if (
+      !stat &&
+      !context.cleanSheet &&
+      !context.teamResult &&
+      context.goalsConceded === undefined
+    ) {
+      continue;
     }
 
     const { points, breakdown } = scoreFantasyPlayerMatch({
-      position: option.fantasyPosition,
-      goals: stat.goals,
-      assists: stat.assists,
-      cleanSheet
+      position: candidate.option.fantasyPosition,
+      goals,
+      assists,
+      cleanSheet: context.cleanSheet,
+      teamResult: context.teamResult,
+      goalsConceded: context.goalsConceded
     });
 
     scores.push({
-      matchId: stat.matchId,
-      playerId: option.id,
-      teamId: option.team.id,
+      matchId: candidate.matchId,
+      playerId: candidate.option.id,
+      teamId: candidate.option.team.id,
       points,
-      goals: stat.goals,
-      assists: stat.assists,
-      cleanSheet,
+      goals,
+      assists,
+      cleanSheet: context.cleanSheet,
       yellowCards: 0,
       redCards: 0,
       ownGoals: 0,
       penaltySaves: 0,
       penaltyMisses: 0,
       breakdown,
-      status: stat.assists ? "confirmed" : cleanSheet ? "needs_review" : "confirmed",
+      status: "confirmed",
       updatedAt: new Date().toISOString()
     });
   }
@@ -966,7 +991,7 @@ export function mergeFantasyScores(
 ): FantasyPlayerMatchScore[] {
   function normalizeScore(score: FantasyPlayerMatchScore): FantasyPlayerMatchScore {
     const option = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
-    const { points, breakdown } = scoreFantasyPlayerMatch({
+    const { breakdown: baseBreakdown } = scoreFantasyPlayerMatch({
       position: option?.fantasyPosition ?? normalizeFantasyPosition("Forward"),
       goals: score.goals,
       assists: score.assists,
@@ -977,10 +1002,23 @@ export function mergeFantasyScores(
       penaltySaves: score.penaltySaves,
       penaltyMisses: score.penaltyMisses
     });
+    const contextBreakdown = {
+      teamResult: score.breakdown?.teamResult ?? 0,
+      oneGoalConceded: score.breakdown?.oneGoalConceded ?? 0,
+      goalsConceded: score.breakdown?.goalsConceded ?? 0
+    };
+    const breakdown = {
+      ...baseBreakdown,
+      ...contextBreakdown
+    };
+    const points = Object.values(breakdown).reduce((total, value) => total + value, 0);
     const hasStatValue =
       score.goals > 0 ||
       score.assists > 0 ||
       score.cleanSheet ||
+      contextBreakdown.teamResult !== 0 ||
+      contextBreakdown.oneGoalConceded !== 0 ||
+      contextBreakdown.goalsConceded !== 0 ||
       score.yellowCards > 0 ||
       score.redCards > 0 ||
       score.ownGoals > 0 ||

@@ -35,6 +35,8 @@ describe("mini-fantasy scoring", () => {
     expect(scoreFantasyPlayerMatch({ position: "DEF", goals: 1, cleanSheet: true }).points).toBe(10);
     expect(scoreFantasyPlayerMatch({ position: "GK", cleanSheet: true, penaltySaves: 1 }).points).toBe(9);
     expect(scoreFantasyPlayerMatch({ position: "FWD", goals: 1, yellowCards: 1, penaltyMisses: 1 }).points).toBe(1);
+    expect(scoreFantasyPlayerMatch({ position: "DEF", teamResult: "win", goalsConceded: 1 }).points).toBe(3);
+    expect(scoreFantasyPlayerMatch({ position: "GK", cleanSheet: true, teamResult: "draw", goalsConceded: 0 }).points).toBe(5);
   });
 
   it("normalizes player positions into fantasy buckets", () => {
@@ -147,7 +149,7 @@ describe("mini-fantasy scoring", () => {
     ];
     const scores = buildFantasyScoresFromMatches([match], stats);
     const yamal = scores.find((score) => score.playerId === "spain-lamine-yamal");
-    expect(yamal?.points).toBe(7);
+    expect(yamal?.points).toBe(9);
 
     const roster: FantasyRosterSlot[] = [
       {
@@ -163,8 +165,8 @@ describe("mini-fantasy scoring", () => {
 
     expect(buildFantasyLeaderboard(roster, scores)[0]).toMatchObject({
       userKey: "tata",
-      points: 14,
-      captainPoints: 7
+      points: 18,
+      captainPoints: 9
     });
 
     const legacyRoster: FantasyRosterSlot[] = [
@@ -182,8 +184,8 @@ describe("mini-fantasy scoring", () => {
     expect(resolveFantasyPlayerOption({ playerId: "spain-362150" })?.id).toBe("spain-lamine-yamal");
     expect(buildFantasyLeaderboard(legacyRoster, espnScores)[0]).toMatchObject({
       userKey: "tata",
-      points: 14,
-      captainPoints: 7
+      points: 18,
+      captainPoints: 9
     });
     expect(
       buildFantasyLeaderboard(legacyRoster, espnScores, [
@@ -197,8 +199,8 @@ describe("mini-fantasy scoring", () => {
       ])[0]
     ).toMatchObject({
       userKey: "tata",
-      points: 14,
-      captainPoints: 7
+      points: 18,
+      captainPoints: 9
     });
 
     const espnRoster: FantasyRosterSlot[] = [
@@ -224,8 +226,8 @@ describe("mini-fantasy scoring", () => {
       ])[0]
     ).toMatchObject({
       userKey: "tata",
-      points: 14,
-      captainPoints: 7
+      points: 18,
+      captainPoints: 9
     });
   });
 
@@ -401,15 +403,23 @@ describe("mini-fantasy scoring", () => {
     expect(missing).toEqual([]);
   });
 
-  it("does not award fallback clean-sheet points to untracked squad players", () => {
+  it("awards final-match team context points to catalog players", () => {
     const match = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
       status: "final" as const,
       homeScore: 2,
       awayScore: 0
     };
+    const playerCatalog: PlayerCatalogItem[] = [
+      { id: "spain-unai-simon", teamId: "spain", name: "Unai Simon", position: "Goalkeeper" }
+    ];
 
     expect(buildFantasyScoresFromMatches([match], []).find((score) => score.playerId === "spain-unai-simon")).toBeUndefined();
+    expect(buildFantasyScoresFromMatches([match], [], playerCatalog).find((score) => score.playerId === "spain-unai-simon")).toMatchObject({
+      points: 6,
+      cleanSheet: true,
+      breakdown: expect.objectContaining({ cleanSheet: 4, teamResult: 2 })
+    });
 
     const scores = buildFantasyScoresFromMatches(
       [match],
@@ -422,11 +432,12 @@ describe("mini-fantasy scoring", () => {
           goals: 0,
           assists: 0
         }
-      ]
+      ],
+      playerCatalog
     );
 
     expect(scores.find((score) => score.playerId === "spain-unai-simon")).toMatchObject({
-      points: 4,
+      points: 6,
       cleanSheet: true
     });
   });
@@ -996,23 +1007,23 @@ describe("mini-fantasy scoring", () => {
       ])
     );
     expect(fantasyPlayerTotals("argentina-lionel-messi", scores)).toMatchObject({
-      points: 15,
+      points: 17,
       goals: 3
     });
     expect(fantasyPlayerTotals("canada-8489", scores)).toMatchObject({
-      points: 12,
+      points: 14,
       goals: 3
     });
     expect(fantasyPlayerTotals("spain-362150", scores)).toMatchObject({
-      points: 4,
+      points: 6,
       goals: 1
     });
     expect(fantasyPlayerTotals("belgium-730", scores, playerCatalog)).toMatchObject({
-      points: 4,
+      points: 5,
       cleanSheets: 1
     });
     expect(fantasyPlayerTotals("ir-iran-2682", scores, playerCatalog)).toMatchObject({
-      points: 4,
+      points: 5,
       cleanSheets: 1
     });
   });
@@ -1040,7 +1051,7 @@ describe("mini-fantasy scoring", () => {
     const staleStored = [{ ...derived[0]!, points: 0, goals: 0, breakdown: {} }];
 
     expect(mergeFantasyScores(staleStored, derived).find((score) => score.playerId === "argentina-lionel-messi")).toMatchObject({
-      points: 15,
+      points: 17,
       goals: 3
     });
   });
@@ -1134,7 +1145,7 @@ describe("mini-fantasy scoring", () => {
     expect(normalized.every((slot) => slot.slotIndex >= 0 && slot.slotIndex < 15)).toBe(true);
   });
 
-  it("trims future knockout rosters to the selected formation position caps", () => {
+  it("keeps future knockout rosters position-free even when formation would normally be over cap", () => {
     const playerCatalog: PlayerCatalogItem[] = [
       { id: "gk-1", teamId: "canada", name: "Keeper One", position: "Goalkeeper" },
       { id: "def-1", teamId: "canada", name: "Defender One", position: "Defender" },
@@ -1143,7 +1154,6 @@ describe("mini-fantasy scoring", () => {
       { id: "mid-1", teamId: "canada", name: "Mid One", position: "Midfielder" },
       { id: "mid-2", teamId: "canada", name: "Mid Two", position: "Midfielder" },
       { id: "mid-3", teamId: "canada", name: "Mid Three", position: "Midfielder" },
-      { id: "mid-4", teamId: "canada", name: "Mid Four", position: "Midfielder" },
       { id: "fwd-1", teamId: "canada", name: "Forward One", position: "Forward" },
       { id: "fwd-2", teamId: "canada", name: "Forward Two", position: "Forward" },
       { id: "fwd-3", teamId: "canada", name: "Forward Three", position: "Forward" },
@@ -1162,12 +1172,12 @@ describe("mini-fantasy scoring", () => {
     const trimmed = trimFantasyRosterToFormation(slots, "3-4-3", playerCatalog, "round16");
 
     expect(trimmed).toHaveLength(11);
-    expect(trimmed.some((slot) => slot.playerId === "fwd-4")).toBe(false);
-    expect(trimmed.filter((slot) => slot.playerId.startsWith("fwd-"))).toHaveLength(3);
+    expect(trimmed.some((slot) => slot.playerId === "fwd-4")).toBe(true);
+    expect(trimmed.filter((slot) => slot.playerId.startsWith("fwd-"))).toHaveLength(4);
     expect(validateFantasyRoster(trimmed, INITIAL_MATCHES, new Date("2026-07-03T12:00:00.000Z"), playerCatalog, "round16", "3-4-3")).toBeNull();
   });
 
-  it("blocks over-cap future additions but leaves Round of 32 unconstrained", () => {
+  it("does not block over-cap additions in any round", () => {
     const playerCatalog: PlayerCatalogItem[] = [
       { id: "fwd-1", teamId: "spain", name: "Forward One", position: "Forward" },
       { id: "fwd-2", teamId: "spain", name: "Forward Two", position: "Forward" },
@@ -1184,11 +1194,11 @@ describe("mini-fantasy scoring", () => {
       isViceCaptain: index === 1
     }));
 
-    expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round16")).toContain("allows 3 FWD");
+    expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round16")).toBeNull();
     expect(fantasyFormationLimitMessage("fwd-4", slots, "4-3-3", playerCatalog, "round32")).toBeNull();
   });
 
-  it("lets Lucas keep selected Spain exceptions over future formation caps", () => {
+  it("lets Lucas keep selected Spain players without special position-cap exceptions", () => {
     const playerCatalog: PlayerCatalogItem[] = [
       { id: "spain-unai-simon", teamId: "spain", name: "Unai Simon", position: "Goalkeeper" },
       { id: "spain-pau-cubarsi", teamId: "spain", name: "Pau Cubarsi", position: "Defender" },
@@ -1224,7 +1234,7 @@ describe("mini-fantasy scoring", () => {
     expect(trimmed.filter((slot) => slot.playerId.includes("def") || slot.playerId.includes("cubarsi") || slot.playerId.includes("cucurella"))).toHaveLength(5);
   });
 
-  it("bypasses Lucas's selected Spain players without opening the same cap for Tata", () => {
+  it("allows Tata and Lucas to add the same over-cap position mix", () => {
     const playerCatalog: PlayerCatalogItem[] = [
       { id: "spain-marc-cucurella", teamId: "spain", name: "Marc Cucurella", position: "Defender" },
       { id: "def-1", teamId: "canada", name: "Defender One", position: "Defender" },
@@ -1242,6 +1252,6 @@ describe("mini-fantasy scoring", () => {
     }));
 
     expect(fantasyFormationLimitMessage("spain-marc-cucurella", slots, "3-4-3", playerCatalog, "round16", "lucas")).toBeNull();
-    expect(fantasyFormationLimitMessage("spain-marc-cucurella", slots, "3-4-3", playerCatalog, "round16", "tata")).toContain("allows 3 DEF");
+    expect(fantasyFormationLimitMessage("spain-marc-cucurella", slots, "3-4-3", playerCatalog, "round16", "tata")).toBeNull();
   });
 });
