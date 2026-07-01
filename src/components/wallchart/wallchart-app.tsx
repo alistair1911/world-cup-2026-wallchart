@@ -8,6 +8,8 @@ import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
   activeFantasyRound,
+  eligibleTeamIdsForFantasyRound,
+  fantasyOptionMap,
   isFantasyKnockoutRound,
   normalizeFantasyRoundId,
   rostersForFantasyRound,
@@ -210,6 +212,11 @@ export function WallchartApp() {
     () => scoresForFantasyRound(currentFantasyRound.id, effectiveFantasyScores, matches),
     [currentFantasyRound.id, effectiveFantasyScores, matches]
   );
+  const currentFantasyOptionMap = useMemo(() => fantasyOptionMap(playerCatalog), [playerCatalog]);
+  const currentEligibleFantasyTeams = useMemo(
+    () => eligibleTeamIdsForFantasyRound(matches, currentFantasyRound),
+    [currentFantasyRound, matches]
+  );
   const upcoming = useMemo(() => nextMatch(matches), [matches]);
   const syncDetailMessage = syncMessage && syncMessage.length > 90 ? syncMessage : null;
   const commentCounts = useMemo(
@@ -294,21 +301,28 @@ export function WallchartApp() {
       return;
     }
 
+    const option = currentFantasyOptionMap.get(playerId);
+    if (option && currentEligibleFantasyTeams.size > 0 && !currentEligibleFantasyTeams.has(option.team.id)) {
+      setSyncMessage(`${option.team.name} is no longer alive for ${currentFantasyRound.name}. Pick a player from a team still in the tournament.`);
+      return;
+    }
+
     if (!currentFantasyRound.selectionEnabled) {
       setSyncMessage(`${currentFantasyRound.name} squad selection is locked because its first match has already started.`);
       return;
     }
 
+    const canonicalPlayerId = option?.id ?? playerCatalog.find((player) => player.id === playerId)?.id ?? playerId;
     const ownSlots = currentFantasyRosters
       .filter((slot) => slot.userKey === session.userKey)
       .sort((a, b) => a.slotIndex - b.slotIndex);
-    if (ownSlots.some((slot) => slot.playerId === playerId)) {
+    if (ownSlots.some((slot) => slot.playerId === canonicalPlayerId)) {
       setSyncMessage("Player is already in your Mini-Fantasy squad.");
       return;
     }
     if (
       isFantasyKnockoutRound(currentFantasyRound.id) &&
-      currentFantasyRosters.some((slot) => slot.userKey !== session.userKey && slot.playerId === playerId)
+      currentFantasyRosters.some((slot) => slot.userKey !== session.userKey && slot.playerId === canonicalPlayerId)
     ) {
       setSyncMessage("That player is already selected by the other team for this knockout round.");
       return;
@@ -322,7 +336,7 @@ export function WallchartApp() {
 
     const nextSlot: FantasyRosterSlot = {
       userKey: session.userKey,
-      playerId,
+      playerId: canonicalPlayerId,
       roundId: currentFantasyRound.id,
       slotIndex: ownSlots.length,
       isStarter: addAsStarter,

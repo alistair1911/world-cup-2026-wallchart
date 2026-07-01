@@ -7,6 +7,7 @@ import {
   buildFantasyScoresFromMatches,
   fantasyFormationLimitMessage,
   fantasyRoundStates,
+  eligibleTeamIdsForFantasyRound,
   fantasyOptionMap,
   fantasyPlayerTotals,
   fantasyPlayerOptions,
@@ -44,6 +45,37 @@ describe("mini-fantasy scoring", () => {
     expect(normalizeFantasyPosition("RB")).toBe("DEF");
     expect(normalizeFantasyPosition("CM")).toBe("MID");
     expect(normalizeFantasyPosition("LW")).toBe("FWD");
+  });
+
+  it("limits future knockout fantasy picks to teams still alive", () => {
+    const matches = INITIAL_MATCHES.map((match) => {
+      if (match.id === "M73") {
+        return {
+          ...match,
+          homeTeamId: "south-africa",
+          awayTeamId: "canada",
+          homeScore: 0,
+          awayScore: 1,
+          status: "final" as const
+        };
+      }
+      if (match.id === "M90") {
+        return {
+          ...match,
+          homeTeamId: "canada"
+        };
+      }
+      return match;
+    });
+
+    const eligible = eligibleTeamIdsForFantasyRound(matches, {
+      id: "round16",
+      phases: ["round16"],
+      matchCount: 8
+    });
+
+    expect(eligible.has("canada")).toBe(true);
+    expect(eligible.has("south-africa")).toBe(false);
   });
 
   it("includes full player catalog rows in fantasy options", () => {

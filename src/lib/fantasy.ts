@@ -213,6 +213,71 @@ export function scoresForFantasyRound(roundId: string, scores: FantasyPlayerMatc
   return scores.filter((score) => matchIds.has(score.matchId));
 }
 
+function teamIdsForMatch(match: Match) {
+  return [match.homeTeamId, match.awayTeamId].filter((teamId): teamId is string => Boolean(teamId));
+}
+
+function knockoutWinnerTeamId(match: Match) {
+  if (match.status !== "final") {
+    return null;
+  }
+  if (match.penaltyWinnerId) {
+    return match.penaltyWinnerId;
+  }
+  if (match.homeScore === null || match.awayScore === null || !match.homeTeamId || !match.awayTeamId) {
+    return null;
+  }
+  if (match.homeScore > match.awayScore) {
+    return match.homeTeamId;
+  }
+  if (match.awayScore > match.homeScore) {
+    return match.awayTeamId;
+  }
+  return null;
+}
+
+function aliveTeamsFromMatches(matches: Match[]) {
+  const alive = new Set<string>();
+  for (const match of matches) {
+    const winner = knockoutWinnerTeamId(match);
+    if (winner) {
+      alive.add(winner);
+      continue;
+    }
+    for (const teamId of teamIdsForMatch(match)) {
+      alive.add(teamId);
+    }
+  }
+  return alive;
+}
+
+export function eligibleTeamIdsForFantasyRound(matches: Match[], round: Pick<FantasyRoundDefinition, "id" | "phases"> & { matchCount?: number }) {
+  const roundMatches = matches.filter((match) => round.phases.includes(match.phase));
+  const assignedTeams = new Set(roundMatches.flatMap(teamIdsForMatch));
+  const expectedTeams = Math.max(2, (round.matchCount ?? roundMatches.length) * 2);
+
+  if (assignedTeams.size >= expectedTeams) {
+    return assignedTeams;
+  }
+
+  const roundIndex = FANTASY_ROUNDS.findIndex((definition) => definition.id === round.id);
+  const previousRound = roundIndex > 0 ? FANTASY_ROUNDS[roundIndex - 1] : null;
+  const previousMatches = previousRound ? matches.filter((match) => previousRound.phases.includes(match.phase)) : [];
+  const previousAliveTeams = aliveTeamsFromMatches(previousMatches);
+  if (previousAliveTeams.size > 0) {
+    for (const teamId of assignedTeams) {
+      previousAliveTeams.add(teamId);
+    }
+    return previousAliveTeams;
+  }
+
+  if (assignedTeams.size > 0) {
+    return assignedTeams;
+  }
+
+  return new Set(matches.filter((match) => match.status !== "final").flatMap(teamIdsForMatch));
+}
+
 export function normalizeFantasyPosition(position: string): FantasyPosition {
   const compact = position.toUpperCase();
   const value = position.toLowerCase();

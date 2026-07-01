@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   FANTASY_SCORING_RULES,
   buildFantasyLeaderboard,
+  eligibleTeamIdsForFantasyRound,
   fantasyOptionMap,
   fantasyPlayerOptions,
   fantasyPlayerTotals,
@@ -139,6 +140,31 @@ function normalizeAndTrimDraftSlots(
   return normalizeDraftSlots(slots, optionMap, userKey, round);
 }
 
+function buildBoardSlots(slots: FantasyRosterSlot[], starterSize: number) {
+  const board: Array<FantasyRosterSlot | null> = Array.from({ length: starterSize }, () => null);
+  const overflow: FantasyRosterSlot[] = [];
+
+  for (const slot of slots
+    .filter((item) => item.isStarter)
+    .sort((a, b) => a.slotIndex - b.slotIndex)) {
+    if (slot.slotIndex >= 0 && slot.slotIndex < starterSize && !board[slot.slotIndex]) {
+      board[slot.slotIndex] = { ...slot, slotIndex: slot.slotIndex, isStarter: true };
+    } else {
+      overflow.push(slot);
+    }
+  }
+
+  for (const slot of overflow) {
+    const openIndex = board.findIndex((item) => !item);
+    if (openIndex < 0) {
+      break;
+    }
+    board[openIndex] = { ...slot, slotIndex: openIndex, isStarter: true };
+  }
+
+  return board;
+}
+
 function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
   return `${formation}:${slots
     .map((slot) => [slot.playerId, slot.slotIndex, slot.isStarter ? 1 : 0, slot.isCaptain ? 1 : 0, slot.isViceCaptain ? 1 : 0].join(":"))
@@ -189,21 +215,26 @@ export function FantasyProfileDrawer({
   const [message, setMessage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const lastSavedKeyRef = useRef("");
+  const eligibleTeamIds = useMemo(() => eligibleTeamIdsForFantasyRound(matches, round), [matches, round]);
+  const availableOptions = useMemo(
+    () => (eligibleTeamIds.size > 0 ? options.filter((option) => eligibleTeamIds.has(option.team.id)) : options),
+    [eligibleTeamIds, options]
+  );
   const countryOptions = useMemo(() => {
     const teams = new Map<string, FantasyPlayerOption["team"]>();
-    for (const option of options) {
+    for (const option of availableOptions) {
       teams.set(option.team.id, option.team);
     }
     return [...teams.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [options]);
+  }, [availableOptions]);
   const playerPool = useMemo(() => {
     const search = playerSearch.trim().toLowerCase();
-    return options
+    return availableOptions
       .filter((option) => countryFilter === "all" || option.team.id === countryFilter)
       .filter((option) => positionFilter === "all" || option.fantasyPosition === positionFilter)
       .filter((option) => !search || `${option.name} ${option.team.name} ${option.team.code}`.toLowerCase().includes(search))
       .slice(0, 80);
-  }, [countryFilter, options, playerSearch, positionFilter]);
+  }, [availableOptions, countryFilter, playerSearch, positionFilter]);
   const canEdit = Boolean(userKey && userKey === session.userKey && round.selectionEnabled);
   const squadSize = round.squadSize;
   const starterSize = round.starterSize;
@@ -213,6 +244,9 @@ export function FantasyProfileDrawer({
     [draft, optionMap, round, userKey]
   );
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
+  const eligibleTeamCount = countryOptions.length;
+  const totalTeamCount = useMemo(() => new Set(options.map((option) => option.team.id)).size, [options]);
+  const hiddenTeamCount = Math.max(0, totalTeamCount - eligibleTeamCount);
 
   useEffect(() => {
     setMounted(true);
@@ -239,6 +273,12 @@ export function FantasyProfileDrawer({
   useEffect(() => {
     setFormation(savedFormation);
   }, [savedFormation]);
+
+  useEffect(() => {
+    if (countryFilter !== "all" && !countryOptions.some((team) => team.id === countryFilter)) {
+      setCountryFilter("all");
+    }
+  }, [countryFilter, countryOptions]);
 
   useEffect(() => {
     if (!canEdit || !dirty || !userKey) {
@@ -283,7 +323,7 @@ export function FantasyProfileDrawer({
   }
 
   const row = leaderboard.find((item) => item.userKey === userKey);
-  const boardSlots = Array.from({ length: starterSize }, (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null);
+  const boardSlots = buildBoardSlots(normalizedDraft, starterSize);
   const starterSlots = boardSlots.filter((slot): slot is FantasyRosterSlot => Boolean(slot));
   const formationLines = FORMATION_LINES[formation] ?? FORMATION_LINES["4-3-3"];
   const benchSlots = normalizedDraft.filter((slot) => !slot.isStarter);
@@ -322,10 +362,7 @@ export function FantasyProfileDrawer({
       return;
     }
 
-    const board = Array.from(
-      { length: starterSize },
-      (_, index) => normalizedDraft.find((slot) => slot.isStarter && slot.slotIndex === index) ?? null
-    );
+    const board = buildBoardSlots(normalizedDraft, starterSize);
     const bench = normalizedDraft.filter((slot) => !slot.isStarter && slot.playerId !== playerId);
     const sourceStarterIndex = board.findIndex((slot) => slot?.playerId === playerId);
     const targetSlot = board[targetIndex];
@@ -682,10 +719,14 @@ export function FantasyProfileDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-600">Add Players</h3>
                   <p className="text-xs font-bold text-slate-500">
-                    {normalizedDraft.length}/{squadSize} selected - any role mix allowed.
+                    {normalizedDraft.length}/{squadSize} selected - {eligibleTeamCount} team{eligibleTeamCount === 1 ? "" : "s"} still selectable.
                   </p>
                 </div>
                 <Badge tone={normalizedDraft.length >= squadSize ? "red" : "green"}>{squadSize - normalizedDraft.length} spots</Badge>
+              </div>
+              <div className="mb-3 rounded-md bg-emerald-50 p-2 text-[11px] font-bold leading-snug text-emerald-800 ring-1 ring-emerald-100">
+                The player list follows the bracket. Eliminated teams are hidden as the tournament progresses
+                {hiddenTeamCount > 0 ? ` (${hiddenTeamCount} hidden now).` : "."}
               </div>
               <div className="grid gap-2">
                 <label className="relative block">
@@ -704,7 +745,7 @@ export function FantasyProfileDrawer({
                     className="h-10 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink"
                     aria-label="Filter fantasy players by country"
                   >
-                    <option value="all">All countries</option>
+                    <option value="all">All alive teams</option>
                     {countryOptions.map((team) => (
                       <option key={team.id} value={team.id}>
                         {team.flag} {team.name}
@@ -768,6 +809,11 @@ export function FantasyProfileDrawer({
                     </div>
                   );
                 })}
+                {playerPool.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                    No eligible players match these filters. Eliminated teams are hidden for {round.name}.
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -905,6 +951,8 @@ function PitchSlot({
   const isTarget = Boolean(activeMoveId || draggingId);
   const isMovingThis = Boolean(slot && slot.playerId === activeMoveId);
   const canPlaceHere = Boolean(activeMoveId && activeMoveId !== slot?.playerId);
+  const playerName = player?.name ?? slot?.playerId.split("-").slice(1).join(" ") ?? "Player";
+  const playerPortrait = player?.photoUrl ?? avatarUrl(playerName);
 
   return (
     <div
@@ -929,7 +977,7 @@ function PitchSlot({
         }
       }}
     >
-      {slot && player ? (
+      {slot ? (
         <div
           draggable={canEdit}
           onDragStart={(event) => {
@@ -952,11 +1000,11 @@ function PitchSlot({
             className="w-full"
           >
             <img
-              src={player.photoUrl ?? avatarUrl(player.name)}
-              alt={`${player.name} portrait`}
+              src={playerPortrait}
+              alt={`${playerName} portrait`}
               className={`${compact ? "h-10 w-10" : "h-11 w-11"} mx-auto rounded-full object-cover object-top shadow-lift ring-2 ring-white`}
             />
-            <div className="mt-1 truncate text-[11px] font-black leading-tight text-white">{player.name}</div>
+            <div className="mt-1 truncate text-[11px] font-black capitalize leading-tight text-white">{playerName}</div>
             <div className="text-[9px] font-black uppercase text-white/65">{stats?.points ?? 0} pts</div>
           </button>
           {canEdit ? (
@@ -987,7 +1035,7 @@ function PitchSlot({
                   isMovingThis ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
                 }`}
                 title="Move player"
-                aria-label={`Move ${player.name}`}
+                aria-label={`Move ${playerName}`}
               >
                 <Move className="h-4 w-4" />
               </button>
@@ -1001,7 +1049,7 @@ function PitchSlot({
                   slot.isCaptain ? "bg-cup-gold text-cup-ink" : "bg-white/15 text-white"
                 }`}
                 title={slot.isCaptain ? "Captain selected" : "Set captain"}
-                aria-label={slot.isCaptain ? `${player.name} is captain` : `Set ${player.name} as captain`}
+                aria-label={slot.isCaptain ? `${playerName} is captain` : `Set ${playerName} as captain`}
               >
                 {slot.isCaptain ? <Crown className="h-4 w-4" /> : <Star className="h-4 w-4" />}
               </button>
@@ -1013,7 +1061,7 @@ function PitchSlot({
                 }}
                 className="grid h-8 min-w-0 place-items-center rounded-md bg-white/15 text-[9px] font-black text-white"
                 title="Move to bench"
-                aria-label={`Move ${player.name} to bench`}
+                aria-label={`Move ${playerName} to bench`}
               >
                 <ShieldCheck className="h-4 w-4" />
               </button>
