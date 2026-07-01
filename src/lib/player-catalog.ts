@@ -105,11 +105,26 @@ export function playerCatalogId(teamId: string, value: string | number) {
   return `${teamId}-${slugify(String(value)) || "player"}`;
 }
 
+const CATALOG_PHOTO_OVERRIDES: Record<string, string> = {
+  "brazil-159047":
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Marquinhos_Brazil_V_Morocco_13_June_2026-153_%28cropped%29.jpg/960px-Marquinhos_Brazil_V_Morocco_13_June_2026-153_%28cropped%29.jpg",
+  "brazil-231050": "https://b.fssta.com/uploads/application/soccer/headshots/42944.png",
+  "brazil-raphinha": "https://b.fssta.com/uploads/application/soccer/headshots/42944.png",
+  "portugal-874": "https://b.fssta.com/uploads/application/soccer/headshots/885.png",
+  "portugal-cristiano-ronaldo": "https://b.fssta.com/uploads/application/soccer/headshots/885.png",
+  "spain-227765": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Dani_Olmo_2022.jpg"
+};
+
 function playerCatalogIdSuffix(row: Pick<PlayerCatalogItem, "id" | "teamId">) {
   return row.id.startsWith(`${row.teamId}-`) ? row.id.slice(row.teamId.length + 1) : row.id;
 }
 
 function providerPhotoUrl(row: Pick<PlayerCatalogItem, "id" | "teamId" | "photoUrl">) {
+  const override = CATALOG_PHOTO_OVERRIDES[row.id];
+  if (override) {
+    return override;
+  }
+
   if (row.photoUrl) {
     return row.photoUrl;
   }
@@ -125,6 +140,9 @@ function isGeneratedProviderPhoto(value: string | null | undefined) {
 function mergePhotoUrl(existing: string | null | undefined, incoming: string | null | undefined) {
   if (!existing) {
     return incoming ?? null;
+  }
+  if (incoming && Object.values(CATALOG_PHOTO_OVERRIDES).includes(incoming)) {
+    return incoming;
   }
   if (incoming && isGeneratedProviderPhoto(existing) && !isGeneratedProviderPhoto(incoming)) {
     return incoming;

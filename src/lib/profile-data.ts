@@ -198,7 +198,7 @@ const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" 
   ],
   brazil: [
     { name: "Vinicius Jr.", position: "LW", role: "1v1 winger" },
-    { name: "Raphinha", position: "RW", role: "Right-side creator", photoUrl: "https://media.api-sports.io/football/players/1496.png" },
+    { name: "Raphinha", position: "RW", role: "Right-side creator", photoUrl: "https://b.fssta.com/uploads/application/soccer/headshots/42944.png" },
     { name: "Rodrygo", position: "FW", role: "Flexible attacker" },
     { name: "Bruno Guimaraes", position: "CM", role: "Midfield bite" }
   ],
@@ -360,7 +360,7 @@ const featuredPlayers: Record<string, Array<Omit<PlayerProfile, "id" | "teamId" 
     { name: "Nizar Al-Rashdan", position: "CM", role: "Midfield bite" }
   ],
   portugal: [
-    { name: "Cristiano Ronaldo", position: "ST", role: "Box-office moment" },
+    { name: "Cristiano Ronaldo", position: "ST", role: "Box-office moment", photoUrl: "https://b.fssta.com/uploads/application/soccer/headshots/885.png" },
     { name: "Bruno Fernandes", position: "AM", role: "Chance creator" },
     { name: "Bernardo Silva", position: "RW", role: "Control and craft" }
   ],

@@ -220,6 +220,50 @@ describe("mini-fantasy scoring", () => {
     expect(player?.photoUrl).toBe("https://media.api-sports.io/football/players/123456.png");
   });
 
+  it("uses trusted portrait overrides for provider placeholder images", () => {
+    const merged = mergePlayerCatalog([
+      {
+        id: "brazil-231050",
+        teamId: "brazil",
+        name: "Raphinha",
+        position: "Forward",
+        photoUrl: null
+      },
+      {
+        id: "spain-227765",
+        teamId: "spain",
+        name: "Dani Olmo",
+        position: "Midfielder",
+        photoUrl: null
+      },
+      {
+        id: "brazil-159047",
+        teamId: "brazil",
+        name: "Marquinhos",
+        position: "Defender",
+        photoUrl: null
+      },
+      {
+        id: "portugal-874",
+        teamId: "portugal",
+        name: "Cristiano Ronaldo",
+        position: "Forward",
+        photoUrl: null
+      }
+    ]);
+
+    expect(merged.find((item) => item.id === "brazil-231050")?.photoUrl).toBe(
+      "https://b.fssta.com/uploads/application/soccer/headshots/42944.png"
+    );
+    expect(merged.find((item) => item.id === "spain-227765")?.photoUrl).toBe(
+      "https://upload.wikimedia.org/wikipedia/commons/e/e0/Dani_Olmo_2022.jpg"
+    );
+    expect(merged.find((item) => item.id === "brazil-159047")?.photoUrl).toContain("Marquinhos_Brazil_V_Morocco");
+    expect(merged.find((item) => item.id === "portugal-874")?.photoUrl).toBe(
+      "https://b.fssta.com/uploads/application/soccer/headshots/885.png"
+    );
+  });
+
   it("builds player match scores from final matches and captain leaderboard totals", () => {
     const match = {
       ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
