@@ -242,6 +242,27 @@ function duplicateKnockoutPlayerMessage(playerId: string) {
 }
 
 async function fetchPlayerCatalogRows() {
+  try {
+    const response = await fetch("/api/fantasy/players", { cache: "force-cache" });
+    const payload = (await response.json().catch(() => ({}))) as PlayerCatalogPayload;
+    if (response.ok && payload.ok !== false && Array.isArray(payload.players) && payload.players.length > 0) {
+      return {
+        data: payload.players.map((player) => ({
+          id: player.id,
+          team_id: player.teamId,
+          name: player.name,
+          age: player.age ?? null,
+          shirt_number: player.shirtNumber ?? null,
+          position: player.position,
+          photo_url: player.photoUrl ?? null
+        })),
+        error: payload.warning ? { message: payload.warning } : null
+      };
+    }
+  } catch {
+    // Fall back to the direct table read below.
+  }
+
   const supabase = getSupabaseClient();
 
   if (supabase) {
@@ -257,34 +278,10 @@ async function fetchPlayerCatalogRows() {
     };
   }
 
-  try {
-    const response = await fetch("/api/fantasy/players", { cache: "force-cache" });
-    const payload = (await response.json().catch(() => ({}))) as PlayerCatalogPayload;
-    if (!response.ok || payload.ok === false) {
-      return {
-        data: [] as StoredPlayerRow[],
-        error: { message: payload.error || "Could not load Fantasy player catalog." }
-      };
-    }
-
-    return {
-      data: (payload.players ?? []).map((player) => ({
-        id: player.id,
-        team_id: player.teamId,
-        name: player.name,
-        age: player.age ?? null,
-        shirt_number: player.shirtNumber ?? null,
-        position: player.position,
-        photo_url: player.photoUrl ?? null
-      })),
-      error: payload.warning ? { message: payload.warning } : null
-    };
-  } catch (error) {
-    return {
-      data: [] as StoredPlayerRow[],
-      error: { message: error instanceof Error ? error.message : "Could not load Fantasy player catalog." }
-    };
-  }
+  return {
+    data: [] as StoredPlayerRow[],
+    error: { message: "Could not load Fantasy player catalog." }
+  };
 }
 
 function storedPlayerRowsToCatalog(rows: StoredPlayerRow[]): PlayerCatalogItem[] {
