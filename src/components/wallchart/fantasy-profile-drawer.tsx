@@ -13,7 +13,6 @@ import {
   fantasyPlayerTotals,
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
-  trimFantasyRosterToFormation,
   type FantasyRoundResult,
   type FantasyPlayerOption
 } from "@/lib/fantasy";
@@ -135,11 +134,9 @@ function normalizeAndTrimDraftSlots(
   slots: FantasyRosterSlot[],
   optionMap: Map<string, FantasyPlayerOption>,
   userKey: UserKey | null,
-  round: FantasyRoundResult,
-  formation: string,
-  playerCatalog: PlayerCatalogItem[]
+  round: FantasyRoundResult
 ) {
-  return trimFantasyRosterToFormation(normalizeDraftSlots(slots, optionMap, userKey, round), formation, playerCatalog, round.id);
+  return normalizeDraftSlots(slots, optionMap, userKey, round);
 }
 
 function rosterSignature(slots: FantasyRosterSlot[], formation: string) {
@@ -175,12 +172,10 @@ export function FantasyProfileDrawer({
             rosters.filter((slot) => slot.userKey === userKey).sort((a, b) => a.slotIndex - b.slotIndex),
             optionMap,
             userKey,
-            round,
-            savedFormation,
-            playerCatalog
+            round
           )
         : [],
-    [optionMap, playerCatalog, rosters, round, savedFormation, userKey]
+    [optionMap, rosters, round, userKey]
   );
   const [draft, setDraft] = useState<FantasyRosterSlot[]>(savedSlots);
   const [formation, setFormation] = useState(savedFormation);
@@ -214,8 +209,8 @@ export function FantasyProfileDrawer({
   const starterSize = round.starterSize;
   const hasBench = squadSize > starterSize;
   const normalizedDraft = useMemo(
-    () => normalizeAndTrimDraftSlots(draft, optionMap, userKey, round, formation, playerCatalog),
-    [draft, formation, optionMap, playerCatalog, round, userKey]
+    () => normalizeAndTrimDraftSlots(draft, optionMap, userKey, round),
+    [draft, optionMap, round, userKey]
   );
   const autoSaveKey = useMemo(() => rosterSignature(normalizedDraft, formation), [formation, normalizedDraft]);
 
@@ -543,7 +538,7 @@ export function FantasyProfileDrawer({
                   onChange={(event) => {
                     const nextFormation = event.target.value;
                     setFormation(nextFormation);
-                    setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, userKey, round, nextFormation, playerCatalog));
+                    setDraft((current) => normalizeAndTrimDraftSlots(current, optionMap, userKey, round));
                     setDirty(true);
                     setMessage("Autosaving layout...");
                   }}

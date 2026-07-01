@@ -97,12 +97,22 @@ type FantasyPlayerLookup = {
   idsByOptionId: Map<string, string[]>;
 };
 
+type FantasyPlayerTotal = {
+  points: number;
+  goals: number;
+  assists: number;
+  cleanSheets: number;
+};
+
 const familyDisplayName: Record<UserKey, string> = {
   tata: "Tata",
   lucas: "Lucas"
 };
+const EMPTY_PLAYER_CATALOG: PlayerCatalogItem[] = [];
+const EMPTY_PLAYER_TOTALS: FantasyPlayerTotal = { points: 0, goals: 0, assists: 0, cleanSheets: 0 };
 const lookupCache = new WeakMap<PlayerCatalogItem[], FantasyPlayerLookup>();
 let emptyLookupCache: FantasyPlayerLookup | null = null;
+const totalsCache = new WeakMap<FantasyPlayerMatchScore[], WeakMap<PlayerCatalogItem[], Map<string, FantasyPlayerTotal>>>();
 const CURATED_PROVIDER_ALIASES: Record<string, string[]> = {
   "argentina-lionel-messi": ["argentina-154", "154", "argentina-45843", "45843"],
   "canada-jonathan-david": ["canada-8489", "8489"],
@@ -608,35 +618,53 @@ export function fantasyCanonicalPlayerId(playerId: string, playerCatalog: Player
   return resolveFantasyPlayerOption({ playerId }, playerCatalog)?.id ?? playerId;
 }
 
+function addFantasyTotal(map: Map<string, FantasyPlayerTotal>, playerId: string, score: FantasyPlayerMatchScore) {
+  const total = map.get(playerId) ?? { points: 0, goals: 0, assists: 0, cleanSheets: 0 };
+  total.points += score.points;
+  total.goals += score.goals;
+  total.assists += score.assists;
+  total.cleanSheets += score.cleanSheet ? 1 : 0;
+  map.set(playerId, total);
+}
+
+function fantasyTotalsByPlayerId(
+  scores: FantasyPlayerMatchScore[],
+  playerCatalog: PlayerCatalogItem[] = EMPTY_PLAYER_CATALOG
+) {
+  let catalogCache = totalsCache.get(scores);
+  if (!catalogCache) {
+    catalogCache = new WeakMap<PlayerCatalogItem[], Map<string, FantasyPlayerTotal>>();
+    totalsCache.set(scores, catalogCache);
+  }
+
+  const cached = catalogCache.get(playerCatalog);
+  if (cached) {
+    return cached;
+  }
+
+  const lookup = buildFantasyPlayerLookup(playerCatalog);
+  const totals = new Map<string, FantasyPlayerTotal>();
+
+  for (const score of scores) {
+    const option = lookup.byId.get(score.playerId) ?? resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
+    const ids = new Set([score.playerId, ...(option ? (lookup.idsByOptionId.get(option.id) ?? [option.id]) : [])].filter(Boolean));
+    for (const id of ids) {
+      addFantasyTotal(totals, id, score);
+    }
+  }
+
+  catalogCache.set(playerCatalog, totals);
+  return totals;
+}
+
 export function fantasyPlayerTotals(
   playerId: string,
   scores: FantasyPlayerMatchScore[],
-  playerCatalog: PlayerCatalogItem[] = []
+  playerCatalog: PlayerCatalogItem[] = EMPTY_PLAYER_CATALOG
 ) {
-  const targetOption = resolveFantasyPlayerOption({ playerId }, playerCatalog);
-  const targetId = targetOption?.id ?? playerId;
-  const scoreIds = new Set(fantasyScoreIdsForPlayer(playerId, playerCatalog));
-  const totals = {
-    points: 0,
-    goals: 0,
-    assists: 0,
-    cleanSheets: 0
-  };
-
-  for (const score of scores) {
-    const scoreOption = resolveFantasyPlayerOption({ playerId: score.playerId, teamId: score.teamId }, playerCatalog);
-    const canonicalScoreId = scoreOption?.id ?? score.playerId;
-    if (canonicalScoreId !== targetId && !scoreIds.has(score.playerId)) {
-      continue;
-    }
-
-    totals.points += score.points;
-    totals.goals += score.goals;
-    totals.assists += score.assists;
-    totals.cleanSheets += score.cleanSheet ? 1 : 0;
-  }
-
-  return totals;
+  const totals = fantasyTotalsByPlayerId(scores, playerCatalog);
+  const option = resolveFantasyPlayerOption({ playerId }, playerCatalog);
+  return totals.get(playerId) ?? (option ? totals.get(option.id) : undefined) ?? EMPTY_PLAYER_TOTALS;
 }
 
 export function isFantasyPlayerLocked(
@@ -1050,9 +1078,10 @@ export function mergeFantasyScores(
 export function buildFantasyLeaderboard(
   rosters: FantasyRosterSlot[],
   scores: FantasyPlayerMatchScore[],
-  playerCatalog: PlayerCatalogItem[] = []
+  playerCatalog: PlayerCatalogItem[] = EMPTY_PLAYER_CATALOG
 ): FantasyLeaderboardRow[] {
   const lookup = buildFantasyPlayerLookup(playerCatalog);
+  const totalsByPlayer = fantasyTotalsByPlayerId(scores, playerCatalog);
 
   return (["tata", "lucas"] as UserKey[])
     .map((userKey) => {
@@ -1063,7 +1092,7 @@ export function buildFantasyLeaderboard(
 
       for (const slot of userSlots) {
         const option = lookup.byId.get(slot.playerId) ?? resolveFantasyPlayerOption({ playerId: slot.playerId }, playerCatalog);
-        const playerPoints = fantasyPlayerTotals(slot.playerId, scores, playerCatalog).points;
+        const playerPoints = (totalsByPlayer.get(slot.playerId) ?? (option ? totalsByPlayer.get(option.id) : undefined))?.points ?? 0;
         const total = slot.isCaptain ? playerPoints * 2 : playerPoints;
         points += total;
         if (slot.isCaptain) {
@@ -1095,7 +1124,7 @@ export function buildFantasyRoundResults(
   rosters: FantasyRosterSlot[],
   scores: FantasyPlayerMatchScore[],
   matches: Match[],
-  playerCatalog: PlayerCatalogItem[] = [],
+  playerCatalog: PlayerCatalogItem[] = EMPTY_PLAYER_CATALOG,
   now = new Date()
 ): FantasyRoundResult[] {
   return fantasyRoundStates(matches, now).map((round) => {

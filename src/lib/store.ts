@@ -3,11 +3,11 @@
 import { INITIAL_MATCHES } from "./tournament-data";
 import {
   FANTASY_ROUND_ID,
+  fantasyScoreIdsForPlayer,
   fantasyRoundRosterSize,
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
-  normalizeFantasyRoundId,
-  trimFantasyRosterToFormation
+  normalizeFantasyRoundId
 } from "./fantasy";
 import { applyKnownPlayerStatCorrections } from "./fantasy-stat-corrections";
 import { resolveKnockoutSeedsForSync } from "./score-sync";
@@ -154,6 +154,11 @@ export type TournamentState = {
   fantasyError?: string;
 };
 
+export type FantasyDataState = Pick<TournamentState, "playerCatalog" | "fantasyTeams" | "fantasyRosters" | "fantasyScores"> & {
+  fantasyError?: string;
+  playerCatalogError?: string;
+};
+
 export type ScoreSyncSummary = {
   ok: boolean;
   provider?: string;
@@ -237,8 +242,23 @@ function duplicateKnockoutPlayerMessage(playerId: string) {
 }
 
 async function fetchPlayerCatalogRows() {
+  const supabase = getSupabaseClient();
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("players")
+      .select("id, team_id, name, age, shirt_number, position, photo_url")
+      .order("team_id", { ascending: true })
+      .order("name", { ascending: true });
+
+    return {
+      data: (data || []) as StoredPlayerRow[],
+      error: error ? { message: error.message } : null
+    };
+  }
+
   try {
-    const response = await fetch("/api/fantasy/players", { cache: "no-store" });
+    const response = await fetch("/api/fantasy/players", { cache: "force-cache" });
     const payload = (await response.json().catch(() => ({}))) as PlayerCatalogPayload;
     if (!response.ok || payload.ok === false) {
       return {
@@ -427,7 +447,16 @@ export async function migrateLocalFamilyData(session: FamilySession): Promise<Lo
 
 type LoadTournamentStateOptions = {
   includeFantasyScores?: boolean;
+  includeFantasyData?: boolean;
+  includePlayerCatalog?: boolean;
 };
+
+const FANTASY_SCORE_SELECT =
+  "match_id, player_id, team_id, points, goals, assists, clean_sheet, yellow_cards, red_cards, own_goals, penalty_saves, penalty_misses, status, updated_at";
+const MATCH_SELECT = "id, home_team_id, away_team_id, home_score, away_score, status, penalty_winner_id, updated_at";
+const PREDICTION_SELECT = "user_id, match_id, home_score, away_score, predicted_winner_team_id, updated_at";
+const COMMENT_SELECT = "id, user_id, match_id, body, created_at";
+const PLAYER_STAT_SELECT = "match_id, player_id, player_name, team_id, goals, assists, updated_by, updated_at";
 
 function rowToFantasyScore(row: StoredFantasyScoreRow): FantasyPlayerMatchScore {
   return {
@@ -455,7 +484,7 @@ export async function loadFantasyScores(): Promise<{ fantasyScores: FantasyPlaye
     return { fantasyScores: readLocalFantasyScores() };
   }
 
-  const { data, error } = await supabase.from("fantasy_player_match_scores").select("*");
+  const { data, error } = await supabase.from("fantasy_player_match_scores").select(FANTASY_SCORE_SELECT);
   if (error) {
     return { fantasyScores: [], fantasyError: error.message };
   }
@@ -463,8 +492,109 @@ export async function loadFantasyScores(): Promise<{ fantasyScores: FantasyPlaye
   return { fantasyScores: ((data || []) as StoredFantasyScoreRow[]).map(rowToFantasyScore) };
 }
 
+export async function loadFantasyData(): Promise<FantasyDataState> {
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    return {
+      playerCatalog: [],
+      fantasyTeams: readLocalFantasyTeams(),
+      fantasyRosters: readLocalFantasyRosters().map((slot) => ({ ...slot, roundId: normalizeFantasyRoundId(slot.roundId) })),
+      fantasyScores: readLocalFantasyScores()
+    };
+  }
+
+  try {
+    const [
+      { data: profiles },
+      { data: playerRows, error: playerCatalogError },
+      { data: fantasyTeamRows, error: fantasyTeamError },
+      { data: fantasyRosterRows, error: fantasyRosterError }
+    ] = await Promise.all([
+      supabase.from("profiles").select("id, user_key, display_name"),
+      fetchPlayerCatalogRows(),
+      supabase.from("fantasy_teams").select("user_id, name, formation, updated_at"),
+      supabase.from("fantasy_rosters").select("user_id, round_id, player_id, slot_index, is_starter, is_captain, is_vice_captain, updated_at").order("slot_index", { ascending: true })
+    ]);
+
+    const profileMap = new Map(((profiles || []) as StoredProfileRow[]).map((profile) => [profile.id, profile]));
+    const playerCatalog = storedPlayerRowsToCatalog((playerRows || []) as StoredPlayerRow[]);
+
+    const fantasyRosters: FantasyRosterSlot[] = [];
+    if (!fantasyRosterError) {
+      for (const row of (fantasyRosterRows || []) as StoredFantasyRosterRow[]) {
+        const profile = profileMap.get(row.user_id);
+        if (!profile) {
+          continue;
+        }
+
+        fantasyRosters.push({
+          userKey: profile.user_key,
+          playerId: row.player_id,
+          roundId: normalizeFantasyRoundId(row.round_id),
+          slotIndex: row.slot_index,
+          isStarter: row.is_starter,
+          isCaptain: row.is_captain,
+          isViceCaptain: row.is_vice_captain,
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
+    const fantasyTeams: FantasyTeamSetting[] = [];
+    if (!fantasyTeamError) {
+      for (const row of (fantasyTeamRows || []) as StoredFantasyTeamRow[]) {
+        const profile = profileMap.get(row.user_id);
+        if (!profile) {
+          continue;
+        }
+
+        fantasyTeams.push({
+          userKey: profile.user_key,
+          name: row.name,
+          formation: row.formation ?? "4-3-3",
+          updatedAt: row.updated_at ?? null
+        });
+      }
+    }
+
+    let fantasyScoreRows: StoredFantasyScoreRow[] = [];
+    let fantasyScoreError: { message: string } | null = null;
+    const scorePlayerIds = Array.from(
+      new Set(fantasyRosters.flatMap((slot) => fantasyScoreIdsForPlayer(slot.playerId, playerCatalog)))
+    );
+    if (scorePlayerIds.length > 0) {
+      const { data, error } = await supabase
+        .from("fantasy_player_match_scores")
+        .select(FANTASY_SCORE_SELECT)
+        .in("player_id", scorePlayerIds);
+      fantasyScoreRows = (data || []) as StoredFantasyScoreRow[];
+      fantasyScoreError = error ? { message: error.message } : null;
+    }
+
+    return {
+      playerCatalog,
+      fantasyTeams,
+      fantasyRosters,
+      fantasyScores: fantasyScoreError ? [] : fantasyScoreRows.map(rowToFantasyScore),
+      playerCatalogError: playerCatalogError?.message,
+      fantasyError: fantasyTeamError?.message ?? fantasyRosterError?.message ?? fantasyScoreError?.message
+    };
+  } catch (error) {
+    return {
+      playerCatalog: [],
+      fantasyTeams: [],
+      fantasyRosters: [],
+      fantasyScores: [],
+      fantasyError: error instanceof Error ? error.message : "Could not load fantasy data."
+    };
+  }
+}
+
 export async function loadTournamentState(options: LoadTournamentStateOptions = {}): Promise<TournamentState> {
   const includeFantasyScores = options.includeFantasyScores ?? true;
+  const includeFantasyData = options.includeFantasyData ?? true;
+  const includePlayerCatalog = options.includePlayerCatalog ?? true;
   const supabase = getSupabaseClient();
 
   if (!supabase) {
@@ -474,10 +604,10 @@ export async function loadTournamentState(options: LoadTournamentStateOptions = 
       predictions: readLocalPredictions(),
       comments: readLocalComments(),
       playerStats: applyKnownPlayerStatCorrections(matches, readLocalPlayerStats()),
-      playerCatalog: [],
-      fantasyTeams: readLocalFantasyTeams(),
-      fantasyRosters: readLocalFantasyRosters().map((slot) => ({ ...slot, roundId: normalizeFantasyRoundId(slot.roundId) })),
-      fantasyScores: includeFantasyScores ? readLocalFantasyScores() : []
+      playerCatalog: includePlayerCatalog ? [] : [],
+      fantasyTeams: includeFantasyData ? readLocalFantasyTeams() : [],
+      fantasyRosters: includeFantasyData ? readLocalFantasyRosters().map((slot) => ({ ...slot, roundId: normalizeFantasyRoundId(slot.roundId) })) : [],
+      fantasyScores: includeFantasyData && includeFantasyScores ? readLocalFantasyScores() : []
     };
   }
 
@@ -493,15 +623,17 @@ export async function loadTournamentState(options: LoadTournamentStateOptions = 
       { data: fantasyRosterRows, error: fantasyRosterError },
       { data: fantasyScoreRows, error: fantasyScoreError }
     ] = await Promise.all([
-      supabase.from("matches").select("*"),
-      supabase.from("predictions").select("*"),
+      supabase.from("matches").select(MATCH_SELECT),
+      supabase.from("predictions").select(PREDICTION_SELECT),
       supabase.from("profiles").select("id, user_key, display_name"),
-      supabase.from("comments").select("*").order("created_at", { ascending: true }),
-      supabase.from("player_match_stats").select("*"),
-      fetchPlayerCatalogRows(),
-      supabase.from("fantasy_teams").select("*"),
-      supabase.from("fantasy_rosters").select("*").order("slot_index", { ascending: true }),
-      includeFantasyScores ? supabase.from("fantasy_player_match_scores").select("*") : Promise.resolve({ data: [], error: null })
+      supabase.from("comments").select(COMMENT_SELECT).order("created_at", { ascending: true }),
+      supabase.from("player_match_stats").select(PLAYER_STAT_SELECT),
+      includePlayerCatalog ? fetchPlayerCatalogRows() : Promise.resolve({ data: [], error: null }),
+      includeFantasyData ? supabase.from("fantasy_teams").select("user_id, name, formation, updated_at") : Promise.resolve({ data: [], error: null }),
+      includeFantasyData
+        ? supabase.from("fantasy_rosters").select("user_id, round_id, player_id, slot_index, is_starter, is_captain, is_vice_captain, updated_at").order("slot_index", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+      includeFantasyData && includeFantasyScores ? supabase.from("fantasy_player_match_scores").select(FANTASY_SCORE_SELECT) : Promise.resolve({ data: [], error: null })
     ]);
 
     if (matchError || predictionError) {
@@ -835,28 +967,7 @@ export async function saveFantasyRoster(session: FamilySession, slots: FantasyRo
   const squadSize = fantasyRoundRosterSize(targetRoundId);
   const supabase = getSupabaseClient();
   const rawSlots = slots.slice(0, squadSize).map((slot) => ({ ...slot, roundId: targetRoundId }));
-  const catalogRows = await fetchPlayerCatalogRows();
-  const playerCatalog = storedPlayerRowsToCatalog(catalogRows.data || []);
-  let formation = readLocalFantasyTeams().find((team) => team.userKey === session.userKey)?.formation ?? "4-3-3";
-
-  if (supabase && session.authUserId) {
-    const { data: teamRow, error: teamReadError } = await supabase
-      .from("fantasy_teams")
-      .select("formation")
-      .eq("user_id", session.authUserId)
-      .maybeSingle<{ formation?: string | null }>();
-    if (teamReadError) {
-      throw new Error(teamReadError.message);
-    }
-    formation = teamRow?.formation || formation;
-  }
-
-  const cleaned = trimFantasyRosterToFormation(
-    normalizeFantasyRosterSlots(rawSlots, session.userKey, targetRoundId),
-    formation,
-    playerCatalog,
-    targetRoundId
-  ).map((slot) => ({
+  const cleaned = normalizeFantasyRosterSlots(rawSlots, session.userKey, targetRoundId).map((slot) => ({
     ...slot,
     roundId: targetRoundId,
     updatedAt: new Date().toISOString()

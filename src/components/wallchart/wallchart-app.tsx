@@ -19,7 +19,7 @@ import { GROUPS } from "@/lib/tournament-data";
 import {
   ensureProfile,
   loadTournamentState,
-  loadFantasyScores,
+  loadFantasyData,
   migrateLocalFamilyData,
   saveComment,
   saveFantasyRoster,
@@ -89,13 +89,16 @@ export function WallchartApp() {
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
   const lastAutoSyncAt = useRef(0);
 
-  const refreshFantasyScores = useCallback(async () => {
+  const refreshFantasyData = useCallback(async () => {
     setFantasyScoresLoading(true);
     try {
-      const result = await loadFantasyScores();
+      const result = await loadFantasyData();
+      setPlayerCatalog(result.playerCatalog);
+      setFantasyTeams(result.fantasyTeams);
+      setFantasyRosters(result.fantasyRosters);
       setFantasyScores(result.fantasyScores);
-      if (result.fantasyError) {
-        setError(result.fantasyError);
+      if (result.fantasyError || result.playerCatalogError) {
+        setError(result.fantasyError ?? result.playerCatalogError ?? null);
       }
     } finally {
       setFantasyScoresLoading(false);
@@ -105,14 +108,11 @@ export function WallchartApp() {
   const refreshTournamentState = useCallback(async () => {
     setRefreshing(true);
     try {
-      const state = await loadTournamentState({ includeFantasyScores: false });
+      const state = await loadTournamentState({ includeFantasyScores: false, includeFantasyData: false, includePlayerCatalog: false });
       setMatches(state.matches);
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
-      setPlayerCatalog(state.playerCatalog);
-      setFantasyTeams(state.fantasyTeams);
-      setFantasyRosters(state.fantasyRosters);
       setError(state.error ?? null);
       setLastRefreshed(new Date());
     } finally {
@@ -135,20 +135,8 @@ export function WallchartApp() {
       }
 
       setSession(current);
-      let profileError: string | null = null;
-      let migrationMessage: string | null = null;
-      try {
-        await ensureProfile(current);
-        const migrated = await migrateLocalFamilyData(current);
-        const migratedItems = migrated.predictions + migrated.comments;
-        if (migratedItems > 0) {
-          migrationMessage = `Moved ${migratedItems} saved local item${migratedItems === 1 ? "" : "s"} into shared mode.`;
-        }
-      } catch (error) {
-        profileError = error instanceof Error ? error.message : "Could not prepare shared profile.";
-      }
 
-      const state = await loadTournamentState({ includeFantasyScores: false });
+      const state = await loadTournamentState({ includeFantasyScores: false, includeFantasyData: false, includePlayerCatalog: false });
       if (!alive) {
         return;
       }
@@ -157,16 +145,32 @@ export function WallchartApp() {
       setPredictions(state.predictions);
       setComments(state.comments);
       setPlayerStats(state.playerStats);
-      setPlayerCatalog(state.playerCatalog);
-      setFantasyTeams(state.fantasyTeams);
-      setFantasyRosters(state.fantasyRosters);
-      setError(profileError || state.error || null);
-      setSyncMessage(migrationMessage);
+      setError(state.error || null);
       setLastRefreshed(new Date());
       setLoading(false);
-      refreshFantasyScores().catch(() => {
-        setError("Could not load fantasy scores.");
+
+      refreshFantasyData().catch(() => {
+        setError("Could not load fantasy data.");
       });
+
+      (async () => {
+        try {
+          await ensureProfile(current);
+          const migrated = await migrateLocalFamilyData(current);
+          const migratedItems = migrated.predictions + migrated.comments;
+          if (!alive || migratedItems <= 0) {
+            return;
+          }
+          setSyncMessage(`Moved ${migratedItems} saved local item${migratedItems === 1 ? "" : "s"} into shared mode.`);
+          refreshTournamentState().catch(() => {
+            setError("Could not refresh shared data after migration.");
+          });
+        } catch (error) {
+          if (alive) {
+            setError(error instanceof Error ? error.message : "Could not prepare shared profile.");
+          }
+        }
+      })();
     }
 
     boot();
@@ -174,7 +178,7 @@ export function WallchartApp() {
     return () => {
       alive = false;
     };
-  }, [refreshFantasyScores, router]);
+  }, [refreshFantasyData, refreshTournamentState, router]);
 
   useEffect(() => {
     if (!session) {
@@ -335,7 +339,7 @@ export function WallchartApp() {
     async (force = true, announce = true) => {
       const result = await syncLiveScores(force);
       await refreshTournamentState();
-      await refreshFantasyScores();
+      await refreshFantasyData();
       const updated = result.updated?.length ?? 0;
       const statsUpdated = result.playerStatsUpdated ?? 0;
       const cleaned = result.cleanedPlaceholders ?? 0;
@@ -350,7 +354,7 @@ export function WallchartApp() {
         setSyncMessage(`${scoreText}${statText}.${fantasyText}${cleanupText}${warningText}`);
       }
     },
-    [refreshFantasyScores, refreshTournamentState]
+    [refreshFantasyData, refreshTournamentState]
   );
 
   async function handleSyncScores() {

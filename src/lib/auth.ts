@@ -70,17 +70,11 @@ export async function getCurrentSession(): Promise<FamilySession | null> {
       return null;
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("user_key, display_name")
-      .eq("id", authUser.id)
-      .maybeSingle();
-
-    const userKey = ((profile?.user_key as UserKey | undefined) || keyFromEmail(authUser.email)) as UserKey;
+    const userKey = keyFromEmail(authUser.email);
 
     return {
       userKey,
-      displayName: profile?.display_name || displayNameFor(userKey),
+      displayName: displayNameFor(userKey),
       authUserId: authUser.id
     };
   }
