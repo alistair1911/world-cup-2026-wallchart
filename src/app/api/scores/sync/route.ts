@@ -7,6 +7,7 @@ import {
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
 import { parseEspnPlayerStats as parseEspnPlayerStatsFromPayload } from "@/lib/espn-player-stats";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
+import { isPlaceholderPlayerStatName, usablePlayerStatName } from "@/lib/player-stat-names";
 import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
 import { INITIAL_MATCHES, getTeam } from "@/lib/tournament-data";
@@ -584,7 +585,7 @@ function addStat(
   field: "goals" | "assists",
   count = 1
 ) {
-  const playerName = normalizeEventPlayerName(rawName);
+  const playerName = usablePlayerStatName(normalizeEventPlayerName(rawName));
   if (!playerName) {
     return;
   }
@@ -1351,6 +1352,7 @@ async function syncScores(request: NextRequest) {
     let fantasyAssistScoresUpdated = 0;
     let fantasyAssistOnlyScoresUpdated = 0;
     let formationRostersCleaned = 0;
+    let cleanedPlayerStatPlaceholders = 0;
     let warning: string | null =
       [setupWarning, ...warnings, ...statWarnings].filter(Boolean).length > 0
         ? [setupWarning, ...warnings, ...statWarnings].filter(Boolean).join(" ")
@@ -1417,6 +1419,27 @@ async function syncScores(request: NextRequest) {
         assists: row.assists,
         updatedAt: row.updated_at ?? null
       }));
+
+      const placeholderPlayerStats = allPlayerStats.filter((stat) => isPlaceholderPlayerStatName(stat.playerName));
+      if (placeholderPlayerStats.length > 0) {
+        for (const stat of placeholderPlayerStats) {
+          const { error } = await supabase
+            .from("player_match_stats")
+            .delete()
+            .eq("match_id", stat.matchId)
+            .eq("player_id", stat.playerId);
+          if (error) {
+            warning = [warning, `Placeholder player stat could not be cleared: ${error.message}`].filter(Boolean).join(" ");
+          } else {
+            cleanedPlayerStatPlaceholders += 1;
+          }
+        }
+        allPlayerStats.splice(
+          0,
+          allPlayerStats.length,
+          ...allPlayerStats.filter((stat) => !isPlaceholderPlayerStatName(stat.playerName))
+        );
+      }
 
       const { data: playerRows, error: playerRowsError } = await supabase
         .from("players")
@@ -1564,6 +1587,7 @@ async function syncScores(request: NextRequest) {
       fantasyAssistScoresUpdated,
       fantasyAssistOnlyScoresUpdated,
       formationRostersCleaned,
+      cleanedPlayerStatPlaceholders,
       materializedKnockoutTeams: resolvedKnockoutUpdates.length + advancedKnockoutUpdates.length,
       cleanedPlaceholders: placeholderCleanups.length,
       warning,

@@ -1,4 +1,5 @@
 import { playerId } from "./profile-data";
+import { usablePlayerStatName } from "./player-stat-names";
 import { teamMatchesName } from "./score-sync";
 import { getTeam } from "./tournament-data";
 import type { Match, PlayerMatchStat, Team } from "./types";
@@ -51,7 +52,7 @@ function addStat(
   field: "goals" | "assists",
   count = 1
 ) {
-  const playerName = normalizeEventPlayerName(rawName);
+  const playerName = usablePlayerStatName(normalizeEventPlayerName(rawName));
   if (!playerName) {
     return;
   }

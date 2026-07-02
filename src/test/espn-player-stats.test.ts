@@ -143,4 +143,36 @@ describe("ESPN player stat parsing", () => {
     );
     expect(stats.some((row) => row.playerId === "belgium-leandro-trossard")).toBe(false);
   });
+
+  it("ignores placeholder scorer names from provider payloads", () => {
+    const match = INITIAL_MATCHES.find((item) => item.homeTeamId === "netherlands" && item.awayTeamId === "japan")!;
+    const stats = parseEspnPlayerStats([match], {
+      espnEvents: [
+        {
+          eventId: "test-event",
+          homeTeamName: "Netherlands",
+          awayTeamName: "Japan",
+          kickoff: match.kickoff,
+          competitors: [
+            { id: "449", name: "Netherlands" },
+            { id: "627", name: "Japan" }
+          ],
+          details: [
+            {
+              scoringPlay: true,
+              team: { id: "449" },
+              athletesInvolved: [{ displayName: "Unknown" }]
+            },
+            {
+              scoringPlay: true,
+              team: { id: "627" },
+              participants: [{ athlete: { displayName: "Player 583" } }]
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(stats).toEqual([]);
+  });
 });

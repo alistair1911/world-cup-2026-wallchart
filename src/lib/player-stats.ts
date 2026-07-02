@@ -1,5 +1,6 @@
 import { getAllPlayerProfiles } from "./profile-data";
 import { resolveFantasyPlayerOption } from "./fantasy";
+import { providerIdKeys, usablePlayerStatName } from "./player-stat-names";
 import { getTeam } from "./tournament-data";
 import type { Match, PlayerCatalogItem, PlayerMatchStat, Team } from "./types";
 
@@ -28,41 +29,6 @@ function teamScoreForStat(stat: PlayerMatchStat, match: Match | undefined) {
   return null;
 }
 
-function usablePlayerName(value: string | null | undefined) {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) {
-    return null;
-  }
-  if (/^unknown$/i.test(trimmed) || /^player$/i.test(trimmed) || /^player\s+\d+$/i.test(trimmed)) {
-    return null;
-  }
-  if (/^\d+$/.test(trimmed)) {
-    return null;
-  }
-  return trimmed;
-}
-
-function providerIdKeys(value: string) {
-  const keys = new Set<string>();
-  const segments = value
-    .split(/[/:|\\-]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  for (const candidate of [value, segments.at(-1) ?? ""]) {
-    const normalized = candidate
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    if (/^\d+$/.test(normalized)) {
-      keys.add(normalized);
-    }
-  }
-
-  return keys;
-}
-
 function teamScopedCatalogPlayer(stat: PlayerMatchStat, playerCatalog: PlayerCatalogItem[]) {
   const statKeys = providerIdKeys(stat.playerId);
   if (statKeys.size === 0) {
@@ -80,13 +46,8 @@ function teamScopedCatalogPlayer(stat: PlayerMatchStat, playerCatalog: PlayerCat
   return matches.length === 1 ? matches[0] : null;
 }
 
-function fallbackPlayerName(stat: PlayerMatchStat, team: Team) {
-  const providerKey = [...providerIdKeys(stat.playerId)].at(0);
-  return providerKey ? `${team.code} player ${providerKey}` : `${team.code} player`;
-}
-
 function canonicalizeStat(stat: PlayerMatchStat, playerCatalog: PlayerCatalogItem[]) {
-  const statName = usablePlayerName(stat.playerName);
+  const statName = usablePlayerStatName(stat.playerName);
   const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: statName, teamId: stat.teamId }, playerCatalog);
   const catalogPlayer = option ? null : teamScopedCatalogPlayer(stat, playerCatalog);
   return {
@@ -150,7 +111,10 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
     if (!team) {
       continue;
     }
-    const playerName = profile?.player.name ?? catalogPlayer?.name ?? usablePlayerName(stat.playerName) ?? fallbackPlayerName(stat, team);
+    const playerName = profile?.player.name ?? catalogPlayer?.name ?? usablePlayerStatName(stat.playerName);
+    if (!playerName) {
+      continue;
+    }
 
     const existing =
       totals.get(stat.playerId) ??

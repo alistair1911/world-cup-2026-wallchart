@@ -137,7 +137,7 @@ describe("player stat leaderboards", () => {
     });
   });
 
-  it("uses team-scoped labels instead of Unknown when a scorer cannot be resolved", () => {
+  it("excludes unresolved placeholder scorer rows from the leaderboard", () => {
     const match = {
       ...INITIAL_MATCHES[0],
       id: "M-japan-unresolved",
@@ -160,9 +160,6 @@ describe("player stat leaderboards", () => {
 
     const leaders = buildPlayerStatLeaders(stats, [match], []);
 
-    expect(leaders.topScorers[0]).toMatchObject({
-      playerName: "JPN player 999999",
-      goals: 1
-    });
+    expect(leaders.topScorers).toHaveLength(0);
   });
 });
