@@ -320,10 +320,11 @@ function readEspnSummaryCompetition(payload: unknown) {
 }
 
 async function fetchEspnSummaryEventRow(row: EspnEventRow, force: boolean) {
-  if (!row.eventId || row.details.length > 0) {
+  if (!row.eventId) {
     return row;
   }
 
+  // Scoreboard details can list only scorers; summary details include the extra participant ESPN uses for assists.
   const response = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${encodeURIComponent(row.eventId)}`,
     {
