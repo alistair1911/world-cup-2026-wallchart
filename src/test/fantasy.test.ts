@@ -141,7 +141,11 @@ describe("mini-fantasy scoring", () => {
     expect(optionMap.get("583")?.id).toBe("netherlands-583");
     expect(resolveFantasyPlayerOption({ playerId: "58/583" }, catalog)?.id).toBe("netherlands-583");
     expect(resolveFantasyPlayerOption({ playerId: "22/227765" }, catalog)?.id).toBe("spain-227765");
+    expect(resolveFantasyPlayerOption({ playerId: "spain-dani-olmo" }, catalog)?.id).toBe("spain-227765");
     expect(fantasyScoreIdsForPlayer("58/583", catalog)).toEqual(expect.arrayContaining(["58/583", "netherlands-583", "583"]));
+    expect(fantasyScoreIdsForPlayer("spain-227765", catalog)).toEqual(
+      expect.arrayContaining(["spain-227765", "spain-dani-olmo", "227765"])
+    );
   });
 
   it("does not guess provider-only roster ids when two players share that provider suffix", () => {
@@ -374,6 +378,57 @@ describe("mini-fantasy scoring", () => {
       userKey: "tata",
       points: 18,
       captainPoints: 9
+    });
+  });
+
+  it("credits Dani Olmo when ESPN scorer ids use his slug but rosters use provider id", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
+      status: "final" as const,
+      homeScore: 1,
+      awayScore: 0
+    };
+    const catalog: PlayerCatalogItem[] = [
+      {
+        id: "spain-227765",
+        teamId: "spain",
+        name: "Dani Olmo",
+        position: "Midfielder"
+      }
+    ];
+    const scores = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "spain-dani-olmo",
+          playerName: "Dani Olmo",
+          teamId: "spain",
+          goals: 1,
+          assists: 0,
+          updatedBy: null,
+          updatedAt: "2026-07-02T00:00:00.000Z"
+        }
+      ],
+      catalog
+    );
+
+    expect(scores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          playerId: "spain-227765",
+          goals: 1,
+          points: 8
+        })
+      ])
+    );
+    expect(fantasyPlayerTotals("spain-227765", scores, catalog)).toMatchObject({
+      goals: 1,
+      points: 8
+    });
+    expect(fantasyPlayerTotals("spain-dani-olmo", scores, catalog)).toMatchObject({
+      goals: 1,
+      points: 8
     });
   });
 

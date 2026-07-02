@@ -449,7 +449,7 @@ type LoadTournamentStateOptions = {
 };
 
 const FANTASY_SCORE_SELECT =
-  "match_id, player_id, team_id, points, goals, assists, clean_sheet, yellow_cards, red_cards, own_goals, penalty_saves, penalty_misses, status, updated_at";
+  "match_id, player_id, team_id, points, goals, assists, clean_sheet, yellow_cards, red_cards, own_goals, penalty_saves, penalty_misses, breakdown, status, updated_at";
 const MATCH_SELECT = "id, home_team_id, away_team_id, home_score, away_score, status, penalty_winner_id, updated_at";
 const PREDICTION_SELECT = "user_id, match_id, home_score, away_score, predicted_winner_team_id, updated_at";
 const COMMENT_SELECT = "id, user_id, match_id, body, created_at";

@@ -988,10 +988,6 @@ export function FantasyProfileDrawer({
             matches={matches}
             breakdownRows={detailBreakdownRows}
             onClose={() => setDetailPlayerId(null)}
-            onViewProfile={() => {
-              setDetailPlayerId(null);
-              onSelectPlayer(detailPlayer.id);
-            }}
           />
         ) : null}
       </aside>
@@ -1026,8 +1022,7 @@ function FantasyPlayerDetailSheet({
   scores,
   matches,
   breakdownRows,
-  onClose,
-  onViewProfile
+  onClose
 }: {
   player: FantasyPlayerOption;
   slot?: FantasyRosterSlot;
@@ -1036,7 +1031,6 @@ function FantasyPlayerDetailSheet({
   matches: Match[];
   breakdownRows: Array<[string, number]>;
   onClose: () => void;
-  onViewProfile: () => void;
 }) {
   const displayPoints = slot?.isCaptain ? stats.points * 2 : stats.points;
   const captainBonus = slot?.isCaptain ? stats.points : 0;
@@ -1133,10 +1127,6 @@ function FantasyPlayerDetailSheet({
               ) : null}
             </div>
           </section>
-
-          <Button className="w-full" onClick={onViewProfile}>
-            View Full Profile
-          </Button>
         </div>
       </aside>
     </div>
