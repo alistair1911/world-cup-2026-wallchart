@@ -1343,6 +1343,12 @@ async function syncScores(request: NextRequest) {
 
     let playerStatsUpdated = 0;
     let fantasyScoresUpdated = 0;
+    let playerAssistStatsFound = playerStats.filter((stat) => stat.assists > 0).length;
+    let playerAssistOnlyStatsFound = playerStats.filter((stat) => stat.assists > 0 && stat.goals === 0).length;
+    let storedAssistStats = 0;
+    let storedAssistOnlyStats = 0;
+    let fantasyAssistScoresUpdated = 0;
+    let fantasyAssistOnlyScoresUpdated = 0;
     let formationRostersCleaned = 0;
     let warning: string | null =
       [setupWarning, ...warnings, ...statWarnings].filter(Boolean).length > 0
@@ -1501,7 +1507,11 @@ async function syncScores(request: NextRequest) {
           matchIdsWithStats.has(match.id) ||
           (match.status === "final" && match.homeScore !== null && match.awayScore !== null)
       );
+      storedAssistStats = allPlayerStats.filter((stat) => stat.assists > 0).length;
+      storedAssistOnlyStats = allPlayerStats.filter((stat) => stat.assists > 0 && stat.goals === 0).length;
       const fantasyScores = buildFantasyScoresFromMatches(fantasyScoreMatches, allPlayerStats, playerCatalog);
+      fantasyAssistScoresUpdated = fantasyScores.filter((score) => score.assists > 0).length;
+      fantasyAssistOnlyScoresUpdated = fantasyScores.filter((score) => score.assists > 0 && score.goals === 0).length;
 
       if (fantasyScoreMatches.length > 0) {
         const matchIds = fantasyScoreMatches.map((match) => match.id);
@@ -1544,8 +1554,14 @@ async function syncScores(request: NextRequest) {
       provider,
       received: feedItems.length,
       playerStatsFound: playerStats.length,
+      playerAssistStatsFound,
+      playerAssistOnlyStatsFound,
       playerStatsUpdated,
       fantasyScoresUpdated,
+      storedAssistStats,
+      storedAssistOnlyStats,
+      fantasyAssistScoresUpdated,
+      fantasyAssistOnlyScoresUpdated,
       formationRostersCleaned,
       materializedKnockoutTeams: resolvedKnockoutUpdates.length + advancedKnockoutUpdates.length,
       cleanedPlaceholders: placeholderCleanups.length,
