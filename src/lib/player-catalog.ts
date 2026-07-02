@@ -112,6 +112,8 @@ const CATALOG_PHOTO_OVERRIDES: Record<string, string> = {
   "brazil-raphinha": "https://b.fssta.com/uploads/application/soccer/headshots/42944.png",
   "portugal-874": "https://b.fssta.com/uploads/application/soccer/headshots/885.png",
   "portugal-cristiano-ronaldo": "https://b.fssta.com/uploads/application/soccer/headshots/885.png",
+  "spain-229018":
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/UEFA_EURO_qualifiers_Sweden_vs_Spain_20191015_108_%28cropped%29.jpg/500px-UEFA_EURO_qualifiers_Sweden_vs_Spain_20191015_108_%28cropped%29.jpg",
   "spain-227765": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Dani_Olmo_2022.jpg"
 };
 

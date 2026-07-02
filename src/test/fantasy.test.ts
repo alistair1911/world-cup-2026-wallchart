@@ -251,6 +251,13 @@ describe("mini-fantasy scoring", () => {
         name: "Cristiano Ronaldo",
         position: "Forward",
         photoUrl: null
+      },
+      {
+        id: "spain-229018",
+        teamId: "spain",
+        name: "Mikel Oyarzabal",
+        position: "Forward",
+        photoUrl: null
       }
     ]);
 
@@ -263,6 +270,9 @@ describe("mini-fantasy scoring", () => {
     expect(merged.find((item) => item.id === "brazil-159047")?.photoUrl).toContain("Marquinhos_Brazil_V_Morocco");
     expect(merged.find((item) => item.id === "portugal-874")?.photoUrl).toBe(
       "https://b.fssta.com/uploads/application/soccer/headshots/885.png"
+    );
+    expect(merged.find((item) => item.id === "spain-229018")?.photoUrl).toContain(
+      "UEFA_EURO_qualifiers_Sweden_vs_Spain"
     );
   });
 

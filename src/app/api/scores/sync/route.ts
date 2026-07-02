@@ -5,6 +5,7 @@ import {
   buildFantasyScoresFromMatches
 } from "@/lib/fantasy";
 import { missingKnownPlayerStatCorrections } from "@/lib/fantasy-stat-corrections";
+import { parseEspnPlayerStats as parseEspnPlayerStatsFromPayload } from "@/lib/espn-player-stats";
 import { mergePlayerCatalog } from "@/lib/player-catalog";
 import { buildScoreUpdates, normalizeScorePayload, resolveKnockoutSeedsForSync, teamMatchesName } from "@/lib/score-sync";
 import { playerId } from "@/lib/profile-data";
@@ -657,94 +658,6 @@ type EspnEventRow = {
   competitors: Array<{ id: string | null; name: string }>;
   details: unknown[];
 };
-
-function readEspnEventRows(payload: unknown) {
-  const record = readEventObject(payload);
-  return Array.isArray(record?.espnEvents) ? (record.espnEvents as EspnEventRow[]) : [];
-}
-
-function espnTeamNameForDetail(row: EspnEventRow, detail: Record<string, unknown>) {
-  const team = readEventObject(detail.team);
-  const teamId = typeof team?.id === "string" || typeof team?.id === "number" ? String(team.id) : null;
-  return row.competitors.find((competitor) => competitor.id === teamId)?.name ?? null;
-}
-
-function espnAthleteName(value: unknown) {
-  const athlete = readEventObject(value);
-  return typeof athlete?.displayName === "string"
-    ? athlete.displayName
-    : typeof athlete?.fullName === "string"
-      ? athlete.fullName
-      : null;
-}
-
-function espnParticipantAthleteName(value: unknown) {
-  const participant = readEventObject(value);
-  return espnAthleteName(participant?.athlete ?? value);
-}
-
-function espnScorerNameForDetail(detail: Record<string, unknown>) {
-  const athletes = Array.isArray(detail.athletesInvolved) ? detail.athletesInvolved : [];
-  const athleteName = espnAthleteName(athletes[0]);
-  if (athleteName) {
-    return athleteName;
-  }
-
-  const participants = Array.isArray(detail.participants) ? detail.participants : [];
-  return participants.map(espnParticipantAthleteName).find((name): name is string => Boolean(name)) ?? null;
-}
-
-function matchForEspnEventRow(row: EspnEventRow, matches: Match[]) {
-  const candidates = matches.filter((match) => {
-    const home = getTeam(match.homeTeamId);
-    const away = getTeam(match.awayTeamId);
-    return home && away && teamMatchesName(home, row.homeTeamName) && teamMatchesName(away, row.awayTeamName);
-  });
-  if (!row.kickoff || candidates.length <= 1) {
-    return candidates[0] ?? null;
-  }
-
-  const kickoffMs = new Date(row.kickoff).getTime();
-  return candidates
-    .map((match) => ({ match, distance: Math.abs(new Date(match.kickoff).getTime() - kickoffMs) }))
-    .sort((a, b) => a.distance - b.distance)[0]?.match ?? null;
-}
-
-function parseEspnPlayerStats(matches: Match[], payload: unknown) {
-  const totals: PlayerMatchStat[] = [];
-
-  for (const row of readEspnEventRows(payload)) {
-    const match = matchForEspnEventRow(row, matches);
-    if (!match) {
-      continue;
-    }
-
-    const matchTotals = new Map<string, PlayerMatchStat>();
-    for (const value of row.details) {
-      const detail = readEventObject(value);
-      if (!detail || detail.scoringPlay !== true || detail.ownGoal === true || detail.shootout === true) {
-        continue;
-      }
-
-      const teamName = espnTeamNameForDetail(row, detail);
-      const team = teamName ? eventTeamForMatch(match, teamName) : null;
-      const scorer = espnScorerNameForDetail(detail);
-      if (!team || !scorer) {
-        continue;
-      }
-
-      addStat(matchTotals, match, team, scorer, "goals");
-    }
-
-    totals.push(...matchTotals.values());
-  }
-
-  return totals.map((stat) => ({
-    ...stat,
-    goals: clampStat(stat.goals),
-    assists: clampStat(stat.assists)
-  }));
-}
 
 type LlmPlayerStatTarget = {
   match: Match;
@@ -1423,7 +1336,7 @@ async function syncScores(request: NextRequest) {
     const statWarnings: string[] = [];
 
     if (provider === "espn") {
-      playerStats.push(...parseEspnPlayerStats([...updatedMatchesById.values()], payload));
+      playerStats.push(...parseEspnPlayerStatsFromPayload([...updatedMatchesById.values()], payload));
     } else if (provider === "api-football") {
       statWarnings.push("Fantasy player scorer sync skipped because ESPN was unavailable.");
     }
