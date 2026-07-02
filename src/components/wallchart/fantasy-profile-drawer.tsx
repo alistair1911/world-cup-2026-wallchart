@@ -12,6 +12,7 @@ import {
   fantasyOptionMap,
   fantasyPlayerOptions,
   fantasyPlayerTotals,
+  fantasyScoreIdsForPlayer,
   isFantasyKnockoutRound,
   normalizeFantasyRosterSlots,
   resolveFantasyPlayerOption,
@@ -236,6 +237,7 @@ export function FantasyProfileDrawer({
   const [formation, setFormation] = useState(savedFormation);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [activeMoveId, setActiveMoveId] = useState<string | null>(null);
+  const [detailPlayerId, setDetailPlayerId] = useState<string | null>(null);
   const [countryFilter, setCountryFilter] = useState("all");
   const [positionFilter, setPositionFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
@@ -403,6 +405,30 @@ export function FantasyProfileDrawer({
         b.stats.assists - a.stats.assists ||
         a.player.name.localeCompare(b.player.name)
     );
+  const detailPlayer = detailPlayerId ? drawerPlayerOption(detailPlayerId, optionMap, playerCatalog) : undefined;
+  const detailSlot = detailPlayer
+    ? normalizedDraft.find((slot) => fantasyScoreIdsForPlayer(detailPlayer.id, playerCatalog).includes(slot.playerId) || slot.playerId === detailPlayer.id)
+    : undefined;
+  const detailStats = detailPlayer ? draftStats.get(detailPlayer.id) ?? fantasyPlayerTotals(detailPlayer.id, scores, playerCatalog) : EMPTY_PLAYER_TOTALS;
+  const detailScoreIds = detailPlayer ? new Set(fantasyScoreIdsForPlayer(detailPlayer.id, playerCatalog)) : new Set<string>();
+  const detailScores = detailPlayer
+    ? scores
+        .filter((score) => detailScoreIds.has(score.playerId))
+        .sort((a, b) => {
+          const matchA = matches.find((match) => match.id === a.matchId);
+          const matchB = matches.find((match) => match.id === b.matchId);
+          return new Date(matchA?.kickoff ?? "").getTime() - new Date(matchB?.kickoff ?? "").getTime();
+        })
+    : [];
+  const detailBreakdown = detailScores.reduce<Record<string, number>>((total, score) => {
+    for (const [key, value] of Object.entries(score.breakdown ?? {})) {
+      total[key] = (total[key] ?? 0) + value;
+    }
+    return total;
+  }, {});
+  const detailBreakdownRows = Object.entries(detailBreakdown)
+    .filter(([, value]) => value !== 0)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
 
   function moveToStarter(playerId: string, targetIndex: number) {
     if (!canEdit) {
@@ -698,7 +724,7 @@ export function FantasyProfileDrawer({
                               onDrop={(playerId) => moveToStarter(playerId, index)}
                               onPickUp={pickUpPlayer}
                               onRemove={removePlayer}
-                              onSelectPlayer={onSelectPlayer}
+                              onSelectPlayer={setDetailPlayerId}
                               onSetCaptain={setCaptain}
                             />
                           ))}
@@ -763,7 +789,7 @@ export function FantasyProfileDrawer({
                       onDragStart={setDraggingId}
                       onPickUp={pickUpPlayer}
                       onRemove={removePlayer}
-                      onSelectPlayer={onSelectPlayer}
+                      onSelectPlayer={setDetailPlayerId}
                     />
                   ))
                 )}
@@ -894,7 +920,7 @@ export function FantasyProfileDrawer({
                     <button
                       key={slot.playerId}
                       type="button"
-                      onClick={() => onSelectPlayer(slot.playerId)}
+                      onClick={() => setDetailPlayerId(slot.playerId)}
                       className="w-full rounded-lg bg-slate-50 p-2.5 text-left ring-1 ring-slate-200 transition hover:bg-white hover:ring-cup-gold/50"
                     >
                       <div className="flex items-center gap-3">
@@ -952,11 +978,178 @@ export function FantasyProfileDrawer({
             <MiniStat label="Countries" value={selectedTeams.size} />
           </div>
         </div>
+
+        {detailPlayer ? (
+          <FantasyPlayerDetailSheet
+            player={detailPlayer}
+            slot={detailSlot}
+            stats={detailStats}
+            scores={detailScores}
+            matches={matches}
+            breakdownRows={detailBreakdownRows}
+            onClose={() => setDetailPlayerId(null)}
+            onViewProfile={() => {
+              setDetailPlayerId(null);
+              onSelectPlayer(detailPlayer.id);
+            }}
+          />
+        ) : null}
       </aside>
     </div>
   );
 
   return mounted ? createPortal(drawer, document.body) : null;
+}
+
+const FANTASY_BREAKDOWN_LABELS: Record<string, string> = {
+  goals: "Goals",
+  assists: "Assists",
+  cleanSheet: "Clean sheet",
+  teamResult: "Team result",
+  oneGoalConceded: "One goal conceded",
+  goalsConceded: "Goals conceded",
+  yellowCards: "Yellow cards",
+  redCards: "Red cards",
+  ownGoals: "Own goals",
+  penaltySaves: "Penalty saves",
+  penaltyMisses: "Penalty misses"
+};
+
+function formatPointValue(value: number) {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function FantasyPlayerDetailSheet({
+  player,
+  slot,
+  stats,
+  scores,
+  matches,
+  breakdownRows,
+  onClose,
+  onViewProfile
+}: {
+  player: FantasyPlayerOption;
+  slot?: FantasyRosterSlot;
+  stats: ReturnType<typeof fantasyPlayerTotals>;
+  scores: FantasyPlayerMatchScore[];
+  matches: Match[];
+  breakdownRows: Array<[string, number]>;
+  onClose: () => void;
+  onViewProfile: () => void;
+}) {
+  const displayPoints = slot?.isCaptain ? stats.points * 2 : stats.points;
+  const captainBonus = slot?.isCaptain ? stats.points : 0;
+  const portrait = player.photoUrl ?? avatarUrl(player.name);
+
+  return (
+    <div className="absolute inset-0 z-20 flex justify-end bg-cup-ink/35 backdrop-blur-[2px]">
+      <button type="button" aria-label="Close player point breakdown" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <aside className="saved-pop relative flex h-full w-full max-w-sm flex-col overflow-y-auto bg-white shadow-2xl sm:rounded-l-2xl">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 p-3 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase text-cup-red">Fantasy Points</div>
+              <h3 className="mt-1 truncate text-xl font-black text-cup-ink">{player.name}</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-1 text-xs font-bold text-slate-500">
+                <Flag team={player.team} />
+                <span>{player.team.name}</span>
+                <Badge tone="green">{player.fantasyPosition}</Badge>
+                {slot?.isCaptain ? <Badge tone="gold">Captain</Badge> : null}
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close player point breakdown">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3 p-3">
+          <section className="overflow-hidden rounded-lg bg-gradient-to-br from-cup-ink via-pitch-800 to-cup-red text-white shadow-sm">
+            <img src={portrait} alt={`${player.name} portrait`} className="h-64 w-full object-cover object-top" />
+            <div className="grid grid-cols-4 gap-2 p-3">
+              <DetailMetric label="Pts" value={displayPoints} highlight />
+              <DetailMetric label="Goals" value={stats.goals} />
+              <DetailMetric label="Assists" value={stats.assists} />
+              <DetailMetric label="CS" value={stats.cleanSheets} />
+            </div>
+          </section>
+
+          <section className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-xs font-black uppercase text-slate-600">Point Breakdown</h4>
+              <Badge tone="slate">{scores.length} match{scores.length === 1 ? "" : "es"}</Badge>
+            </div>
+            <div className="grid gap-2">
+              {breakdownRows.map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between rounded-md bg-slate-50 px-2 py-2 ring-1 ring-slate-200">
+                  <span className="text-xs font-black text-cup-ink">{FANTASY_BREAKDOWN_LABELS[key] ?? key}</span>
+                  <span className={`text-sm font-black ${value >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatPointValue(value)}</span>
+                </div>
+              ))}
+              {captainBonus > 0 ? (
+                <div className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-2 ring-1 ring-amber-100">
+                  <span className="text-xs font-black text-cup-ink">Captain bonus</span>
+                  <span className="text-sm font-black text-amber-700">+{captainBonus}</span>
+                </div>
+              ) : null}
+              {breakdownRows.length === 0 && captainBonus <= 0 ? (
+                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                  No scoring events for this player in this fantasy round yet.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+            <h4 className="mb-2 text-xs font-black uppercase text-slate-600">Match Details</h4>
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {scores.map((score) => {
+                const match = matches.find((item) => item.id === score.matchId);
+                return (
+                  <div key={`${score.matchId}-${score.playerId}`} className="rounded-md bg-slate-50 p-2 ring-1 ring-slate-200">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-cup-ink">
+                          {match ? `Match ${match.matchNumber}` : score.matchId}
+                        </div>
+                        <div className="mt-0.5 text-[10px] font-bold text-slate-500">
+                          G {score.goals} / A {score.assists}
+                          {score.cleanSheet ? " / Clean sheet" : ""}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-white px-2 py-1 text-right ring-1 ring-slate-200">
+                        <div className="text-sm font-black text-cup-red">{score.points}</div>
+                        <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {scores.length === 0 ? (
+                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                  No fantasy score rows found for this round.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <Button className="w-full" onClick={onViewProfile}>
+            View Full Profile
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailMetric({ label, value, highlight = false }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`rounded-md p-2 text-center ring-1 ${highlight ? "bg-cup-gold text-cup-ink ring-cup-gold" : "bg-white/12 text-white ring-white/20"}`}>
+      <div className="text-[9px] font-black uppercase opacity-75">{label}</div>
+      <div className="mt-1 text-xl font-black leading-none">{value}</div>
+    </div>
+  );
 }
 
 function MiniStat({ label, value }: { label: string; value: number }) {
