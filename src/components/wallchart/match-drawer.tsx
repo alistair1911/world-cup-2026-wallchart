@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Check, MessageCircle, Plus, Send, Sparkles, Lock, Save, Trash2, UsersRound, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, Goal, Handshake, MessageCircle, Plus, Send, Sparkles, Lock, Save, Trash2, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -336,6 +336,10 @@ export function MatchDrawer({
     }).format(new Date(value));
   }
 
+  const recordedGoals = statDrafts.reduce((total, draft) => total + statNumber(draft.goals), 0);
+  const recordedAssists = statDrafts.reduce((total, draft) => total + statNumber(draft.assists), 0);
+  const recordedPlayers = statDrafts.filter((draft) => statNumber(draft.goals) > 0 || statNumber(draft.assists) > 0).length;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-cup-ink/35">
       <button type="button" aria-label="Close drawer backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
@@ -493,63 +497,108 @@ export function MatchDrawer({
             </details>
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-gradient-to-br from-white to-cup-sky p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
-                <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                  Goals and assists feed Mini-Fantasy points. Provider sync can fill this, and you can correct it here.
-                </p>
+          <section className="overflow-hidden rounded-lg border border-emerald-200 bg-white shadow-sm">
+            <div className="border-b border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cup-sky p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-700">Player Stats</h3>
+                  <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
+                    Scorers and assist providers feed Mini-Fantasy points. Provider sync can fill this, and you can correct it here.
+                  </p>
+                </div>
+                <Badge tone="green">Fantasy source</Badge>
               </div>
-              <Badge tone="green">Fantasy source</Badge>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <StatSummaryTile label="Players" value={recordedPlayers} />
+                <StatSummaryTile label="Goals" value={recordedGoals} icon={<Goal className="h-3.5 w-3.5" />} tone="red" />
+                <StatSummaryTile label="Assists" value={recordedAssists} icon={<Handshake className="h-3.5 w-3.5" />} tone="green" />
+              </div>
             </div>
-            <div className="mt-3 space-y-2">
+
+            <div className="space-y-3 p-4">
               {statDrafts.length === 0 ? (
-                <div className="rounded-md border border-dashed border-slate-300 bg-white/70 p-3 text-center text-xs font-bold text-slate-500">
-                  No player stats recorded yet.
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+                  <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+                    <Goal className="h-5 w-5" />
+                  </div>
+                  <div className="text-sm font-black text-cup-ink">No player stats recorded yet</div>
+                  <p className="mt-1 text-xs font-bold text-slate-500">Add scorers and assist providers when the match events are confirmed.</p>
                 </div>
               ) : null}
-              {statDrafts.map((draft, index) => (
-                <div key={`${draft.playerId}-${index}`} className="grid grid-cols-[1fr_58px_58px_36px] items-center gap-2 rounded-md bg-white p-2 ring-1 ring-slate-200">
-                  <select
-                    value={draft.playerId}
-                    onChange={(event) => selectStatPlayer(index, event.target.value)}
-                    className="h-10 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs font-black text-cup-ink outline-none focus:border-cup-gold"
+
+              {statDrafts.map((draft, index) => {
+                const draftTeam =
+                  draft.teamId === resolvedHome?.id ? resolvedHome : draft.teamId === resolvedAway?.id ? resolvedAway : null;
+                const draftGoals = statNumber(draft.goals);
+                const draftAssists = statNumber(draft.assists);
+
+                return (
+                  <div
+                    key={`${draft.playerId}-${index}`}
+                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md"
                   >
-                    {statPlayerOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.team.code} - {option.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Input
-                    aria-label={`${draft.playerName} goals`}
-                    className="h-10 text-center text-sm font-black"
-                    inputMode="numeric"
-                    placeholder="G"
-                    value={draft.goals}
-                    onChange={(event) => updateStatDraft(index, { goals: event.target.value.replace(/\D/g, "").slice(0, 2) })}
-                  />
-                  <Input
-                    aria-label={`${draft.playerName} assists`}
-                    className="h-10 text-center text-sm font-black"
-                    inputMode="numeric"
-                    placeholder="A"
-                    value={draft.assists}
-                    onChange={(event) => updateStatDraft(index, { assists: event.target.value.replace(/\D/g, "").slice(0, 2) })}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setStatDrafts((current) => current.filter((_draft, draftIndex) => draftIndex !== index))}
-                    aria-label={`Remove ${draft.playerName} stats`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-50 ring-1 ring-slate-200">
+                        <Flag team={draftTeam} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                            {draftTeam?.code ?? "Team"}
+                          </span>
+                          <StatRoleChip type="goal" value={draftGoals} />
+                          <StatRoleChip type="assist" value={draftAssists} />
+                        </div>
+
+                        <select
+                          value={draft.playerId}
+                          onChange={(event) => selectStatPlayer(index, event.target.value)}
+                          className="h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm font-black text-cup-ink outline-none focus:border-cup-gold"
+                        >
+                          {statPlayerOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.team.code} - {option.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setStatDrafts((current) => current.filter((_draft, draftIndex) => draftIndex !== index))}
+                        aria-label={`Remove ${draft.playerName} stats`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <StatNumberField
+                        label="Goals"
+                        icon={<Goal className="h-4 w-4" />}
+                        value={draft.goals}
+                        placeholder="0"
+                        ariaLabel={`${draft.playerName} goals`}
+                        onChange={(value) => updateStatDraft(index, { goals: value })}
+                        tone="red"
+                      />
+                      <StatNumberField
+                        label="Assists"
+                        icon={<Handshake className="h-4 w-4" />}
+                        value={draft.assists}
+                        placeholder="0"
+                        ariaLabel={`${draft.playerName} assists`}
+                        onChange={(value) => updateStatDraft(index, { assists: value })}
+                        tone="green"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+
+            <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50 p-3">
               <Button variant="secondary" onClick={addStatDraft} disabled={statPlayerOptions.length === 0}>
                 <Plus className="h-4 w-4" />
                 Add Player
@@ -770,5 +819,90 @@ function ScoreRow({
         {score ?? "-"}
       </div>
     </div>
+  );
+}
+
+function StatSummaryTile({
+  label,
+  value,
+  icon,
+  tone = "slate"
+}: {
+  label: string;
+  value: number;
+  icon?: ReactNode;
+  tone?: "green" | "red" | "slate";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "bg-emerald-100 text-emerald-800"
+      : tone === "red"
+        ? "bg-red-100 text-red-800"
+        : "bg-slate-100 text-slate-700";
+
+  return (
+    <div className="rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase text-slate-500">{label}</span>
+        {icon ? <span className={`grid h-6 w-6 place-items-center rounded-full ${toneClass}`}>{icon}</span> : null}
+      </div>
+      <div className="mt-1 text-2xl font-black leading-none text-cup-ink">{value}</div>
+    </div>
+  );
+}
+
+function StatRoleChip({ type, value }: { type: "goal" | "assist"; value: number }) {
+  const active = value > 0;
+  const isGoal = type === "goal";
+  const Icon = isGoal ? Goal : Handshake;
+  const label = isGoal ? "Scored" : "Assisted";
+  const activeClass = isGoal ? "bg-red-100 text-red-800 ring-red-200" : "bg-emerald-100 text-emerald-800 ring-emerald-200";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase ring-1 ${
+        active ? activeClass : "bg-white text-slate-400 ring-slate-200"
+      }`}
+    >
+      <Icon className="h-3 w-3" />
+      {active ? `${label} ${value}` : isGoal ? "No goal" : "No assist"}
+    </span>
+  );
+}
+
+function StatNumberField({
+  label,
+  icon,
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+  tone
+}: {
+  label: string;
+  icon: ReactNode;
+  value: string;
+  placeholder: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+  tone: "green" | "red";
+}) {
+  const toneClass = tone === "green" ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50";
+
+  return (
+    <label className="block rounded-md border border-slate-200 bg-slate-50 p-2">
+      <span className={`mb-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase ${toneClass}`}>
+        {icon}
+        {label}
+      </span>
+      <Input
+        aria-label={ariaLabel}
+        className="h-10 bg-white text-center text-lg font-black"
+        inputMode="numeric"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 2))}
+      />
+    </label>
   );
 }
