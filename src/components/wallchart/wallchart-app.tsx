@@ -8,9 +8,11 @@ import { Panel } from "@/components/ui/panel";
 import { getCurrentSession, isSupabaseMode, signOutFamily } from "@/lib/auth";
 import {
   activeFantasyRound,
+  buildFantasyScoresFromMatches,
   eligibleTeamIdsForFantasyRound,
   fantasyOptionMap,
   isFantasyKnockoutRound,
+  mergeFantasyScores,
   normalizeFantasyRoundId,
   resolveFantasyPlayerOption,
   rostersForFantasyRound,
@@ -203,7 +205,14 @@ export function WallchartApp() {
 
   const standings = useMemo(() => buildStandings(matches), [matches]);
   const leaderboard = useMemo(() => buildLeaderboard(matches, predictions), [matches, predictions]);
-  const effectiveFantasyScores = fantasyScores;
+  const derivedFantasyScores = useMemo(
+    () => buildFantasyScoresFromMatches(matches, playerStats, playerCatalog),
+    [matches, playerCatalog, playerStats]
+  );
+  const effectiveFantasyScores = useMemo(
+    () => mergeFantasyScores(fantasyScores, derivedFantasyScores, playerCatalog),
+    [derivedFantasyScores, fantasyScores, playerCatalog]
+  );
   const currentFantasyRound = useMemo(() => activeFantasyRound(matches), [matches]);
   const currentFantasyRosters = useMemo(
     () => rostersForFantasyRound(currentFantasyRound.id, fantasyRosters),

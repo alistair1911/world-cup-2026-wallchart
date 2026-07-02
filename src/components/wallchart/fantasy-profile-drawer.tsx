@@ -1058,9 +1058,9 @@ function FantasyPlayerDetailSheet({
           </div>
         </div>
 
-        <div className="space-y-3 p-3">
+        <div className="space-y-3 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <section className="overflow-hidden rounded-lg bg-gradient-to-br from-cup-ink via-pitch-800 to-cup-red text-white shadow-sm">
-            <img src={portrait} alt={`${player.name} portrait`} className="h-64 w-full object-cover object-top" />
+            <img src={portrait} alt={`${player.name} portrait`} className="h-52 w-full object-cover object-top sm:h-64" />
             <div className="grid grid-cols-4 gap-2 p-3">
               <DetailMetric label="Pts" value={displayPoints} highlight />
               <DetailMetric label="Goals" value={stats.goals} />
@@ -1097,7 +1097,7 @@ function FantasyPlayerDetailSheet({
 
           <section className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
             <h4 className="mb-2 text-xs font-black uppercase text-slate-600">Match Details</h4>
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-64 space-y-2 overflow-y-auto pr-1 sm:max-h-72">
               {scores.map((score) => {
                 const match = matches.find((item) => item.id === score.matchId);
                 return (

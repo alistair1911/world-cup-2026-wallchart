@@ -432,6 +432,63 @@ describe("mini-fantasy scoring", () => {
     });
   });
 
+  it("lets derived player stats override stale zero stored fantasy rows", () => {
+    const match = {
+      ...INITIAL_MATCHES.find((item) => item.homeTeamId === "spain" && item.awayTeamId === "cabo-verde")!,
+      status: "final" as const,
+      homeScore: 1,
+      awayScore: 0
+    };
+    const catalog: PlayerCatalogItem[] = [
+      {
+        id: "spain-227765",
+        teamId: "spain",
+        name: "Dani Olmo",
+        position: "Midfielder"
+      }
+    ];
+    const staleStored: FantasyPlayerMatchScore[] = [
+      {
+        matchId: match.id,
+        playerId: "spain-227765",
+        teamId: "spain",
+        points: 0,
+        goals: 0,
+        assists: 0,
+        cleanSheet: false,
+        yellowCards: 0,
+        redCards: 0,
+        ownGoals: 0,
+        penaltySaves: 0,
+        penaltyMisses: 0,
+        breakdown: {},
+        status: "confirmed"
+      }
+    ];
+    const derived = buildFantasyScoresFromMatches(
+      [match],
+      [
+        {
+          matchId: match.id,
+          playerId: "spain-dani-olmo",
+          playerName: "Dani Olmo",
+          teamId: "spain",
+          goals: 1,
+          assists: 0,
+          updatedBy: null,
+          updatedAt: "2026-07-02T00:00:00.000Z"
+        }
+      ],
+      catalog
+    );
+    const merged = mergeFantasyScores(staleStored, derived, catalog);
+
+    expect(fantasyPlayerTotals("spain-227765", merged, catalog)).toMatchObject({
+      goals: 1,
+      points: 8
+    });
+  });
+
   it("keeps legacy global rosters as Group Stage rosters and separates round scoring", () => {
     const matches = INITIAL_MATCHES.map((match) =>
       match.phase === "group" ? { ...match, status: "final" as const, homeScore: 0, awayScore: 0 } : match
