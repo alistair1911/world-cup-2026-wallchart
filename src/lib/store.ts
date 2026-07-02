@@ -243,7 +243,7 @@ function duplicateKnockoutPlayerMessage(playerId: string) {
 
 async function fetchPlayerCatalogRows() {
   try {
-    const response = await fetch("/api/fantasy/players?catalog=merged-photo-v2", { cache: "force-cache" });
+    const response = await fetch("/api/fantasy/players?catalog=validated-photo-v3", { cache: "force-cache" });
     const payload = (await response.json().catch(() => ({}))) as PlayerCatalogPayload;
     if (response.ok && payload.ok !== false && Array.isArray(payload.players) && payload.players.length > 0) {
       return {

@@ -217,7 +217,9 @@ describe("mini-fantasy scoring", () => {
     ]);
     const player = merged.find((item) => item.id === "canada-123456");
 
-    expect(player?.photoUrl).toBe("https://media.api-sports.io/football/players/123456.png");
+    expect(player?.photoUrl).toContain("/api/player-photo?");
+    expect(player?.photoUrl).toContain(encodeURIComponent("https://media.api-sports.io/football/players/123456.png"));
+    expect(player?.photoUrl).toContain("Canada+Provider+Player");
   });
 
   it("uses trusted portrait overrides for provider placeholder images", () => {

@@ -119,22 +119,35 @@ function playerCatalogIdSuffix(row: Pick<PlayerCatalogItem, "id" | "teamId">) {
   return row.id.startsWith(`${row.teamId}-`) ? row.id.slice(row.teamId.length + 1) : row.id;
 }
 
-function providerPhotoUrl(row: Pick<PlayerCatalogItem, "id" | "teamId" | "photoUrl">) {
+function proxiedApiSportsPhotoUrl(source: string, playerName: string) {
+  const params = new URLSearchParams({
+    src: source,
+    name: playerName
+  });
+  return `/api/player-photo?${params.toString()}`;
+}
+
+function providerPhotoUrl(row: Pick<PlayerCatalogItem, "id" | "teamId" | "name" | "photoUrl">) {
   const override = CATALOG_PHOTO_OVERRIDES[row.id];
   if (override) {
     return override;
   }
 
   if (row.photoUrl) {
-    return row.photoUrl;
+    return isGeneratedProviderPhoto(row.photoUrl) ? proxiedApiSportsPhotoUrl(row.photoUrl, row.name) : row.photoUrl;
   }
 
   const suffix = playerCatalogIdSuffix(row);
-  return /^\d+$/.test(suffix) ? `https://media.api-sports.io/football/players/${suffix}.png` : null;
+  return /^\d+$/.test(suffix)
+    ? proxiedApiSportsPhotoUrl(`https://media.api-sports.io/football/players/${suffix}.png`, row.name)
+    : null;
 }
 
 function isGeneratedProviderPhoto(value: string | null | undefined) {
-  return Boolean(value?.startsWith("https://media.api-sports.io/football/players/"));
+  return Boolean(
+    value?.startsWith("https://media.api-sports.io/football/players/") ||
+      value?.startsWith("/api/player-photo?")
+  );
 }
 
 function mergePhotoUrl(existing: string | null | undefined, incoming: string | null | undefined) {
