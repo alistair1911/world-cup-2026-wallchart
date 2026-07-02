@@ -28,13 +28,72 @@ function teamScoreForStat(stat: PlayerMatchStat, match: Match | undefined) {
   return null;
 }
 
+function usablePlayerName(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return null;
+  }
+  if (/^unknown$/i.test(trimmed) || /^player$/i.test(trimmed) || /^player\s+\d+$/i.test(trimmed)) {
+    return null;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function providerIdKeys(value: string) {
+  const keys = new Set<string>();
+  const segments = value
+    .split(/[/:|\\-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const candidate of [value, segments.at(-1) ?? ""]) {
+    const normalized = candidate
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (/^\d+$/.test(normalized)) {
+      keys.add(normalized);
+    }
+  }
+
+  return keys;
+}
+
+function teamScopedCatalogPlayer(stat: PlayerMatchStat, playerCatalog: PlayerCatalogItem[]) {
+  const statKeys = providerIdKeys(stat.playerId);
+  if (statKeys.size === 0) {
+    return null;
+  }
+
+  const matches = playerCatalog.filter((player) => {
+    if (player.teamId !== stat.teamId) {
+      return false;
+    }
+    const playerKeys = providerIdKeys(player.id);
+    return [...statKeys].some((key) => playerKeys.has(key));
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function fallbackPlayerName(stat: PlayerMatchStat, team: Team) {
+  const providerKey = [...providerIdKeys(stat.playerId)].at(0);
+  return providerKey ? `${team.code} player ${providerKey}` : `${team.code} player`;
+}
+
 function canonicalizeStat(stat: PlayerMatchStat, playerCatalog: PlayerCatalogItem[]) {
-  const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: stat.playerName, teamId: stat.teamId }, playerCatalog);
+  const statName = usablePlayerName(stat.playerName);
+  const option = resolveFantasyPlayerOption({ playerId: stat.playerId, playerName: statName, teamId: stat.teamId }, playerCatalog);
+  const catalogPlayer = option ? null : teamScopedCatalogPlayer(stat, playerCatalog);
   return {
     ...stat,
-    playerId: option?.id ?? stat.playerId,
-    playerName: option?.name ?? stat.playerName,
-    teamId: option?.team.id ?? stat.teamId
+    playerId: option?.id ?? catalogPlayer?.id ?? stat.playerId,
+    playerName: option?.name ?? catalogPlayer?.name ?? statName ?? stat.playerName,
+    teamId: option?.team.id ?? catalogPlayer?.teamId ?? stat.teamId
   };
 }
 
@@ -91,12 +150,13 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
     if (!team) {
       continue;
     }
+    const playerName = profile?.player.name ?? catalogPlayer?.name ?? usablePlayerName(stat.playerName) ?? fallbackPlayerName(stat, team);
 
     const existing =
       totals.get(stat.playerId) ??
       {
         playerId: stat.playerId,
-        playerName: profile?.player.name ?? catalogPlayer?.name ?? stat.playerName,
+        playerName,
         team,
         photoUrl: profile?.player.photoUrl ?? catalogPlayer?.photoUrl ?? undefined,
         position: profile?.player.position ?? catalogPlayer?.position ?? "Player",

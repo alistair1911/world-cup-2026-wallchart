@@ -97,4 +97,72 @@ describe("player stat leaderboards", () => {
     expect(leaders.topScorers).toHaveLength(1);
     expect(leaders.topScorers[0]).toMatchObject({ playerName: "Jonathan David", goals: 3 });
   });
+
+  it("uses catalog names instead of Unknown for provider-id scorer rows", () => {
+    const match = {
+      ...INITIAL_MATCHES[0],
+      id: "M-netherlands-provider",
+      homeTeamId: "netherlands",
+      awayTeamId: "tunisia",
+      homeScore: 2,
+      awayScore: 0,
+      status: "final" as const
+    };
+    const playerCatalog: PlayerCatalogItem[] = [
+      {
+        id: "netherlands-583",
+        teamId: "netherlands",
+        name: "Cody Gakpo",
+        position: "Forward",
+        photoUrl: "/players/netherlands-cody-gakpo.jpg"
+      }
+    ];
+    const stats: PlayerMatchStat[] = [
+      {
+        matchId: "M-netherlands-provider",
+        playerId: "58/583",
+        playerName: "Unknown",
+        teamId: "netherlands",
+        goals: 1,
+        assists: 0
+      }
+    ];
+
+    const leaders = buildPlayerStatLeaders(stats, [match], playerCatalog);
+
+    expect(leaders.topScorers[0]).toMatchObject({
+      playerId: "netherlands-583",
+      playerName: "Cody Gakpo",
+      goals: 1
+    });
+  });
+
+  it("uses team-scoped labels instead of Unknown when a scorer cannot be resolved", () => {
+    const match = {
+      ...INITIAL_MATCHES[0],
+      id: "M-japan-unresolved",
+      homeTeamId: "japan",
+      awayTeamId: "sweden",
+      homeScore: 1,
+      awayScore: 0,
+      status: "final" as const
+    };
+    const stats: PlayerMatchStat[] = [
+      {
+        matchId: "M-japan-unresolved",
+        playerId: "japan-999999",
+        playerName: "Unknown",
+        teamId: "japan",
+        goals: 1,
+        assists: 0
+      }
+    ];
+
+    const leaders = buildPlayerStatLeaders(stats, [match], []);
+
+    expect(leaders.topScorers[0]).toMatchObject({
+      playerName: "JPN player 999999",
+      goals: 1
+    });
+  });
 });
