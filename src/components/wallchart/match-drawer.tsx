@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Goal, Handshake, MessageCircle, Plus, Send, Sparkles, Lock, Save, Trash2, UsersRound, X } from "lucide-react";
+import { Check, Goal, Handshake, MessageCircle, Send, Sparkles, Lock, Save, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildCommentSuggestions } from "@/lib/comment-suggestions";
-import { fantasyPlayerOptions, resolveFantasyPlayerOption } from "@/lib/fantasy";
+import { resolveFantasyPlayerOption } from "@/lib/fantasy";
 import { getTeamProfile } from "@/lib/profile-data";
 import { FAMILY_USERS } from "@/lib/tournament-data";
 import { findPrediction, scorePrediction } from "@/lib/predictions";
@@ -80,7 +80,6 @@ export function MatchDrawer({
   onSaveResult,
   onSavePrediction,
   onSaveComment,
-  onSavePlayerStats,
   onSelectTeam,
   playerStats,
   playerCatalog
@@ -112,15 +111,6 @@ export function MatchDrawer({
     () => (match ? buildCommentSuggestions(match, resolvedHome, resolvedAway) : []),
     [match, resolvedHome, resolvedAway]
   );
-  const statPlayerOptions = useMemo(
-    () =>
-      fantasyPlayerOptions(playerCatalog).filter(
-        (option) => option.team.id === resolvedHome?.id || option.team.id === resolvedAway?.id
-      ),
-    [playerCatalog, resolvedAway?.id, resolvedHome?.id]
-  );
-  const statPlayerOptionMap = useMemo(() => new Map(statPlayerOptions.map((option) => [option.id, option])), [statPlayerOptions]);
-
   useEffect(() => {
     if (!match) {
       return;
@@ -243,90 +233,6 @@ export function MatchDrawer({
     return Number.isFinite(parsed) ? Math.max(0, Math.min(20, parsed)) : 0;
   }
 
-  function addStatDraft() {
-    const next = statPlayerOptions.find((option) => !statDrafts.some((draft) => draft.playerId === option.id));
-    if (!next) {
-      return;
-    }
-
-    setStatDrafts((current) => [
-      ...current,
-      {
-        playerId: next.id,
-        playerName: next.name,
-        teamId: next.team.id,
-        goals: "",
-        assists: ""
-      }
-    ]);
-  }
-
-  function updateStatDraft(index: number, updates: Partial<PlayerStatDraft>) {
-    setStatDrafts((current) => current.map((draft, draftIndex) => (draftIndex === index ? { ...draft, ...updates } : draft)));
-  }
-
-  function selectStatPlayer(index: number, playerId: string) {
-    const option = statPlayerOptionMap.get(playerId);
-    if (!option) {
-      return;
-    }
-
-    updateStatDraft(index, {
-      playerId: option.id,
-      playerName: option.name,
-      teamId: option.team.id
-    });
-  }
-
-  async function handlePlayerStatsSave() {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const statsByPlayer = new Map<string, PlayerMatchStat>();
-      for (const draft of statDrafts) {
-        const next = {
-          matchId: activeMatch.id,
-          playerId: draft.playerId,
-          playerName: draft.playerName,
-          teamId: draft.teamId,
-          goals: statNumber(draft.goals),
-          assists: statNumber(draft.assists),
-          updatedBy: session.userKey,
-          updatedAt: new Date().toISOString()
-        } satisfies PlayerMatchStat;
-
-        if (next.goals <= 0 && next.assists <= 0) {
-          continue;
-        }
-
-        const existing = statsByPlayer.get(next.playerId);
-        statsByPlayer.set(next.playerId, {
-          ...next,
-          goals: Math.max(existing?.goals ?? 0, next.goals),
-          assists: Math.max(existing?.assists ?? 0, next.assists)
-        });
-      }
-
-      const stats = [...statsByPlayer.values()];
-
-      await onSavePlayerStats(activeMatch.id, stats);
-      setStatDrafts(
-        stats.map((stat) => ({
-          playerId: stat.playerId,
-          playerName: stat.playerName,
-          teamId: stat.teamId,
-          goals: stat.goals ? String(stat.goals) : "",
-          assists: stat.assists ? String(stat.assists) : ""
-        }))
-      );
-      setMessage("Player stats saved. Fantasy points updated.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save player stats.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   function formatCommentTime(value: string) {
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
@@ -339,6 +245,69 @@ export function MatchDrawer({
   const recordedGoals = statDrafts.reduce((total, draft) => total + statNumber(draft.goals), 0);
   const recordedAssists = statDrafts.reduce((total, draft) => total + statNumber(draft.assists), 0);
   const recordedPlayers = statDrafts.filter((draft) => statNumber(draft.goals) > 0 || statNumber(draft.assists) > 0).length;
+  const statDraftViews = statDrafts
+    .map((draft, index) => ({
+      draft,
+      index,
+      goals: statNumber(draft.goals),
+      assists: statNumber(draft.assists)
+    }))
+    .sort((a, b) => {
+      const aRank = a.goals > 0 ? 0 : a.assists > 0 ? 1 : 2;
+      const bRank = b.goals > 0 ? 0 : b.assists > 0 ? 1 : 2;
+      return aRank - bRank || b.goals - a.goals || b.assists - a.assists || a.draft.playerName.localeCompare(b.draft.playerName);
+    });
+  const scorerDrafts = statDraftViews.filter((item) => item.goals > 0);
+  const assistDrafts = statDraftViews.filter((item) => item.goals === 0 && item.assists > 0);
+
+  function renderStatDraftCard({
+    draft,
+    index,
+    goals,
+    assists
+  }: {
+    draft: PlayerStatDraft;
+    index: number;
+    goals: number;
+    assists: number;
+  }) {
+    const draftTeam = draft.teamId === resolvedHome?.id ? resolvedHome : draft.teamId === resolvedAway?.id ? resolvedAway : null;
+
+    return (
+      <div
+        key={`${draft.playerId}-${index}`}
+        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-50 ring-1 ring-slate-200">
+            <Flag team={draftTeam} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="truncate text-sm font-black text-cup-ink">{draft.playerName}</div>
+              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                {draftTeam?.code ?? "Team"}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <StatRoleChip type="goal" value={goals} />
+              <StatRoleChip type="assist" value={assists} />
+            </div>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 overflow-hidden rounded-md bg-slate-50 text-center ring-1 ring-slate-200">
+            <div className="min-w-11 border-r border-slate-200 px-2 py-1">
+              <div className="text-sm font-black text-red-700">{goals}</div>
+              <div className="text-[9px] font-black uppercase text-slate-400">G</div>
+            </div>
+            <div className="min-w-11 px-2 py-1">
+              <div className="text-sm font-black text-emerald-700">{assists}</div>
+              <div className="text-[9px] font-black uppercase text-slate-400">A</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-cup-ink/35">
@@ -503,10 +472,10 @@ export function MatchDrawer({
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-700">Player Stats</h3>
                   <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                    Scorers and assist providers feed Mini-Fantasy points. Provider sync can fill this, and you can correct it here.
+                    Synced scorers and assist providers that feed Mini-Fantasy points.
                   </p>
                 </div>
-                <Badge tone="green">Fantasy source</Badge>
+                <Badge tone="green">Synced source</Badge>
               </div>
 
               <div className="mt-4 grid grid-cols-3 gap-2">
@@ -516,97 +485,31 @@ export function MatchDrawer({
               </div>
             </div>
 
-            <div className="space-y-3 p-4">
+            <div className="p-4">
               {statDrafts.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
                   <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
                     <Goal className="h-5 w-5" />
                   </div>
                   <div className="text-sm font-black text-cup-ink">No player stats recorded yet</div>
-                  <p className="mt-1 text-xs font-bold text-slate-500">Add scorers and assist providers when the match events are confirmed.</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">Scorers and assist providers will appear here after provider sync confirms them.</p>
                 </div>
               ) : null}
 
-              {statDrafts.map((draft, index) => {
-                const draftTeam =
-                  draft.teamId === resolvedHome?.id ? resolvedHome : draft.teamId === resolvedAway?.id ? resolvedAway : null;
-                const draftGoals = statNumber(draft.goals);
-                const draftAssists = statNumber(draft.assists);
-
-                return (
-                  <div
-                    key={`${draft.playerId}-${index}`}
-                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-50 ring-1 ring-slate-200">
-                        <Flag team={draftTeam} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
-                            {draftTeam?.code ?? "Team"}
-                          </span>
-                          <StatRoleChip type="goal" value={draftGoals} />
-                          <StatRoleChip type="assist" value={draftAssists} />
-                        </div>
-
-                        <select
-                          value={draft.playerId}
-                          onChange={(event) => selectStatPlayer(index, event.target.value)}
-                          className="h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm font-black text-cup-ink outline-none focus:border-cup-gold"
-                        >
-                          {statPlayerOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.team.code} - {option.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setStatDrafts((current) => current.filter((_draft, draftIndex) => draftIndex !== index))}
-                        aria-label={`Remove ${draft.playerName} stats`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <StatNumberField
-                        label="Goals"
-                        icon={<Goal className="h-4 w-4" />}
-                        value={draft.goals}
-                        placeholder="0"
-                        ariaLabel={`${draft.playerName} goals`}
-                        onChange={(value) => updateStatDraft(index, { goals: value })}
-                        tone="red"
-                      />
-                      <StatNumberField
-                        label="Assists"
-                        icon={<Handshake className="h-4 w-4" />}
-                        value={draft.assists}
-                        placeholder="0"
-                        ariaLabel={`${draft.playerName} assists`}
-                        onChange={(value) => updateStatDraft(index, { assists: value })}
-                        tone="green"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50 p-3">
-              <Button variant="secondary" onClick={addStatDraft} disabled={statPlayerOptions.length === 0}>
-                <Plus className="h-4 w-4" />
-                Add Player
-              </Button>
-              <Button onClick={handlePlayerStatsSave} disabled={saving}>
-                <Save className="h-4 w-4" />
-                Save Stats
-              </Button>
+              {statDrafts.length > 0 ? (
+                <div className="max-h-[520px] space-y-4 overflow-y-auto pr-1">
+                  {scorerDrafts.length > 0 ? (
+                    <StatDraftGroup title="Goal scorers" count={scorerDrafts.length} tone="red">
+                      {scorerDrafts.map(renderStatDraftCard)}
+                    </StatDraftGroup>
+                  ) : null}
+                  {assistDrafts.length > 0 ? (
+                    <StatDraftGroup title="Assist providers" count={assistDrafts.length} tone="green">
+                      {assistDrafts.map(renderStatDraftCard)}
+                    </StatDraftGroup>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -870,39 +773,31 @@ function StatRoleChip({ type, value }: { type: "goal" | "assist"; value: number 
   );
 }
 
-function StatNumberField({
-  label,
-  icon,
-  value,
-  placeholder,
-  ariaLabel,
-  onChange,
-  tone
+function StatDraftGroup({
+  title,
+  count,
+  tone,
+  children
 }: {
-  label: string;
-  icon: ReactNode;
-  value: string;
-  placeholder: string;
-  ariaLabel: string;
-  onChange: (value: string) => void;
-  tone: "green" | "red";
+  title: string;
+  count: number;
+  tone: "green" | "red" | "slate";
+  children: ReactNode;
 }) {
-  const toneClass = tone === "green" ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50";
+  const toneClass =
+    tone === "green"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : tone === "red"
+        ? "bg-red-50 text-red-700 ring-red-100"
+        : "bg-slate-50 text-slate-600 ring-slate-200";
 
   return (
-    <label className="block rounded-md border border-slate-200 bg-slate-50 p-2">
-      <span className={`mb-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase ${toneClass}`}>
-        {icon}
-        {label}
-      </span>
-      <Input
-        aria-label={ariaLabel}
-        className="h-10 bg-white text-center text-lg font-black"
-        inputMode="numeric"
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 2))}
-      />
-    </label>
+    <div className="space-y-2">
+      <div className={`sticky top-0 z-[1] flex items-center justify-between rounded-md px-2 py-1 text-[10px] font-black uppercase ring-1 ${toneClass}`}>
+        <span>{title}</span>
+        <span>{count}</span>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
   );
 }

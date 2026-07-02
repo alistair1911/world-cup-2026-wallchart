@@ -380,6 +380,29 @@ export function FantasyProfileDrawer({
     },
     { points: 0, goals: 0, assists: 0 }
   );
+  const rosterStatRows = normalizedDraft
+    .flatMap((slot) => {
+      const player = drawerPlayerOption(slot.playerId, optionMap, playerCatalog);
+      if (!player) {
+        return [];
+      }
+      const stats = draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS;
+      return [
+        {
+          slot,
+          player,
+          stats,
+          displayPoints: slot.isCaptain ? stats.points * 2 : stats.points
+        }
+      ];
+    })
+    .sort(
+      (a, b) =>
+        b.displayPoints - a.displayPoints ||
+        b.stats.goals - a.stats.goals ||
+        b.stats.assists - a.stats.assists ||
+        a.player.name.localeCompare(b.player.name)
+    );
 
   function moveToStarter(playerId: string, targetIndex: number) {
     if (!canEdit) {
@@ -551,17 +574,20 @@ export function FantasyProfileDrawer({
     <div className="fixed inset-0 z-[999] flex justify-end overflow-hidden bg-cup-ink/55 backdrop-blur-sm">
       <button type="button" aria-label="Close fantasy profile backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
       <aside className="saved-pop relative flex h-dvh max-h-dvh w-full max-w-7xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:rounded-l-2xl">
-        <div className="shrink-0 border-b border-slate-200 bg-white/96 p-4 backdrop-blur">
+        <div className="shrink-0 border-b border-slate-200 bg-gradient-to-br from-white via-white to-cup-sky/70 p-4 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-black uppercase text-cup-red">Mini-Fantasy Profile</div>
               <h2 className="mt-1 truncate text-2xl font-black text-cup-ink">{familyName(userKey)} FC</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
-                {round.name}: {normalizedDraft.length}/{squadSize} players - {starterSlots.length}/{starterSize} starters - Layout {formation} -{" "}
-                {row?.captain ? `Captain ${row.captain.name}` : "No captain yet"}
-              </p>
-              <p className="mt-1 text-xs font-bold text-slate-500">
-                  {round.selectionEnabled
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge tone="gold">{round.name}</Badge>
+                <Badge tone={normalizedDraft.length === squadSize ? "green" : "slate"}>{normalizedDraft.length}/{squadSize} players</Badge>
+                <Badge tone={starterSlots.length === starterSize ? "green" : "slate"}>{starterSlots.length}/{starterSize} starters</Badge>
+                <Badge tone="slate">{formation}</Badge>
+                <Badge tone={row?.captain ? "red" : "slate"}>{row?.captain ? `Captain ${row.captain.name}` : "No captain"}</Badge>
+              </div>
+              <p className="mt-2 text-xs font-bold text-slate-500">
+                {round.selectionEnabled
                   ? `Selection locks ${formatKickoff(round.locksAt)}.`
                   : round.status === "complete"
                     ? "Round complete. This squad is saved as the historical round roster."
@@ -709,9 +735,12 @@ export function FantasyProfileDrawer({
                 }
               }}
             >
-              <div className="mb-3 flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-cup-red" />
-                <h3 className="text-sm font-black uppercase text-slate-600">Bench</h3>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-cup-red" />
+                  <h3 className="text-sm font-black uppercase text-slate-600">Bench</h3>
+                </div>
+                <Badge tone={hasBench && benchSlots.length > 0 ? "gold" : "slate"}>{hasBench ? `${benchSlots.length} bench` : "11 starters"}</Badge>
               </div>
               <div className="space-y-2">
                 {!hasBench ? (
@@ -795,7 +824,7 @@ export function FantasyProfileDrawer({
                   </select>
                 </div>
               </div>
-              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+              <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {playerPool.map((player) => {
                   const selected = selectedPlayerIds.has(player.id);
                   const locked = !round.selectionEnabled;
@@ -803,7 +832,7 @@ export function FantasyProfileDrawer({
                   return (
                     <div
                       key={player.id}
-                      className={`grid grid-cols-[1fr_auto] items-center gap-2 rounded-md p-2 ring-1 transition ${
+                      className={`grid grid-cols-[1fr_auto] items-center gap-2 rounded-lg p-2 ring-1 transition ${
                         selected ? "bg-emerald-50 ring-emerald-200" : "bg-slate-50 ring-slate-200 hover:bg-white"
                       }`}
                     >
@@ -846,57 +875,72 @@ export function FantasyProfileDrawer({
               </div>
             </div>
 
-            <div className="rounded-lg bg-white p-4 ring-1 ring-slate-200">
-              <div className="mb-3 flex items-center gap-2">
-                <Trophy className="h-4 w-4 text-cup-gold" />
-                <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
+            <div className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+              <div className="border-b border-slate-100 bg-gradient-to-br from-amber-50 via-white to-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <Trophy className="mt-0.5 h-4 w-4 text-cup-gold" />
+                    <div>
+                      <h3 className="text-sm font-black uppercase text-slate-600">Player Stats</h3>
+                      <p className="mt-1 text-xs font-bold leading-snug text-slate-500">Roster impact for this round, highest points first.</p>
+                    </div>
+                  </div>
+                  <Badge tone="gold">{rosterStatRows.length}</Badge>
+                </div>
               </div>
-              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                {normalizedDraft.map((slot) => {
-                  const player = drawerPlayerOption(slot.playerId, optionMap, playerCatalog);
-                  if (!player) {
-                    return null;
-                  }
-                  const stats = draftStats.get(slot.playerId) ?? EMPTY_PLAYER_TOTALS;
+              <div className="max-h-[420px] space-y-2 overflow-y-auto p-3 pr-2">
+                {rosterStatRows.map(({ slot, player, stats, displayPoints }) => {
                   return (
                     <button
                       key={slot.playerId}
                       type="button"
                       onClick={() => onSelectPlayer(slot.playerId)}
-                      className="w-full rounded-md bg-slate-50 p-2 text-left ring-1 ring-slate-200 transition hover:bg-white"
+                      className="w-full rounded-lg bg-slate-50 p-2.5 text-left ring-1 ring-slate-200 transition hover:bg-white hover:ring-cup-gold/50"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <img
                           src={player.photoUrl ?? avatarUrl(player.name)}
                           alt={`${player.name} portrait`}
-                          className="h-9 w-9 rounded-full object-cover object-top"
+                          className="h-10 w-10 rounded-full object-cover object-top shadow-sm ring-2 ring-white"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-black text-cup-ink">
-                            {slot.isCaptain ? "C " : ""}
-                            {player.name}
+                          <div className="flex min-w-0 items-center gap-1">
+                            {slot.isCaptain ? <Crown className="h-3.5 w-3.5 shrink-0 text-cup-gold" /> : null}
+                            <div className="truncate text-xs font-black text-cup-ink">
+                              {player.name}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] font-bold text-slate-500">
                             <Flag team={player.team} />
                             <span>{player.fantasyPosition}</span>
+                            <span className="text-slate-300">/</span>
                             <span>{slot.isStarter ? "Starter" : "Bench"}</span>
                           </div>
                           <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-black uppercase text-slate-500">
-                            <span className="rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200">G {stats.goals}</span>
-                            <span className="rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200">A {stats.assists}</span>
+                            <span className={stats.goals > 0 ? "rounded-full bg-red-50 px-1.5 py-0.5 text-red-700 ring-1 ring-red-100" : "rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200"}>
+                              G {stats.goals}
+                            </span>
+                            <span className={stats.assists > 0 ? "rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700 ring-1 ring-emerald-100" : "rounded-full bg-white px-1.5 py-0.5 ring-1 ring-slate-200"}>
+                              A {stats.assists}
+                            </span>
                             {stats.cleanSheets > 0 ? (
                               <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700 ring-1 ring-emerald-100">CS {stats.cleanSheets}</span>
                             ) : null}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm font-black text-cup-red">{slot.isCaptain ? stats.points * 2 : stats.points}</div>
+                        <div className="min-w-12 rounded-md bg-white px-2 py-1 text-right shadow-sm ring-1 ring-slate-200">
+                          <div className="text-sm font-black text-cup-red">{displayPoints}</div>
                           <div className="text-[9px] font-black uppercase text-slate-400">pts</div>
                         </div>
                       </div>
                     </button>
                   );
                 })}
+                {rosterStatRows.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                    Add players to see round stats here.
+                  </div>
+                ) : null}
               </div>
             </div>
           </aside>
