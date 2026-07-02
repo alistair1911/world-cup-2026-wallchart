@@ -1060,8 +1060,15 @@ function FantasyPlayerDetailSheet({
 
         <div className="space-y-3 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <section className="overflow-hidden rounded-lg bg-gradient-to-br from-cup-ink via-pitch-800 to-cup-red text-white shadow-sm">
-            <img src={portrait} alt={`${player.name} portrait`} className="h-52 w-full object-cover object-top sm:h-64" />
-            <div className="grid grid-cols-4 gap-2 p-3">
+            <div className="relative bg-gradient-to-br from-cup-ink via-pitch-900 to-cup-red/90">
+              <img
+                src={portrait}
+                alt={`${player.name} portrait`}
+                className="mx-auto h-72 w-full object-contain object-bottom p-2 pb-0 sm:h-80"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-cup-ink/95 via-cup-ink/45 to-transparent" />
+            </div>
+            <div className="relative z-[1] -mt-3 grid grid-cols-4 gap-2 p-3 pt-0">
               <DetailMetric label="Pts" value={displayPoints} highlight />
               <DetailMetric label="Goals" value={stats.goals} />
               <DetailMetric label="Assists" value={stats.assists} />
