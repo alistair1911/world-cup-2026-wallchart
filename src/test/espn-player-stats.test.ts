@@ -72,4 +72,75 @@ describe("ESPN player stat parsing", () => {
       ])
     );
   });
+
+  it("captures ESPN assists when participants are unlabelled scorer then assister", () => {
+    const match = INITIAL_MATCHES.find((item) => item.homeTeamId === "belgium" && item.awayTeamId === "ir-iran")!;
+    const stats = parseEspnPlayerStats([match], {
+      espnEvents: [
+        {
+          eventId: "test-event",
+          homeTeamName: "Belgium",
+          awayTeamName: "Iran",
+          kickoff: match.kickoff,
+          competitors: [
+            { id: "459", name: "Belgium" },
+            { id: "469", name: "Iran" }
+          ],
+          details: [
+            {
+              scoringPlay: true,
+              team: { id: "459" },
+              participants: [
+                { athlete: { displayName: "Romelu Lukaku" } },
+                { athlete: { displayName: "Thomas Meunier" } }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(stats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ playerId: "belgium-romelu-lukaku", goals: 1, assists: 0 }),
+        expect.objectContaining({ playerId: "belgium-thomas-meunier", goals: 0, assists: 1 })
+      ])
+    );
+  });
+
+  it("does not add fallback participant assists for penalties", () => {
+    const match = INITIAL_MATCHES.find((item) => item.homeTeamId === "belgium" && item.awayTeamId === "ir-iran")!;
+    const stats = parseEspnPlayerStats([match], {
+      espnEvents: [
+        {
+          eventId: "test-event",
+          homeTeamName: "Belgium",
+          awayTeamName: "Iran",
+          kickoff: match.kickoff,
+          competitors: [
+            { id: "459", name: "Belgium" },
+            { id: "469", name: "Iran" }
+          ],
+          details: [
+            {
+              scoringPlay: true,
+              penaltyKick: true,
+              team: { id: "459" },
+              participants: [
+                { athlete: { displayName: "Youri Tielemans" } },
+                { athlete: { displayName: "Leandro Trossard" } }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(stats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ playerId: "belgium-youri-tielemans", goals: 1, assists: 0 })
+      ])
+    );
+    expect(stats.some((row) => row.playerId === "belgium-leandro-trossard")).toBe(false);
+  });
 });

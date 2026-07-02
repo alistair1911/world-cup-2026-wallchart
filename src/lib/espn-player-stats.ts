@@ -192,11 +192,16 @@ function espnGoalContributors(detail: Record<string, unknown>) {
     unclassifiedParticipants[0]
   ])[0] ?? null;
 
+  const fallbackParticipantAssists = detail.penaltyKick === true
+    ? []
+    : unclassifiedParticipants.filter((name) => !scorer || name.toLowerCase() !== scorer.toLowerCase());
+
   const assists = uniqueNames([
     ...assistCandidates,
     ...collectAssistNamesFromField(detail.assist),
     ...collectAssistNamesFromField(detail.assists),
-    ...athletesInvolved.slice(1)
+    ...athletesInvolved.slice(1),
+    ...fallbackParticipantAssists
   ]).filter((name) => !scorer || name.toLowerCase() !== scorer.toLowerCase());
 
   return { scorer, assists };
