@@ -70,6 +70,19 @@ function predictionTone(status: string) {
   return "red";
 }
 
+function predictedScoreAdvancerId(homeScore: number | null, awayScore: number | null, home: Team | null, away: Team | null) {
+  if (homeScore === null || awayScore === null) {
+    return null;
+  }
+  if (homeScore > awayScore) {
+    return home?.id ?? null;
+  }
+  if (awayScore > homeScore) {
+    return away?.id ?? null;
+  }
+  return null;
+}
+
 export function MatchDrawer({
   match,
   standings,
@@ -163,6 +176,21 @@ export function MatchDrawer({
   const predictionAwayValue = clampScore(predictionAway);
   const tiedFinal = status === "final" && homeValue !== null && awayValue !== null && homeValue === awayValue;
   const canPickWinner = isKnockout && resolvedHome && resolvedAway;
+  const predictionIsDraw =
+    Boolean(canPickWinner) &&
+    predictionHomeValue !== null &&
+    predictionAwayValue !== null &&
+    predictionHomeValue === predictionAwayValue;
+  const inferredPredictionAdvancerId = isKnockout
+    ? predictedScoreAdvancerId(predictionHomeValue, predictionAwayValue, resolvedHome, resolvedAway)
+    : null;
+  const inferredPredictionAdvancer = inferredPredictionAdvancerId
+    ? inferredPredictionAdvancerId === resolvedHome?.id
+      ? resolvedHome
+      : inferredPredictionAdvancerId === resolvedAway?.id
+        ? resolvedAway
+        : null
+    : null;
 
   async function handleResultSave() {
     setSaving(true);
@@ -194,16 +222,25 @@ export function MatchDrawer({
       setMessage("Predictions are locked for this match.");
       return;
     }
+    if (predictionIsDraw && !predictionWinnerId) {
+      setMessage("Pick who advances after extra time or penalties for this knockout draw.");
+      return;
+    }
 
     setSaving(true);
     setMessage(null);
     try {
+      const predictedWinnerTeamId = isKnockout
+        ? predictionIsDraw
+          ? predictionWinnerId || null
+          : inferredPredictionAdvancerId
+        : null;
       await onSavePrediction({
         userKey: session.userKey,
         matchId: activeMatch.id,
         homeScore: predictionHomeValue,
         awayScore: predictionAwayValue,
-        predictedWinnerTeamId: isKnockout ? predictionWinnerId || null : null,
+        predictedWinnerTeamId,
         updatedAt: new Date().toISOString()
       });
       setMessage("Prediction saved.");
@@ -541,16 +578,41 @@ export function MatchDrawer({
               <span />
             </div>
             {isKnockout && canPickWinner ? (
-              <select
-                value={predictionWinnerId}
-                disabled={locked}
-                onChange={(event) => setPredictionWinnerId(event.target.value)}
-                className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-cup-gold disabled:bg-slate-100"
-              >
-                <option value="">Advancer pick</option>
-                <option value={resolvedHome.id}>{resolvedHome.name}</option>
-                <option value={resolvedAway.id}>{resolvedAway.name}</option>
-              </select>
+              <div className="mt-3 rounded-lg bg-white p-3 ring-1 ring-cup-gold/30">
+                {predictionIsDraw ? (
+                  <>
+                    <div className="mb-2 text-xs font-black uppercase text-cup-red">Draw after 90 minutes</div>
+                    <select
+                      value={predictionWinnerId}
+                      disabled={locked}
+                      onChange={(event) => setPredictionWinnerId(event.target.value)}
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-cup-gold disabled:bg-slate-100"
+                    >
+                      <option value="">Who advances after extra time / penalties?</option>
+                      <option value={resolvedHome.id}>{resolvedHome.name}</option>
+                      <option value={resolvedAway.id}>{resolvedAway.name}</option>
+                    </select>
+                    <p className="mt-2 text-[11px] font-bold leading-4 text-slate-500">
+                      Correct draw plus correct advancer is worth 5 points. Exact draw score can still earn the exact-score bonus.
+                    </p>
+                  </>
+                ) : inferredPredictionAdvancer ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-black uppercase text-slate-500">Advancer by your score</div>
+                      <div className="mt-1 flex items-center gap-2 text-sm font-black text-cup-ink">
+                        <Flag team={inferredPredictionAdvancer} />
+                        {inferredPredictionAdvancer.name}
+                      </div>
+                    </div>
+                    <Badge tone="green">Auto</Badge>
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold leading-5 text-slate-500">
+                    Enter a draw score to pick who advances after extra time or penalties.
+                  </p>
+                )}
+              </div>
             ) : null}
             <Button className="mt-3 w-full" onClick={handlePredictionSave} disabled={saving || locked}>
               <Check className="h-4 w-4" />
@@ -564,6 +626,13 @@ export function MatchDrawer({
               {FAMILY_USERS.map((user) => {
                 const prediction = findPrediction(predictions, user.key as UserKey, activeMatch.id);
                 const result = scorePrediction(activeMatch, prediction);
+                const predictedAdvancer = prediction?.predictedWinnerTeamId
+                  ? prediction.predictedWinnerTeamId === resolvedHome?.id
+                    ? resolvedHome
+                    : prediction.predictedWinnerTeamId === resolvedAway?.id
+                      ? resolvedAway
+                      : null
+                  : null;
 
                 return (
                   <div key={user.key} className="rounded-md bg-slate-50 p-3">
@@ -573,6 +642,12 @@ export function MatchDrawer({
                         <div className="text-sm text-slate-500">
                           {prediction?.homeScore ?? "-"} - {prediction?.awayScore ?? "-"}
                         </div>
+                        {predictedAdvancer ? (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">
+                            <Flag team={predictedAdvancer} />
+                            Advances: {predictedAdvancer.code}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="text-right">
                         <Badge tone={predictionTone(result.status)}>{result.status}</Badge>

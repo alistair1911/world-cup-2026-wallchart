@@ -58,4 +58,39 @@ describe("scorePrediction", () => {
       }).points
     ).toBe(5);
   });
+
+  it("awards 5 points for a knockout draw with the correct post-90 advancer", () => {
+    const knockout: Match = {
+      ...baseMatch,
+      phase: "round32",
+      homeScore: 2,
+      awayScore: 2,
+      penaltyWinnerId: "mexico"
+    };
+
+    expect(
+      scorePrediction(knockout, {
+        ...prediction(1, 1),
+        predictedWinnerTeamId: "mexico"
+      }).points
+    ).toBe(5);
+  });
+
+  it("does not award the post-90 advancer bonus unless a knockout draw was predicted", () => {
+    const knockout: Match = {
+      ...baseMatch,
+      phase: "round32",
+      homeScore: 1,
+      awayScore: 1,
+      penaltyWinnerId: "mexico"
+    };
+
+    const result = scorePrediction(knockout, {
+      ...prediction(2, 1),
+      predictedWinnerTeamId: "mexico"
+    });
+
+    expect(result.points).toBe(0);
+    expect(result.knockoutBonus).toBe(0);
+  });
 });

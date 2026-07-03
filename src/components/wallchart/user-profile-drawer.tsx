@@ -139,6 +139,7 @@ export function UserProfileDrawer({ userKey, matches, predictions, onClose }: Us
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
                       <span>Prediction: {item.prediction.homeScore}-{item.prediction.awayScore}</span>
+                      {item.predictedAdvancer ? <span>Advancer: {item.predictedAdvancer.code}</span> : null}
                       <span>Final: {item.match.homeScore}-{item.match.awayScore}</span>
                       <span className="font-black text-cup-ink">{item.result.status}</span>
                     </div>
@@ -164,10 +165,12 @@ function buildPredictionHistory(userKey: UserKey, matches: Match[], predictions:
 
       const home = match.homeTeamId ? getTeam(match.homeTeamId)?.name : match.homeSeed?.label;
       const away = match.awayTeamId ? getTeam(match.awayTeamId)?.name : match.awaySeed?.label;
+      const predictedAdvancer = prediction.predictedWinnerTeamId ? getTeam(prediction.predictedWinnerTeamId) ?? null : null;
 
       return {
         match,
         prediction,
+        predictedAdvancer,
         result: scorePrediction(match, prediction),
         title: `${home ?? "Home"} vs ${away ?? "Away"}`
       };
