@@ -14,6 +14,22 @@ export type PlayerStatLeader = {
   assists: number;
   involvements: number;
   matches: number;
+  goalMatches: PlayerGoalMatch[];
+};
+
+export type PlayerGoalMatch = {
+  matchId: string;
+  matchNumber: number;
+  phase: string;
+  kickoff: string;
+  venue: string;
+  goals: number;
+  assists: number;
+  opponent: Team | null;
+  homeTeam: Team | null;
+  awayTeam: Team | null;
+  homeScore: number | null;
+  awayScore: number | null;
 };
 
 function teamScoreForStat(stat: PlayerMatchStat, match: Match | undefined) {
@@ -88,6 +104,7 @@ function dedupePlayerMatchStats(stats: PlayerMatchStat[], matches: Match[], play
 
 export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[], playerCatalog: PlayerCatalogItem[] = []) {
   const finalMatchIds = new Set(matches.filter((match) => match.status === "final").map((match) => match.id));
+  const matchesById = new Map(matches.map((match) => [match.id, match]));
   const profileMap = new Map(
     getAllPlayerProfiles().map(({ player, team }) => [
       player.id,
@@ -128,6 +145,7 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
         assists: 0,
         involvements: 0,
         matches: 0,
+        goalMatches: [],
         matchIds: new Set<string>()
       };
 
@@ -136,10 +154,36 @@ export function buildPlayerStatLeaders(stats: PlayerMatchStat[], matches: Match[
     existing.involvements = existing.goals + existing.assists;
     existing.matchIds.add(stat.matchId);
     existing.matches = existing.matchIds.size;
+    if (stat.goals > 0) {
+      const match = matchesById.get(stat.matchId);
+      if (match) {
+        const homeTeam = getTeam(match.homeTeamId) ?? null;
+        const awayTeam = getTeam(match.awayTeamId) ?? null;
+        existing.goalMatches.push({
+          matchId: match.id,
+          matchNumber: match.matchNumber,
+          phase: match.phase,
+          kickoff: match.kickoff,
+          venue: match.venue,
+          goals: stat.goals,
+          assists: stat.assists,
+          opponent: stat.teamId === match.homeTeamId ? awayTeam : stat.teamId === match.awayTeamId ? homeTeam : null,
+          homeTeam,
+          awayTeam,
+          homeScore: match.homeScore,
+          awayScore: match.awayScore
+        });
+      }
+    }
     totals.set(stat.playerId, existing);
   }
 
-  const rows = [...totals.values()].map(({ matchIds: _matchIds, ...row }) => row);
+  const rows = [...totals.values()].map(({ matchIds: _matchIds, ...row }) => ({
+    ...row,
+    goalMatches: row.goalMatches.sort(
+      (a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime() || a.matchNumber - b.matchNumber
+    )
+  }));
   const byGoals = [...rows].sort(
     (a, b) =>
       b.goals - a.goals ||

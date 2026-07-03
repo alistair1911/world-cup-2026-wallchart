@@ -1,4 +1,8 @@
-import { BadgeCheck, Medal, Sparkles, Star, Target, Trophy } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { BadgeCheck, CalendarDays, MapPin, Medal, Sparkles, Star, Target, Trophy, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { avatarUrl } from "@/lib/profile-data";
 import { buildPlayerStatLeaders, type PlayerStatLeader } from "@/lib/player-stats";
@@ -11,6 +15,7 @@ import {
   type ReZeroExactBadge
 } from "@/lib/rezero-progression";
 import type { Match, PlayerCatalogItem, PlayerMatchStat, Prediction, UserKey } from "@/lib/types";
+import { formatKickoff } from "@/lib/utils";
 import { Flag } from "./flag";
 
 type LeaderboardPanelProps = {
@@ -22,6 +27,7 @@ type LeaderboardPanelProps = {
 };
 
 export function LeaderboardPanel({ matches, predictions, playerStats, playerCatalog = [], onSelectUser }: LeaderboardPanelProps) {
+  const [selectedScorer, setSelectedScorer] = useState<PlayerStatLeader | null>(null);
   const leaderboard = buildLeaderboard(matches, predictions);
   const statLeaders = buildPlayerStatLeaders(playerStats, matches, playerCatalog);
   const topScore = Math.max(1, ...leaderboard.map((user) => user.points));
@@ -99,9 +105,16 @@ export function LeaderboardPanel({ matches, predictions, playerStats, playerCata
         </div>
 
         <div className="space-y-3">
-          <PlayerStatList title="Top 10 goal scorers" rows={statLeaders.topScorers} empty="No goals recorded yet." />
+          <PlayerStatList
+            title="Top 10 goal scorers"
+            rows={statLeaders.topScorers}
+            empty="No goals recorded yet."
+            onSelect={setSelectedScorer}
+          />
         </div>
       </div>
+
+      {selectedScorer ? <ScorerDetailDrawer scorer={selectedScorer} onClose={() => setSelectedScorer(null)} /> : null}
     </Panel>
   );
 }
@@ -253,11 +266,13 @@ function ReZeroExactBadgeChip({ badge }: { badge: ReZeroExactBadge }) {
 function PlayerStatList({
   title,
   rows,
-  empty
+  empty,
+  onSelect
 }: {
   title: string;
   rows: PlayerStatLeader[];
   empty: string;
+  onSelect: (row: PlayerStatLeader) => void;
 }) {
   return (
     <section>
@@ -272,7 +287,12 @@ function PlayerStatList({
       ) : (
         <div className="space-y-1.5">
           {rows.slice(0, 10).map((row, index) => (
-            <div key={`goals-${row.playerId}`} className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 ring-1 ring-slate-200">
+            <button
+              key={`goals-${row.playerId}`}
+              type="button"
+              onClick={() => onSelect(row)}
+              className="interactive-pop flex w-full items-center gap-2 rounded-md bg-white px-2 py-1.5 text-left ring-1 ring-slate-200 transition hover:ring-cup-gold/60"
+            >
               <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-cup-ink text-[9px] font-black text-white">
                 {index + 1}
               </span>
@@ -293,10 +313,146 @@ function PlayerStatList({
                 <div className="text-base font-black text-cup-red">{row.goals}</div>
                 <div className="text-[9px] font-black uppercase text-slate-400">G</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
     </section>
   );
+}
+
+function ScorerDetailDrawer({ scorer, onClose }: { scorer: PlayerStatLeader; onClose: () => void }) {
+  const portrait = scorer.photoUrl ?? avatarUrl(scorer.playerName);
+  const braceCount = scorer.goalMatches.filter((match) => match.goals >= 2).length;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex justify-end bg-cup-ink/45 backdrop-blur-[2px]">
+      <button type="button" aria-label="Close scorer details" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <aside className="saved-pop relative flex h-full w-full max-w-sm flex-col overflow-y-auto bg-white shadow-2xl sm:rounded-l-2xl">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 p-3 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase text-cup-red">Top Scorer Details</div>
+              <h3 className="mt-1 truncate text-xl font-black text-cup-ink">{scorer.playerName}</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-1 text-xs font-bold text-slate-500">
+                <Flag team={scorer.team} />
+                <span>{scorer.team.name}</span>
+                <span className="rounded-full bg-cup-sky px-2 py-0.5 text-[10px] font-black text-cup-ink">{scorer.position}</span>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close scorer details">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <section className="overflow-hidden rounded-lg bg-gradient-to-br from-cup-ink via-pitch-800 to-cup-red text-white shadow-sm">
+            <div className="relative bg-gradient-to-br from-cup-ink via-pitch-900 to-cup-red/90">
+              <img
+                src={portrait}
+                alt={`${scorer.playerName} portrait`}
+                className="mx-auto h-72 w-full object-contain object-bottom p-2 pb-0 sm:h-80"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-cup-ink/95 via-cup-ink/45 to-transparent" />
+            </div>
+            <div className="relative z-[1] -mt-3 grid grid-cols-4 gap-2 p-3 pt-0">
+              <ScorerMetric label="Goals" value={scorer.goals} highlight />
+              <ScorerMetric label="Games" value={scorer.goalMatches.length} />
+              <ScorerMetric label="Assists" value={scorer.assists} />
+              <ScorerMetric label="Braces" value={braceCount} />
+            </div>
+          </section>
+
+          <section className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-xs font-black uppercase text-slate-600">Goals By Match</h4>
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                Final matches
+              </span>
+            </div>
+            <div className="max-h-[430px] space-y-2 overflow-y-auto pr-1">
+              {scorer.goalMatches.map((goalMatch) => (
+                <div key={`${scorer.playerId}-${goalMatch.matchId}`} className="rounded-lg bg-slate-50 p-2.5 ring-1 ring-slate-200">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1 text-[10px] font-black uppercase text-slate-500">
+                        <span>Match {goalMatch.matchNumber}</span>
+                        <span className="text-slate-300">/</span>
+                        <span>{formatPhase(goalMatch.phase)}</span>
+                      </div>
+                      <div className="mt-1 flex min-w-0 items-center gap-1 text-sm font-black text-cup-ink">
+                        {goalMatch.homeTeam ? <Flag team={goalMatch.homeTeam} /> : null}
+                        <span className="truncate">{goalMatch.homeTeam?.code ?? "TBD"}</span>
+                        <span className="text-slate-400">{goalMatch.homeScore ?? "-"}</span>
+                        <span className="text-slate-300">-</span>
+                        <span className="text-slate-400">{goalMatch.awayScore ?? "-"}</span>
+                        <span className="truncate">{goalMatch.awayTeam?.code ?? "TBD"}</span>
+                        {goalMatch.awayTeam ? <Flag team={goalMatch.awayTeam} /> : null}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarDays className="h-3 w-3 text-cup-red" />
+                          {formatKickoff(goalMatch.kickoff)}
+                        </span>
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0 text-cup-red" />
+                          <span className="truncate">{goalMatch.venue}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 rounded-md bg-white px-2 py-1 text-center ring-1 ring-slate-200">
+                      <div className="text-base font-black text-cup-red">{goalMatch.goals}</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">goal{goalMatch.goals === 1 ? "" : "s"}</div>
+                    </div>
+                  </div>
+                  {goalMatch.assists > 0 ? (
+                    <div className="mt-2 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 ring-1 ring-emerald-100">
+                      Also recorded {goalMatch.assists} assist{goalMatch.assists === 1 ? "" : "s"} in this match
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {scorer.goalMatches.length === 0 ? (
+                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+                  No final-match goal details found for this player.
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ScorerMetric({ label, value, highlight = false }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`rounded-md p-2 text-center ring-1 ${highlight ? "bg-cup-gold text-cup-ink ring-cup-gold" : "bg-white/12 text-white ring-white/20"}`}>
+      <div className="text-[9px] font-black uppercase opacity-75">{label}</div>
+      <div className="mt-1 text-xl font-black leading-none">{value}</div>
+    </div>
+  );
+}
+
+function formatPhase(phase: string) {
+  if (phase === "group") {
+    return "Group";
+  }
+  if (phase === "round32") {
+    return "R32";
+  }
+  if (phase === "round16") {
+    return "R16";
+  }
+  if (phase === "quarterfinal") {
+    return "QF";
+  }
+  if (phase === "semifinal") {
+    return "SF";
+  }
+  if (phase === "final") {
+    return "Final";
+  }
+  return phase;
 }

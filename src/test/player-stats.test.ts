@@ -48,6 +48,9 @@ describe("player stat leaderboards", () => {
     const leaders = buildPlayerStatLeaders(stats, matches);
 
     expect(leaders.topScorers[0]).toMatchObject({ playerName: "Rodri", goals: 2 });
+    expect(leaders.topScorers[0].goalMatches).toEqual([
+      expect.objectContaining({ matchId: finalMatch.id, goals: 2 })
+    ]);
     expect(leaders.topScorers.every((row) => row.goals > 0)).toBe(true);
     expect(leaders.topAssists[0]).toMatchObject({ playerName: "Lamine Yamal", assists: 2 });
     expect(leaders.topAssists.every((row) => row.assists > 0)).toBe(true);
