@@ -44,19 +44,23 @@ describe("scorePrediction", () => {
     expect(result.status).toBe("Missed");
   });
 
-  it("adds knockout advancer bonus", () => {
+  it("does not add an advancer bonus for a normal knockout win prediction", () => {
     const knockout: Match = {
       ...baseMatch,
       phase: "round32",
+      homeTeamId: "england",
+      awayTeamId: "mexico",
+      homeScore: 3,
+      awayScore: 2,
       penaltyWinnerId: null
     };
 
     expect(
       scorePrediction(knockout, {
-        ...prediction(3, 2),
-        predictedWinnerTeamId: "mexico"
+        ...prediction(1, 0),
+        predictedWinnerTeamId: "england"
       }).points
-    ).toBe(5);
+    ).toBe(3);
   });
 
   it("awards 5 points for a knockout draw with the correct post-90 advancer", () => {

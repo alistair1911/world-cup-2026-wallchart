@@ -63,7 +63,7 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
   const isKnockout = match.phase !== "group";
   const correctKnockoutAdvancer = Boolean(actualWinner && prediction.predictedWinnerTeamId === actualWinner);
   const knockoutBonus =
-    isKnockout && correctKnockoutAdvancer && (actualOutcome !== "draw" || predictedOutcome === "draw") ? 2 : 0;
+    isKnockout && actualOutcome === "draw" && predictedOutcome === "draw" && correctKnockoutAdvancer ? 2 : 0;
 
   return {
     points: basePoints + knockoutBonus,

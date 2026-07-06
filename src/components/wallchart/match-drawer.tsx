@@ -599,13 +599,13 @@ export function MatchDrawer({
                 ) : inferredPredictionAdvancer ? (
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-xs font-black uppercase text-slate-500">Advancer by your score</div>
+                      <div className="text-xs font-black uppercase text-slate-500">Winner by your score</div>
                       <div className="mt-1 flex items-center gap-2 text-sm font-black text-cup-ink">
                         <Flag team={inferredPredictionAdvancer} />
                         {inferredPredictionAdvancer.name}
                       </div>
                     </div>
-                    <Badge tone="green">Auto</Badge>
+                    <Badge tone="green">Inferred</Badge>
                   </div>
                 ) : (
                   <p className="text-xs font-bold leading-5 text-slate-500">
