@@ -593,7 +593,7 @@ export function MatchDrawer({
                       <option value={resolvedAway.id}>{resolvedAway.name}</option>
                     </select>
                     <p className="mt-2 text-[11px] font-bold leading-4 text-slate-500">
-                      Correct draw plus correct advancer is worth 5 points. Exact draw score can still earn the exact-score bonus.
+                      Correct draw plus correct advancer is worth 5 points total. Draw with the wrong advancer only scores the 90-minute draw.
                     </p>
                   </>
                 ) : inferredPredictionAdvancer ? (
@@ -609,7 +609,7 @@ export function MatchDrawer({
                   </div>
                 ) : (
                   <p className="text-xs font-bold leading-5 text-slate-500">
-                    Enter a draw score to pick who advances after extra time or penalties.
+                    Enter a draw score to pick who advances after extra time or penalties. If your score backs the right team but the match is tied after 90, you still get 2 advancer points.
                   </p>
                 )}
               </div>

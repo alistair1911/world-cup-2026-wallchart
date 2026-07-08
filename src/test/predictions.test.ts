@@ -80,21 +80,44 @@ describe("scorePrediction", () => {
     ).toBe(5);
   });
 
-  it("does not award the post-90 advancer bonus unless a knockout draw was predicted", () => {
+  it("awards 2 points for picking the correct advancer when the knockout match is drawn after 90", () => {
     const knockout: Match = {
       ...baseMatch,
       phase: "round32",
+      homeTeamId: "switzerland",
+      awayTeamId: "colombia",
       homeScore: 1,
       awayScore: 1,
-      penaltyWinnerId: "mexico"
+      penaltyWinnerId: "switzerland"
     };
 
     const result = scorePrediction(knockout, {
-      ...prediction(2, 1),
-      predictedWinnerTeamId: "mexico"
+      ...prediction(1, 0)
     });
 
-    expect(result.points).toBe(0);
+    expect(result.points).toBe(2);
+    expect(result.knockoutBonus).toBe(2);
+    expect(result.status).toBe("Correct winner");
+  });
+
+  it("does not award exact-score credit for a knockout draw with the wrong advancer", () => {
+    const knockout: Match = {
+      ...baseMatch,
+      phase: "round32",
+      homeTeamId: "switzerland",
+      awayTeamId: "colombia",
+      homeScore: 0,
+      awayScore: 0,
+      penaltyWinnerId: "switzerland"
+    };
+
+    const result = scorePrediction(knockout, {
+      ...prediction(0, 0),
+      predictedWinnerTeamId: "colombia"
+    });
+
+    expect(result.points).toBe(3);
+    expect(result.exact).toBe(false);
     expect(result.knockoutBonus).toBe(0);
   });
 });

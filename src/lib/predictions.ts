@@ -12,6 +12,16 @@ function outcome(home: number, away: number) {
   return "draw";
 }
 
+function predictedKnockoutWinnerTeamId(match: Match, prediction: Prediction, predictedOutcome: "home" | "away" | "draw") {
+  if (predictedOutcome === "home") {
+    return match.homeTeamId ?? null;
+  }
+  if (predictedOutcome === "away") {
+    return match.awayTeamId ?? null;
+  }
+  return prediction.predictedWinnerTeamId ?? null;
+}
+
 export function scorePrediction(match: Match, prediction?: Prediction): ScoreResult {
   if (
     !prediction ||
@@ -36,8 +46,13 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
   const predictedOutcome = outcome(prediction.homeScore, prediction.awayScore);
   const actualMargin = match.homeScore - match.awayScore;
   const predictedMargin = prediction.homeScore - prediction.awayScore;
+  const isKnockout = match.phase !== "group";
+  const actualWinner = getWinnerTeamId(match);
+  const predictedKnockoutWinner = isKnockout ? predictedKnockoutWinnerTeamId(match, prediction, predictedOutcome) : null;
+  const correctKnockoutAdvancer = Boolean(actualWinner && predictedKnockoutWinner === actualWinner);
 
-  const exact = match.homeScore === prediction.homeScore && match.awayScore === prediction.awayScore;
+  const rawExact = match.homeScore === prediction.homeScore && match.awayScore === prediction.awayScore;
+  const exact = rawExact && (!isKnockout || actualOutcome !== "draw" || correctKnockoutAdvancer);
   const correctOutcome = actualOutcome === predictedOutcome;
   const sameMargin = actualMargin === predictedMargin;
 
@@ -45,7 +60,22 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
   let status: ScoreResult["status"] = "Missed";
   let explanation = "Missed the result.";
 
-  if (exact) {
+  if (isKnockout && actualOutcome === "draw") {
+    if (predictedOutcome === "draw") {
+      basePoints = 3;
+      status = correctKnockoutAdvancer && rawExact ? "Exact" : "Close";
+      explanation = correctKnockoutAdvancer
+        ? rawExact
+          ? "Exact 90-minute draw and correct advancer."
+          : "Correct 90-minute draw and correct advancer."
+        : rawExact
+          ? "Exact 90-minute score, but wrong advancer."
+          : "Correct 90-minute draw, but wrong advancer.";
+    } else if (correctKnockoutAdvancer) {
+      status = "Correct winner";
+      explanation = "Correct team to advance after the knockout draw.";
+    }
+  } else if (exact) {
     basePoints = 5;
     status = "Exact";
     explanation = "Exact score.";
@@ -59,20 +89,24 @@ export function scorePrediction(match: Match, prediction?: Prediction): ScoreRes
     explanation = actualOutcome === "draw" ? "Correct draw result." : "Correct winner.";
   }
 
-  const actualWinner = getWinnerTeamId(match);
-  const isKnockout = match.phase !== "group";
-  const correctKnockoutAdvancer = Boolean(actualWinner && prediction.predictedWinnerTeamId === actualWinner);
   const knockoutBonus =
     isKnockout && actualOutcome === "draw" && predictedOutcome === "draw" && correctKnockoutAdvancer ? 2 : 0;
+  const knockoutAdvancerOnlyPoints =
+    isKnockout && actualOutcome === "draw" && predictedOutcome !== "draw" && correctKnockoutAdvancer ? 2 : 0;
 
   return {
-    points: basePoints + knockoutBonus,
+    points: basePoints + knockoutBonus + knockoutAdvancerOnlyPoints,
     basePoints,
-    knockoutBonus,
+    knockoutBonus: knockoutBonus + knockoutAdvancerOnlyPoints,
     status,
     exact,
     correctOutcome,
-    explanation: knockoutBonus ? `${explanation} + knockout advancer bonus.` : explanation
+    explanation:
+      knockoutBonus > 0
+        ? `${explanation} + knockout advancer bonus.`
+        : knockoutAdvancerOnlyPoints > 0
+          ? `${explanation} + correct advancer.`
+          : explanation
   };
 }
 
